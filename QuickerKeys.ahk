@@ -8,8 +8,10 @@ SendMode "Input"
 ; =====================================================================
 ;  MAAUNI Verktøy  –  alle verktøyene samlet i ett program
 ; ---------------------------------------------------------------------
-;  • Bare start denne filen. Innstillinger (MAAUNI.ini) og Excel-filen
-;    (Tekstflyt.xlsx) lages automatisk. Ingen andre programmer trengs.
+;  • Bare start denne filen. Alt annet lages automatisk i undermapper:
+;      Innstillinger\MAAUNI.ini     – innstillinger for alle verktøy
+;      Tekstflyt\Tekstflyt.xlsx     – kodene til Tekstflyt
+;      Logg\ÅÅÅÅ-MM-DD.log          – én loggfil per dag (30 dager tilbake)
 ;  • Alle verktøy kjører i bakgrunnen, også når vinduet er lukket.
 ;    Åpne igjen fra ikonet ved klokka eller med Ctrl+Alt+M.
 ;  • Nytt verktøy? Lag en klasse som «extends VT_Base» (se malen helt
@@ -18,28 +20,36 @@ SendMode "Input"
 
 VerktoyListe() => [
     VT_Tekstflyt(),
-    VT_SMKontakt()
+    VT_SMKontakt(),
+    VT_Vindusbytter()
 ]
 
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "MAAUNI Verktøy"
-global APP_VERSJON := "2.8"
+global APP_VERSJON := "2.9"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
-global DATA_MAPPE := FinnDataMappe()
-global INI_FIL    := DATA_MAPPE "\MAAUNI.ini"
+global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
+global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
+global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
+global LOGG_MAPPE  := DATA_MAPPE "\Logg"
+global INI_FIL     := INNST_MAPPE "\MAAUNI.ini"
 global HOVED := "", APP_B := 700, APP_H := 480, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
 
 ; ---------------- Oppstart ----------------
+global FLYTTET := LagMappestruktur()
 SikreIni()
+RyddGamleLogger()
 lukketListe := LukkGamleSkript()
 Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser en tekstkode
 VERKTOY_LISTE := VerktoyListe()
 ByggHovedvindu()
 ByggTrayMeny()
-Logg(APP_NAVN " " APP_VERSJON " startet  –  data i " DATA_MAPPE)
+Logg(APP_NAVN " " APP_VERSJON " startet  –  mappe: " DATA_MAPPE)
+for linje in FLYTTET
+    Logg(linje)
 for navn in lukketListe
     Logg("Lukket gammelt skript: " navn)
 for vt in VERKTOY_LISTE
@@ -105,6 +115,47 @@ FinnDataMappe() {
     return mappe
 }
 
+; Lager undermappene og flytter filer fra gammel plassering (rett i programmappen) inn i dem.
+; Returnerer en liste med meldinger til loggen.
+LagMappestruktur() {
+    meldinger := []
+    for mappe in [INNST_MAPPE, TEKST_MAPPE, LOGG_MAPPE]
+        if !DirExist(mappe)
+            try DirCreate mappe
+    gammelIni := DATA_MAPPE "\MAAUNI.ini"
+    if (FileExist(gammelIni) && !FileExist(INI_FIL)) {
+        try {
+            FileMove gammelIni, INI_FIL
+            meldinger.Push("Flyttet MAAUNI.ini til mappen Innstillinger")
+        } catch as feil {
+            meldinger.Push("FEIL: klarte ikke å flytte MAAUNI.ini: " feil.Message)
+        }
+    }
+    gammelXlsx := DATA_MAPPE "\Tekstflyt.xlsx", nyXlsx := TEKST_MAPPE "\Tekstflyt.xlsx"
+    if (FileExist(gammelXlsx) && !FileExist(nyXlsx)) {
+        try {
+            FileMove gammelXlsx, nyXlsx
+            meldinger.Push("Flyttet Tekstflyt.xlsx til mappen Tekstflyt")
+            if FileExist(INI_FIL) && StrLower(IniRead(INI_FIL, "Tekstflyt", "ExcelFil", "")) = StrLower(gammelXlsx)
+                IniWrite nyXlsx, INI_FIL, "Tekstflyt", "ExcelFil"
+        } catch as feil {
+            meldinger.Push("FEIL: klarte ikke å flytte Tekstflyt.xlsx (er den åpen i Excel?): " feil.Message)
+        }
+    }
+    return meldinger
+}
+
+LoggFil() => LOGG_MAPPE "\" FormatTime(, "yyyy-MM-dd") ".log"
+
+; Sletter loggfiler som er eldre enn 30 dager
+RyddGamleLogger() {
+    grense := DateAdd(A_Now, -30, "Days")
+    loop files LOGG_MAPPE "\*.log" {
+        if (A_LoopFileTimeModified < grense)
+            try FileDelete A_LoopFileFullPath
+    }
+}
+
 SikreIni() {
     if !FileExist(INI_FIL)
         FileOpen(INI_FIL, "w", "UTF-16").Close()     ; UTF-16 så æøå lagres riktig
@@ -126,7 +177,7 @@ LukkGamleSkript() {
             } catch {
                 continue
             }
-            if RegExMatch(tittel, "i)([^\\]*(Tekstflyt|SM[ _-]?Kontakt)[^\\]*\.(ahk|exe))", &treff) {
+            if RegExMatch(tittel, "i)([^\\]*(Tekstflyt|SM[ _-]?Kontakt|Auto[ _-]?(å|a)pner|Vindu[ _-]?(bytter|åpner))[^\\]*\.(ahk|exe))", &treff) {
                 try {
                     WinClose hwnd
                     lukket.Push(treff[1])
@@ -149,7 +200,8 @@ FeilFanger(feil, modus) {
     try melding .= "  (linje " feil.Line ")"
     if (melding != siste) {
         siste := melding
-        try Logg("⚠ " melding)
+        try Logg("FEIL: " melding)
+        try FileAppend "          " StrReplace(Trim(feil.Stack, "`r`n"), "`n", "`n          ") "`n", LoggFil(), "UTF-8"
     }
     return true
 }
@@ -237,7 +289,8 @@ ByggLoggPanel() {
     Skrift(HOVED, "s9 norm c" TEMA.tekst, "Consolas")
     APP_KTRL["Logg"] := Reg(pn, HOVED.AddEdit("x" x " y124 w" b " h" (APP_H - 194) " ReadOnly -E0x200 Background" TEMA.kort, ""))
     Skrift(HOVED, "s9 norm c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" (x + b - 110) " y" (APP_H - 56) " w110 h32", "Tøm logg", TomLogg, TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" x " y" (APP_H - 56) " w170 h32", "Åpne loggmappen", (*) => Run('"' LOGG_MAPPE '"'), TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" (x + b - 110) " y" (APP_H - 56) " w110 h32", "Tøm visningen", TomLogg, TEMA.aksent2))
     OppdaterLoggFelt()
 }
 
@@ -269,7 +322,7 @@ ByggInnstillingerPanel() {
 
     y += 64
     Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne datamappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne programmappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 192) " y" y " w180 h34", "Avslutt programmet", (*) => ExitApp(), TEMA.av))
 }
 
@@ -316,12 +369,14 @@ HjelpTekst(side) {
                 . "•  «Åpne →» viser verktøyets side.`n"
                 . "•  Alt kjører i bakgrunnen. Åpne vinduet igjen fra ikonet ved klokka."
         case "Logg":
-            return "•  Viser hva programmet har gjort – nyeste øverst.`n"
-                . "•  Noe galt? Kopier teksten og send den til den som hjelper deg."
+            return "•  Viser hva programmet har gjort i dag – nyeste øverst.`n"
+                . "•  Alt lagres også i mappen Logg, én fil per dag (30 dager tilbake).`n"
+                . "•  Feil er merket med FEIL. Noe galt? Send loggfila fra den dagen."
         case "Innstillinger":
             return "•  Velg om programmet skal starte med Windows, og om det skal starte skjult.`n"
                 . "•  Hurtigtast: klikk i feltet, trykk tastene, trykk «Bruk».`n"
-                . "•  Datamappe: " DATA_MAPPE
+                . "•  Programmappen har tre undermapper: Innstillinger, Tekstflyt og Logg.`n"
+                . "•  Mappe: " DATA_MAPPE
     }
     return ""
 }
@@ -488,6 +543,7 @@ LagreVisTast(*) {
 
 ; ---- Logg ----
 Logg(melding) {
+    try FileAppend FormatTime(, "HH:mm:ss") "  " melding "`n", LoggFil(), "UTF-8"
     LOGG_LINJER.InsertAt(1, FormatTime(, "HH:mm:ss") "   " melding)
     if (LOGG_LINJER.Length > 300)
         LOGG_LINJER.Pop()
@@ -529,7 +585,12 @@ class VT_Tekstflyt extends VT_Base {
     __New() {
         VT_Tekstflyt.Instans := this
         this.Koder.CaseSense := "Off"
-        this.ExcelFil := this.Hent("ExcelFil", DATA_MAPPE "\Tekstflyt.xlsx")
+        this.ExcelFil := this.Hent("ExcelFil", TEKST_MAPPE "\Tekstflyt.xlsx")
+        ny := TEKST_MAPPE "\Tekstflyt.xlsx"
+        if (!FileExist(this.ExcelFil) && FileExist(ny)) {      ; gammel sti (f.eks. før flytting) – bruk filen i Tekstflyt-mappen
+            this.ExcelFil := ny
+            this.Lagre("ExcelFil", ny)
+        }
         this.SjekkCb := ObjBindMethod(this, "SjekkEndring")
     }
 
@@ -574,7 +635,7 @@ class VT_Tekstflyt extends VT_Base {
         } catch as feil {
             Logg("Klarte ikke å lage " this.ExcelFil ": " feil.Message)
         }
-        std := DATA_MAPPE "\Tekstflyt.xlsx"
+        std := TEKST_MAPPE "\Tekstflyt.xlsx"
         if (this.ExcelFil != std) {
             this.SettFil(std)
             return this.SikreFil()
@@ -2357,6 +2418,306 @@ ProvRegex(tekst, uttrykk) {
         return RegExMatch(tekst, uttrykk)
     }
     return 0
+}
+
+
+; =====================================================================
+;  VERKTØY: VINDUSBYTTER
+;  Opptil fire vinduer, hver med sin egen hurtigtast. Trykk tasten –
+;  så kommer vinduet fram (gjenopprettes hvis det er minimert).
+; =====================================================================
+class VT_Vindusbytter extends VT_Base {
+    Navn := "Vindusbytter"
+    Beskrivelse := "Hopp rett til et vindu med en hurtigtast – opptil fire vinduer."
+    static Antall := 4
+    Opptak := false
+
+    __New() {
+        this.Rader := []
+        loop VT_Vindusbytter.Antall
+            this.Rader.Push({id: this.Hent("Vindu" A_Index, ""), navn: this.Hent("Navn" A_Index, "")
+                , tast: this.Hent("Tast" A_Index, ""), aktivTast: "", valg: [""], ddl: "", tastK: ""})
+        this.ImporterGammel()
+    }
+
+    ; Henter oppsettet fra det gamle «Autoåpner»-skriptet (Vinduer.ini) første gang
+    ImporterGammel() {
+        for r in this.Rader
+            if (r.id != "" || r.tast != "")
+                return
+        for fil in [A_ScriptDir "\Vinduer.ini", DATA_MAPPE "\Vinduer.ini"] {
+            if !FileExist(fil)
+                continue
+            gamle := [[IniRead(fil, "Settings", "Window1", ""), "NumpadAdd"], [IniRead(fil, "Settings", "Window2", ""), "NumpadSub"]]
+            for i, par in gamle {
+                if (par[1] = "")
+                    continue
+                r := this.Rader[i]
+                r.id := par[1], r.navn := par[1], r.tast := par[2]
+                this.Lagre("Vindu" i, r.id), this.Lagre("Navn" i, r.navn), this.Lagre("Tast" i, r.tast)
+            }
+            this.Importert := fil
+            return
+        }
+    }
+
+    Hjelp() {
+        return "1.  Velg et vindu i listen.`n"
+            . "2.  Trykk knappen ved siden av og trykk tasten(e) du vil bruke – f.eks. Numpad + eller Ctrl+Alt+1.`n"
+            . "3.  Trykk hurtigtasten – vinduet kommer fram.`n"
+            . "•  ✕ fjerner en rad. «Oppdater vinduslisten» henter vinduer du har åpnet senere."
+    }
+
+    ; ---------------- Siden ----------------
+    ByggPanel(gui, x, y, b) {
+        Skrift(gui, "s9 bold c" TEMA.dempet)
+        this.Leg(gui.AddText("x" (x + 24) " y" y " w280 Background" TEMA.bg, "VINDU"))
+        this.Leg(gui.AddText("x" (x + 322) " y" y " w130 Background" TEMA.bg, "HURTIGTAST"))
+        for i, r in this.Rader {
+            ry := y + 22 + (i - 1) * 46
+            Skrift(gui, "s12 bold c" TEMA.tekst)
+            this.Leg(gui.AddText("x" x " y" (ry + 3) " w20 Background" TEMA.bg, i))
+            Skrift(gui, "s10 c000000")
+            r.ddl := this.Leg(gui.AddDropDownList("x" (x + 24) " y" ry " w290 R14"))
+            r.ddl.OnEvent("Change", ObjBindMethod(this, "VelgVindu", i))
+            Skrift(gui, "s10 bold c" TEMA.tekst)
+            r.tastK := this.Leg(Knapp(gui, "x" (x + 322) " y" ry " w130 h28", "", ObjBindMethod(this, "TaOppTast", i), TEMA.aksent2))
+            Skrift(gui, "s10 c" TEMA.tekst)
+            this.Leg(Knapp(gui, "x" (x + 460) " y" ry " w32 h28", "✕", ObjBindMethod(this, "Fjern", i), TEMA.av))
+        }
+        by := y + 22 + VT_Vindusbytter.Antall * 46 + 4
+        Skrift(gui, "s9 c" TEMA.tekst)
+        this.Leg(Knapp(gui, "x" x " y" by " w190 h30", "Oppdater vinduslisten", ObjBindMethod(this, "FyllLister"), TEMA.aksent2))
+        Skrift(gui, "s9 bold c" TEMA.paa)
+        this.MeldingK := this.Leg(gui.AddText("x" (x + 202) " y" (by + 7) " w" (b - 202) " h20 Background" TEMA.bg, ""))
+        this.FyllLister()
+        this.OppdaterTastKnapper()
+        if this.HasOwnProp("Importert")
+            Logg("Vindusbytter: hentet oppsettet fra " this.Importert)
+    }
+
+    ; Fyller nedtrekksmenyene med vinduene som er åpne nå
+    FyllLister(*) {
+        apne := []
+        sett := Map()
+        egen := ProcessExist()
+        for hwnd in WinGetList() {
+            try {
+                tittel := WinGetTitle("ahk_id " hwnd)
+                if (tittel = "" || WinGetPID("ahk_id " hwnd) = egen || tittel = "Program Manager")
+                    continue
+                if (WinGetExStyle("ahk_id " hwnd) & 0x80)          ; verktøyvinduer
+                    continue
+                id := VindusId(hwnd)
+                if sett.Has(id)
+                    continue
+                sett[id] := true
+                exe := WinGetProcessName("ahk_id " hwnd)
+                apne.Push({tekst: (StrLen(tittel) > 55 ? SubStr(tittel, 1, 52) "…" : tittel) "   —   " exe, id: id})
+            }
+        }
+        for i, r in this.Rader {
+            elementer := ["(ingen)"], r.valg := [""]
+            valgt := 1
+            finnId := r.id
+            if (r.id != "" && !sett.Has(r.id)) {               ; lagret på en annen måte (f.eks. bare tittel)? finn det åpne vinduet
+                hwnd := 0
+                try hwnd := FinnVindu(r.id)
+                if hwnd
+                    try finnId := VindusId(hwnd)
+            }
+            if (r.id != "" && !sett.Has(finnId)) {             ; lagret vindu som ikke er åpent nå
+                elementer.Push("★ " VennligNavn(r.navn != "" ? r.navn : r.id) "   (ikke åpent nå)")
+                r.valg.Push(r.id)
+                valgt := 2
+            }
+            for v in apne {
+                elementer.Push(v.tekst), r.valg.Push(v.id = finnId ? r.id : v.id)
+                if (v.id = finnId)
+                    valgt := r.valg.Length
+            }
+            try {
+                r.ddl.Delete()
+                r.ddl.Add(elementer)
+                r.ddl.Choose(valgt)
+            }
+        }
+        this.Melding("Vinduslisten er oppdatert (" apne.Length " vinduer)")
+    }
+
+    Melding(tekst, ok := true) {
+        try {
+            this.MeldingK.SetFont("c" (ok ? TEMA.paa : "FF6B6B"))
+            this.MeldingK.Text := tekst
+        }
+    }
+
+    VelgVindu(i, *) {
+        r := this.Rader[i]
+        nr := r.ddl.Value
+        if (nr < 1 || nr > r.valg.Length)
+            return
+        r.id := r.valg[nr]
+        r.navn := (nr = 1) ? "" : RegExReplace(r.ddl.Text, "^★ |   \(ikke åpent nå\)$|   —   .*$")
+        this.Lagre("Vindu" i, r.id), this.Lagre("Navn" i, r.navn)
+        this.Registrer()
+        Logg("Vindusbytter: vindu " i " = " (r.id = "" ? "(ingen)" : r.navn))
+        this.Melding(r.id = "" ? "Vindu " i " er fjernet" : "Vindu " i " lagret ✓" (r.tast = "" ? " – velg en hurtigtast" : ""))
+    }
+
+    ; Tar opp hvilken som helst tast/tastekombinasjon (Esc = avbryt)
+    TaOppTast(i, *) {
+        if this.Opptak
+            return
+        this.Opptak := true
+        r := this.Rader[i]
+        this.Avregistrer()                                   ; så tastene ikke bytter vindu mens vi tar opp
+        r.tastK.Text := "Trykk tast…"
+        r.tastK.Opt("Background" TEMA.aksent), r.tastK.Redraw()
+        this.Melding("Trykk tasten(e) du vil bruke for vindu " i "  (Esc = avbryt)")
+        ih := InputHook("L0 T8")
+        ih.KeyOpt("{All}", "E")
+        ih.KeyOpt("{LCtrl}{RCtrl}{LAlt}{RAlt}{LShift}{RShift}{LWin}{RWin}", "-E")
+        ih.Start()
+        ih.Wait()
+        tast := ""
+        if (ih.EndReason = "EndKey" && ih.EndKey != "Escape") {
+            em := ih.EndMods                                  ; modifikatorene som var nede da tasten ble trykket
+            mods := (InStr(em, "^") ? "^" : "") (InStr(em, "!") ? "!" : "") (InStr(em, "+") ? "+" : "") (InStr(em, "#") ? "#" : "")
+            tast := mods ih.EndKey
+        }
+        this.Opptak := false
+        if (tast = "") {
+            this.Melding("Avbrutt – hurtigtasten er ikke endret", false)
+        } else if (konflikt := this.Konflikt(tast, i)) {
+            this.Melding(TastTekst(tast) " brukes allerede av " konflikt, false)
+        } else {
+            r.tast := tast
+            this.Lagre("Tast" i, tast)
+            Logg("Vindusbytter: hurtigtast for vindu " i " = " TastTekst(tast))
+            this.Melding("Hurtigtast " TastTekst(tast) " lagret ✓" (r.id = "" ? " – velg et vindu" : ""))
+        }
+        this.OppdaterTastKnapper()
+        this.Registrer()
+    }
+
+    ; Er tasten allerede i bruk (annen rad, vis/skjul-tasten eller SM Kontakt)?
+    Konflikt(tast, egenRad) {
+        for i, r in this.Rader
+            if (i != egenRad && r.tast = tast)
+                return "vindu " i
+        if (tast = VIS_TAST)
+            return "«Vis / skjul vinduet»"
+        for vt in VERKTOY_LISTE
+            if (vt.HasOwnProp("Cfg") && vt.Cfg.Has("ManuellTast") && vt.Cfg["ManuellTast"] = tast)
+                return vt.Navn
+        return ""
+    }
+
+    Fjern(i, *) {
+        r := this.Rader[i]
+        r.id := "", r.navn := "", r.tast := ""
+        for nokkel in ["Vindu", "Navn", "Tast"]
+            this.Lagre(nokkel i, "")
+        this.Registrer()
+        this.FyllLister()
+        this.OppdaterTastKnapper()
+        Logg("Vindusbytter: vindu " i " fjernet")
+        this.Melding("Vindu " i " er fjernet")
+    }
+
+    OppdaterTastKnapper() {
+        for r in this.Rader {
+            try {
+                r.tastK.Text := r.tast = "" ? "Velg tast…" : TastTekst(r.tast)
+                r.tastK.Opt("Background" (r.tast = "" ? TEMA.aksent2 : TEMA.aksent))
+                r.tastK.Redraw()
+            }
+        }
+        this.OppdaterStatus()
+    }
+
+    OppdaterStatus() {
+        klare := 0
+        for r in this.Rader
+            if (r.id != "" && r.tast != "")
+                klare++
+        this.SettStatus(klare = 0 ? "Ingen vinduer satt opp ennå" : klare " av " VT_Vindusbytter.Antall " vinduer klare")
+    }
+
+    ; ---------------- Hurtigtastene ----------------
+    Start() {
+        this.Registrer()
+    }
+
+    Stopp() {
+        this.Avregistrer()
+    }
+
+    Registrer() {
+        this.Avregistrer()
+        if (!this.Aktiv || this.Opptak)
+            return this.OppdaterStatus()
+        for i, r in this.Rader {
+            if (r.id = "" || r.tast = "")
+                continue
+            try {
+                Hotkey r.tast, ObjBindMethod(this, "Bytt", i), "On"
+                r.aktivTast := r.tast
+            } catch as feil {
+                Logg("Vindusbytter: kan ikke bruke hurtigtasten " TastTekst(r.tast) ": " feil.Message)
+                this.Melding("Kan ikke bruke " TastTekst(r.tast) " – velg en annen tast", false)
+            }
+        }
+        this.OppdaterStatus()
+    }
+
+    Avregistrer() {
+        for r in this.Rader {
+            if (r.aktivTast != "")
+                try Hotkey r.aktivTast, "Off"
+            r.aktivTast := ""
+        }
+    }
+
+    Bytt(i, *) {
+        r := this.Rader[i]
+        navn := r.navn != "" ? r.navn : r.id
+        if RegExMatch(r.id, "i)ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe") {
+            hwnd := AktiverFane(r.id)                       ; nettleser: finner også riktig fane
+        } else {
+            hwnd := FinnVindu(r.id)
+            if hwnd {
+                if (WinGetMinMax("ahk_id " hwnd) = -1)
+                    WinRestore "ahk_id " hwnd
+                WinActivate "ahk_id " hwnd
+            }
+        }
+        if !hwnd {
+            Tip("Fant ikke vinduet: " navn, 2500)
+            Logg("Vindusbytter: fant ikke vindu " i " (" navn ")")
+            return
+        }
+        Logg("Vindusbytter: byttet til vindu " i " (" navn ")")
+    }
+}
+
+; «^!NumpadAdd» -> «Ctrl+Alt+Numpad +»
+TastTekst(tast) {
+    if (tast = "")
+        return ""
+    tekst := ""
+    while (StrLen(tast) > 1 && InStr("^!+#", SubStr(tast, 1, 1))) {
+        tekst .= Map("^", "Ctrl+", "!", "Alt+", "+", "Shift+", "#", "Win+")[SubStr(tast, 1, 1)]
+        tast := SubStr(tast, 2)
+    }
+    navn := Map("NumpadAdd", "Numpad +", "NumpadSub", "Numpad −", "NumpadMult", "Numpad *", "NumpadDiv", "Numpad /"
+        , "NumpadEnter", "Numpad Enter", "NumpadDot", "Numpad ,", "Space", "Mellomrom", "Enter", "Enter")
+    if navn.Has(tast)
+        return tekst navn[tast]
+    if RegExMatch(tast, "^Numpad(\d)$", &m)
+        return tekst "Numpad " m[1]
+    return tekst (StrLen(tast) = 1 ? StrUpper(tast) : tast)
 }
 
 
