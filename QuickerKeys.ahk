@@ -6,9 +6,9 @@ DetectHiddenText true
 SendMode "Input"
 
 ; =====================================================================
-;  MAAUNI Verktøy  –  alle verktøyene samlet i ett program
+;  QuickerKeys – alle verktøyene samlet i ett program
 ; ---------------------------------------------------------------------
-;  • Bare start denne filen. Innstillinger (MAAUNI.ini) og Excel-filen
+;  • Bare start denne filen. Innstillinger (QuickerKeys.ini) og Excel-filen
 ;    (Tekstflyt.xlsx) lages automatisk. Ingen andre programmer trengs.
 ;  • Alle verktøy kjører i bakgrunnen, også når vinduet er lukket.
 ;    Åpne igjen fra ikonet ved klokka eller med Ctrl+Alt+M.
@@ -23,11 +23,11 @@ VerktoyListe() => [
 
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
-global APP_NAVN    := "MAAUNI Verktøy"
+global APP_NAVN    := "QuickerKeys"
 global APP_VERSJON := "2.8"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE := FinnDataMappe()
-global INI_FIL    := DATA_MAPPE "\MAAUNI.ini"
+global INI_FIL    := DATA_MAPPE "\QuickerKeys.ini"
 global HOVED := "", APP_B := 700, APP_H := 480, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
@@ -93,21 +93,40 @@ class VT_Base {
 ; =====================================================================
 FinnDataMappe() {
     ; Bruk mappen skriptet ligger i. Er den skrivebeskyttet, bruk AppData.
-    test := A_ScriptDir "\.maauni_skrivetest"
+    test := A_ScriptDir "\.quickerkeys_skrivetest"
     try {
         FileOpen(test, "w").Close()
         FileDelete test
         return A_ScriptDir
     }
-    mappe := A_AppData "\MAAUNI Verktoy"
+    mappe := A_AppData "\QuickerKeys"
     if !DirExist(mappe)
         DirCreate mappe
     return mappe
 }
 
 SikreIni() {
-    if !FileExist(INI_FIL)
-        FileOpen(INI_FIL, "w", "UTF-16").Close()     ; UTF-16 så æøå lagres riktig
+    if FileExist(INI_FIL)
+        return
+
+    ; Behold tidligere personlige innstillinger og standard Tekstflyt-fil.
+    gammelIni := DATA_MAPPE "\MAAUNI.ini"
+    if !FileExist(gammelIni)
+        gammelIni := A_AppData "\MAAUNI Verktoy\MAAUNI.ini"
+    if FileExist(gammelIni) {
+        FileCopy gammelIni, INI_FIL
+        SplitPath gammelIni, , &gammelMappe
+        gammelExcel := gammelMappe "\Tekstflyt.xlsx"
+        nyExcel := DATA_MAPPE "\Tekstflyt.xlsx"
+        if (gammelExcel != nyExcel && FileExist(gammelExcel) && !FileExist(nyExcel)) {
+            try FileCopy gammelExcel, nyExcel
+            catch as feil
+                Logg("Kunne ikke overføre Tekstflyt.xlsx: " feil.Message)
+        }
+        return
+    }
+
+    FileOpen(INI_FIL, "w", "UTF-16").Close()  ; UTF-16 så æøå lagres riktig
 }
 
 Innst(seksjon, nokkel, std := "") => IniRead(INI_FIL, seksjon, nokkel, std)
@@ -271,6 +290,12 @@ ByggInnstillingerPanel() {
     Skrift(HOVED, "s10 norm c" TEMA.tekst)
     Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne datamappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 192) " y" y " w180 h34", "Avslutt programmet", (*) => ExitApp(), TEMA.av))
+
+    ; Utviklerkreditering nederst på Innstillinger-siden.
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 108) " w" b " h22 Background" TEMA.bg, "Developers"))
+    Skrift(HOVED, "s10 norm c" TEMA.tekst)
+    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 82) " w" b " h26 Background" TEMA.bg, "MAUUNI  ·  KAISAD"))
 }
 
 ; Sidetittel med «?»-knapp. medToggle = siden har PÅ/AV-knapp oppe til høyre.
@@ -2783,7 +2808,7 @@ LagHuff(lengder) {
 ;  1. Kopier klassen under, fjern semikolonene og gi den et eget navn.
 ;  2. Legg den til i VerktoyListe() øverst i filen.
 ;  Den får automatisk egen side, plass i oversikten, PÅ/AV-knapp,
-;  egen seksjon i MAAUNI.ini og en linje i menyen ved klokka.
+;  egen seksjon i QuickerKeys.ini og en linje i menyen ved klokka.
 ; =====================================================================
 ; class VT_MittVerktoy extends VT_Base {
 ;     Navn := "Mitt verktøy"
