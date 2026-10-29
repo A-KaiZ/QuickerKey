@@ -103,13 +103,8 @@ class VT_Base {
 ;  OPPSTART / FILER
 ; =====================================================================
 FinnDataMappe() {
-    ; Bruk mappen skriptet ligger i. Er den skrivebeskyttet, bruk AppData.
-    test := A_ScriptDir "\.quickerkeys_skrivetest"
-    try {
-        FileOpen(test, "w").Close()
-        FileDelete test
-        return A_ScriptDir
-    }
+    ; Fast, isolert datamappe uavhengig av hvor QuickerKeys.ahk kjøres fra.
+    ; Import fra gamle QuickKey skal aldri flytte programmets datamappe.
     mappe := A_AppData "\QuickerKeys"
     if !DirExist(mappe)
         DirCreate mappe
@@ -126,13 +121,16 @@ LagMappestruktur() {
     }
 
     gamleMapper := [DATA_MAPPE]
+    if (StrLower(A_ScriptDir) != StrLower(DATA_MAPPE))
+        gamleMapper.Push(A_ScriptDir)
     gammelAppData := A_AppData "\MAAUNI Verktoy"
     if (StrLower(gammelAppData) != StrLower(DATA_MAPPE) && DirExist(gammelAppData))
         gamleMapper.Push(gammelAppData)
 
     if !FileExist(INI_FIL) {
         for mappe in gamleMapper {
-            for gammelIni in [mappe "\Innstillinger\MAAUNI.ini", mappe "\MAAUNI.ini"] {
+            for gammelIni in [mappe "\Innstillinger\QuickerKeys.ini", mappe "\QuickerKeys.ini"
+                , mappe "\Innstillinger\MAAUNI.ini", mappe "\MAAUNI.ini"] {
                 if !FileExist(gammelIni)
                     continue
                 try {
@@ -367,7 +365,7 @@ ByggInnstillingerPanel() {
 
     y += 64
     Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne programmappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne datamappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 192) " y" y " w180 h34", "Avslutt programmet", (*) => ExitApp(), TEMA.av))
 
     y += 52
@@ -619,35 +617,68 @@ StrJoinTemaer() {
     return resultat
 }
 
-; Importer eksisterende QuickerKeys-/MAAUNI-konfigurasjon eller eldre QuickKey-snarveier.
+; Import fra eksternt valgt fil. Leser kilden, men flytter aldri QuickerKeys-datamappen.
 ImporterKonfigurasjon(*) {
     fil := FileSelect(1, INNST_MAPPE, "Velg konfigurasjonsfil", "INI-filer (*.ini)")
     if (fil = "")
         return
     if (StrLower(fil) = StrLower(INI_FIL)) {
-        MsgBox "Dette er allerede den aktive konfigurasjonsfilen. Bruk «Last inn på nytt» etter manuelle endringer.", APP_NAVN
+        MsgBox "Du redigerer allerede aktiv QuickerKeys.ini. Trykk «Last inn på nytt» for å aktivere endringene.", APP_NAVN
         return
     }
     try innhold := FileRead(fil)
     catch as feil {
-        MsgBox "Kunne ikke lese filen:`n" feil.Message, APP_NAVN, "Icon!"
+        MsgBox "Kunne ikke lese INI-filen:`n" feil.Message, APP_NAVN, "Icon!"
         return
     }
     if RegExMatch(innhold, "im)^\s*\[Shortcuts\]\s*$") {
         ImporterGammelQuickKey(fil)
         return
     }
-    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt)\]\s*$") {
-        MsgBox "Ukjent INI-format. Forventet QuickerKeys/MAAUNI eller QuickKey med [Shortcuts].", APP_NAVN, "Icon!"
+    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier)\]\s*$") {
+        MsgBox "Ukjent konfigurasjonsformat. Forventet QuickerKeys/MAAUNI eller gamle QuickKey [Shortcuts].", APP_NAVN, "Icon!"
         return
     }
-    valg := MsgBox("Importer hele filen som QuickerKeys.ini?`n`n"
-        . "Eksisterende innstillinger sikkerhetskopieres. Programmet starter på nytt etter import.", APP_NAVN, "YesNo Icon?")
+    ; Kun anerkjente nøkkelverdier importeres: eksterne filstier og programmappe beholdes lokale.
+    seksjoner := Map(
+        "App", ["StartSkjult", "VisTast", "Tema"],
+        "Tekstflyt", ["Aktiv"],
+        "SMKontakt", ["Aktiv", "TrioKilde", "WebVindu", "WebEtikett", "TrioVindu", "Etikett"
+            , "AndreLinjeRegex", "ManuellTast", "TrioKontroll", "SMVindu"
+            , "KontaktX", "KontaktY", "KnappX", "KnappY"],
+        "Vindusbytter", ["Aktiv"],
+        "TrioSnarveier", ["Aktiv", "HKCopy"]
+    )
+    loop 4 {
+        i := A_Index
+        for k in ["Vindu", "Navn", "Tast"]
+            seksjoner["Vindusbytter"].Push(k i)
+    }
+    for k in ["HKAgentvindu", "HkTjenestevindu", "HKetterarbeid", "HKcopyIM", "HKcopyTLF"]
+        seksjoner["TrioSnarveier"].Push(k, "Enabled" k)
+
+    endringer := []
+    for seksjon, nokler in seksjoner
+        for nokkel in nokler {
+            verdi := IniRead(fil, seksjon, nokkel, "{QUICKERKEYS_MISSING}")
+            if (verdi != "{QUICKERKEYS_MISSING}")
+                endringer.Push({seksjon:seksjon, nokkel:nokkel, verdi:verdi})
+        }
+    if !endringer.Length {
+        MsgBox "Ingen støttede innstillinger ble funnet.", APP_NAVN, "Icon!"
+        return
+    }
+    valg := MsgBox("Fant " endringer.Length " støttede innstillinger. Importere dem til QuickerKeys?"
+        . "`n`nAktiv datamappe beholdes: " DATA_MAPPE
+        . "`nExcelFil og andre eksterne filstier endres ikke."
+        . "`nEksisterende INI sikkerhetskopieres før oppdatering.", APP_NAVN, "YesNo Icon?")
     if (valg != "Yes")
         return
     try {
         SikkerhetskopierIni()
-        FileCopy fil, INI_FIL, true
+        for entry in endringer
+            SettInnst(entry.seksjon, entry.nokkel, entry.verdi)
+        Logg("Importerte " endringer.Length " INI-verdier fra ekstern fil")
         Reload()
     } catch as feil {
         MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
