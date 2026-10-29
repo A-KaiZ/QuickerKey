@@ -10,7 +10,8 @@
 - Ett-tegns hurtigtaster gjelder kun når Trio Attendant er aktivt.
 - Trio kopiering: merking av IM/telefonnummer slik at de ikke sendes som brukernavn til SM Kontakt.
 - Bedre melding ved kopiering, deteksjon av rene telefonnumre, normalisert sendesekvens.
-- **Beholdt fungerende Trio-/SM-baseline fra `main`** framfor å erstatte hele motoren med Magnus sin uprøvde variant. Dette er en *tilpasset* implementering av de relevante v3.1-funksjonene, ikke en byte-for-byte kopi av innsendt v3.3-fil.
+- **Magnus sin skjulte Trio-innstillingsvariant er nå integrert** i `KopierMedFelt()`, `SettParameter()` og `LukkInnstillinger()`: `WinSetTransparent 0`, kontrollklikk med `NA`, PID-avgrenset dialog, opprinnelig Parameter lest før endring og gjenoppretting i `finally`.
+- Resten av den etablerte SM Kontakt-/Edge-sikkerheten fra `main` er beholdt. Dette er fortsatt en tilpasset integrasjon, ikke en byte-for-byte kopi av hele innsendte fil.
 
 ## Akseptansetest i Windows (med syntetiske data)
 
@@ -18,6 +19,9 @@
 - [ ] Sammenlign antall aktive snarveier før/etter oppstart. Eksisterende hurtigtaster må fortsatt virke.
 - [ ] Test Agentvindu, Tjenestevindu og Etterarbeid i Trio Attendant.
 - [ ] Test IM/Kommentar og A-nr. Kontrollér at verdien kopieres, at kopifeltet gjenopprettes, og at det **ikke** fylles ut Kontakt ved telefonkopi.
+- [ ] **Skjult Trio-innstilling:** test at `Fil → Innstillinger` ikke blinker/forstyrrer, musepekeren ikke flytter seg, og ingen vinduer blir hengende åpne etter gjentatte kopieringer.
+- [ ] **Gjenoppretting:** velg en annen legitim Hurtigkopiering-Parameter før testen, gjennomfør IM/telefon-kopi og bekreft at den opprinnelige verdien er tilbake etterpå. Som i Magnus sin implementasjon settes tidligere `Kommentar`/`A-nr` tilbake til `IDM Username`.
+- [ ] **Feilsituasjoner:** test med kopitast feil konfigurert, låst/ufokusert Trio og avbrutt kopiering. Kontroller logg, lukking av innstillingsvindu, og at Parameter ikke blir stående i `Kommentar`/`A-nr`.
 - [ ] Test IDM Username som før. Brukernavn fylles inn i rett Service Manager-fane, uten at YouTube/andre Edge-faner får tastetrykk.
 - [ ] Test én-tegns hurtigtast, f.eks. `-`: den utløses i Trio, men skriver ordinært `-` i Notisblokk og Edge.
 - [ ] Test tastopptak (Ctrl+Alt, Numpad, `æ`), Esc/avbryt, lagring og gjenstart.
@@ -33,6 +37,7 @@
 1. **Unngå `Hotkey tast, TomHandling, "Off"` for validering.** Det kan deaktivere eksisterende binding. Her brukes sideeffektfri syntaktisk validering; den faktiske registreringen har fremdeles feilhåndtering.
 2. **XLSX uten Excel:** Fallback-omskriving er ikke tapsfri. Backup er innført, men fremtidig forbedring bør bevare øvrige ark/celler eller sperre kompleks Excel-redigering uten Excel.
 3. **Clipboard-tilordning:** Merket er tidsbegrenset. Test variasjoner i Trio-versjoner og eventuelle kopieringsforsinkelser.
+6. **Skjult dialog er ikke ferdig verifisert:** `WinSetTransparent 0` og `ControlClick` med `NA` er implementert etter Magnus sitt mønster, men vindus- og museoppførsel kan bare verifiseres i faktisk Trio på Windows. Ved feil under gjenoppretting gis advarsel i loggen og brukerbeskjed om å kontrollere Parameter manuelt.
 4. **Personvern:** Noen eksisterende logglinjer i `main` kan inneholde brukernavn/kundenumre og en diagnosefunksjon kan kopiere skjermtekst. Ikke del slike logger eller diagnoseutklipp eksternt. Vurder dataminimering i neste patch.
 5. **Ikke automatisk fokusflytting:** SM Kontakt har beholdt eksisterende sikring og skal ikke bla gjennom urelaterte Edge-faner.
 
