@@ -913,12 +913,10 @@ class VT_Tekstflyt extends VT_Base {
     __New() {
         VT_Tekstflyt.Instans := this
         this.Koder.CaseSense := "Off"
-        this.ExcelFil := this.Hent("ExcelFil", TEKST_MAPPE "\Tekstflyt.xlsx")
-        ny := TEKST_MAPPE "\Tekstflyt.xlsx"
-        if (!FileExist(this.ExcelFil) && FileExist(ny)) {      ; gammel sti (f.eks. før flytting) – bruk filen i Tekstflyt-mappen
-            this.ExcelFil := ny
-            this.Lagre("ExcelFil", ny)
-        }
+        ; Respekter valgt Excel-fil selv hvis den er midlertidig utilgjengelig.
+        ; Aldri overstyr valget med en eksempel-/standardfil uten brukerens samtykke.
+        valgt := this.Hent("ExcelFil", "")
+        this.ExcelFil := valgt != "" ? valgt : TEKST_MAPPE "\Tekstflyt.xlsx"
         this.SjekkCb := ObjBindMethod(this, "SjekkEndring")
     }
 
@@ -931,12 +929,14 @@ class VT_Tekstflyt extends VT_Base {
         this.SyncK := this.Leg(Knapp(gui, "x" (x + kb + 12) " y" (y + 28) " w" kb " h40", "Synkroniser", ObjBindMethod(this, "Sync", true)))
         this.Leg(Knapp(gui, "x" (x + 2 * (kb + 12)) " y" (y + 28) " w" kb " h40", "Teksteditor", ObjBindMethod(this, "VisEditor")))
         Skrift(gui, "s9 c" TEMA.tekst)
-        this.Leg(Knapp(gui, "x" x " y" (y + 80) " w" kb " h32", "Velg Excel-fil…", ObjBindMethod(this, "VelgFil"), TEMA.aksent2))
+        this.Leg(Knapp(gui, "x" x " y" (y + 80) " w" (kb + 90) " h32", "Importer / velg Excel…", ObjBindMethod(this, "VelgFil"), TEMA.aksent2))
     }
 
     Hjelp() {
         return "•  Skriv en kode, f.eks. #løst, og trykk Mellomrom eller Enter.`n"
             . "•  Ny kode: «Teksteditor» → skriv kode og tekst → «Lagre i Excel».`n"
+            . "•  «Importer / velg Excel»: Ja = lag en lokal kopi, Nei = bruk filen der den ligger.`n"
+            . "•  Valgt fil beholdes ved omstart. Mangler den, får du feilmelding i stedet for at en annen fil lastes.`n"
             . "•  Endre eller slette koder: «Åpne Excel». Endringer hentes automatisk."
     }
 
@@ -949,37 +949,61 @@ class VT_Tekstflyt extends VT_Base {
         SetTimer this.SjekkCb, 0
     }
 
-    ; Lager Excel-filen hvis den mangler. Returnerer true hvis den finnes etterpå.
+    ; Lag kun eksempelregneark for en ny, tom installasjon.
+    ; Mangler en eksplisitt valgt fil, så IKKE lag en tom kopi eller bytt filsti.
     SikreFil() {
         if FileExist(this.ExcelFil)
             return true
+        std := TEKST_MAPPE "\Tekstflyt.xlsx"
+        if (StrLower(this.ExcelFil) != StrLower(std)) {
+            this.SettStatus("Valgt Excel-fil finnes ikke – velg en gyldig fil")
+            Logg("Tekstflyt: valgt Excel-fil mangler: " this.ExcelFil)
+            return false
+        }
+        if (this.Hent("ExcelFil", "") != "" && !FileExist(std)) {
+            this.SettStatus("Lagret Excel-fil mangler – importer den på nytt")
+            Logg("Tekstflyt: lagret standardfil mangler: " std)
+            return false
+        }
         try {
-            XlsxSkriv(this.ExcelFil, [
+            XlsxSkriv(std, [
                 ["#løst", "Hei!`n`nSaken er nå løst. Ta gjerne kontakt igjen hvis problemet kommer tilbake.`n`nMvh"],
                 ["#brannmur", "Henvendelsen er sendt videre til brannmur-gruppen for vurdering."]
             ])
-            Logg("Laget ny Excel-fil med eksempelkoder: " this.ExcelFil)
+            Logg("Opprettet eksempelfil ved førstegangsoppstart: " std)
             return true
         } catch as feil {
-            Logg("Klarte ikke å lage " this.ExcelFil ": " feil.Message)
+            Logg("Tekstflyt: kunne ikke opprette eksempelfil: " feil.Message)
+            this.SettStatus("Kunne ikke opprette eksempelfil – se Logg")
+            return false
         }
-        std := TEKST_MAPPE "\Tekstflyt.xlsx"
-        if (this.ExcelFil != std) {
-            this.SettFil(std)
-            return this.SikreFil()
-        }
-        return false
     }
 
     SettFil(fil) {
+        if !FileExist(fil)
+            throw Error("Excel-filen finnes ikke: " fil)
+        ; Prøv å lese filen FØR lagring, så en ugyldig fil ikke blir permanent valgt.
+        LesKoder(fil)
+        forrige := this.ExcelFil
         this.ExcelFil := fil
-        this.Lagre("ExcelFil", fil)
-        try this.FilK.Text := fil
+        try {
+            if !this.Sync(false)
+                throw Error("Klarte ikke å laste hurtigtekstene")
+            this.Lagre("ExcelFil", fil)
+            try this.FilK.Text := fil
+            Logg("Tekstflyt: ny Excel-fil aktiv: " fil)
+        } catch as feil {
+            this.ExcelFil := forrige
+            this.Sync(false)
+            throw feil
+        }
     }
 
     Sync(visMelding := false, *) {
         if !this.SikreFil() {
-            this.SettStatus("Fant ikke Excel-filen – se Logg")
+            if visMelding
+                MsgBox "Den valgte Excel-filen ble ikke funnet:`n" this.ExcelFil
+                    . "`n`nBruk «Importer / velg Excel» og velg riktig fil.", APP_NAVN, "Icon!"
             return false
         }
         try {
@@ -996,60 +1020,79 @@ class VT_Tekstflyt extends VT_Base {
         this.SisteFeil := ""
 
         HotIf TekstflytKrit
-        for kode in this.Koder                      ; slå av koder som er fjernet
+        for kode in this.Koder
             if !nye.Has(kode)
                 try Hotstring(":XC1:" kode, , false)
         feilet := 0
         for kode, tekst in nye {
-            try {
-                Hotstring(":XC1:" kode, TekstflytSettInn, true)
-            } catch as feil {
+            try Hotstring(":XC1:" kode, TekstflytSettInn, true)
+            catch as feil {
                 feilet++
                 Logg("Tekstflyt: kunne ikke lage koden " kode ": " feil.Message)
             }
         }
         HotIf
-
         this.Koder := nye
         try this.SistEndret := FileGetTime(this.ExcelFil, "M")
         this.SettStatus(nye.Count " koder lastet  ·  synkronisert " FormatTime(, "HH:mm"))
-        Logg("Tekstflyt: synkronisert " nye.Count " koder" (feilet ? " (" feilet " feilet)" : ""))
+        Logg("Tekstflyt: synkronisert " nye.Count " koder fra " this.ExcelFil (feilet ? " (" feilet " feilet)" : ""))
         if visMelding {
             knapp := this.SyncK
             knapp.Text := "Synkronisert!"
             SetTimer () => knapp.Text := "Synkroniser", -1500
         }
-        return true
+        return feilet = 0
     }
 
     SjekkEndring() {
         if (this.SistEndret = "" || !FileExist(this.ExcelFil))
             return
-        try {
-            endret := FileGetTime(this.ExcelFil, "M")
-        } catch {
+        try endret := FileGetTime(this.ExcelFil, "M")
+        catch
             return
-        }
         if (endret != this.SistEndret)
             this.Sync(false)
     }
 
     ApneExcel(*) {
         if !this.SikreFil()
-            return MsgBox("Klarte ikke å lage Excel-filen. Se Logg.", APP_NAVN, "Icon!")
-        try {
-            Run '"' this.ExcelFil '"'
-        } catch as feil {
+            return MsgBox("Den valgte Excel-filen finnes ikke. Bruk «Importer / velg Excel».", APP_NAVN, "Icon!")
+        try Run '"' this.ExcelFil '"'
+        catch as feil
             MsgBox "Klarte ikke å åpne filen:`n" this.ExcelFil "`n`n" feil.Message, APP_NAVN, "Icon!"
-        }
     }
 
     VelgFil(*) {
-        valgt := FileSelect(1, this.ExcelFil, "Velg Excel-filen med koder", "Excel (*.xlsx; *.xlsm)")
+        valgt := FileSelect(1, this.ExcelFil, "Importer eller velg Excel-fil", "Excel (*.xlsx; *.xlsm)")
         if (valgt = "")
             return
-        this.SettFil(valgt)
-        this.Sync(true)
+        try antall := LesKoder(valgt).Count
+        catch as feil {
+            MsgBox "Kunne ikke lese Excel-filen:`n" feil.Message, APP_NAVN, "Icon!"
+            return
+        }
+        valg := MsgBox("Fant " antall " tekstkoder i:`n" valgt
+            . "`n`nJA: Importer en egen kopi til QuickerKeys under AppData."
+            . "`nNEI: Behold filen på den valgte plasseringen og bruk den direkte."
+            . "`nAVBRYT: Ikke gjør endringer.", APP_NAVN, "YesNoCancel Icon?")
+        if (valg = "Cancel")
+            return
+        maal := valgt
+        if (valg = "Yes") {
+            SplitPath valgt, , , &ext
+            maal := TEKST_MAPPE "\Tekstflyt-importert-" FormatTime(, "yyyyMMdd-HHmmss") "-" A_TickCount "." ext
+            try FileCopy valgt, maal
+            catch as feil {
+                MsgBox "Kunne ikke kopiere Excel-filen:`n" feil.Message, APP_NAVN, "Icon!"
+                return
+            }
+        }
+        try {
+            this.SettFil(maal)
+            Tip("Tekstflyt: " antall " koder lastet ✓", 2500)
+        } catch as feil {
+            MsgBox "Filen ble ikke aktivert:`n" feil.Message, APP_NAVN, "Icon!"
+        }
     }
 
     ; Legger til / oppdaterer en kode i Excel-filen. Returnerer true hvis ny.
