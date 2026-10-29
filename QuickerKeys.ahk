@@ -2594,10 +2594,10 @@ TrioKopiMerke(type?) {
     return (merke != "" && A_TickCount - tid < 3000) ? merke : ""
 }
 
-ErTelefonnummer(verdi) => RegExMatch(verdi, "^`+?[`d `-()]{5,25}$") && RegExMatch(verdi, "(`d`D*){5}")
+ErTelefonnummer(verdi) => RegExMatch(verdi, "^\+?[\d \-()]{5,25}$") && RegExMatch(verdi, "(\d\D*){5}")
 
 KortVerdi(verdi, maks := 22) {
-    verdi := Trim(RegExReplace(verdi, "`s+", " "))
+    verdi := Trim(RegExReplace(verdi, "\s+", " "))
     return StrLen(verdi) > maks ? SubStr(verdi, 1, maks - 1) "…" : verdi
 }
 
@@ -3104,7 +3104,7 @@ TrioOppgaver() => [
 ; Validering uten å registrere en hotkey (en test med Hotkey ... Off
 ; kan skru av en eksisterende snarvei i samme prosess).
 GyldigHurtigtast(tast) {
-    return tast != "" && RegExMatch(tast, "i)^[!^+#]{0,4}(?:[`p{L}`d_]+|[-=.,;/])$")
+    return tast != "" && RegExMatch(tast, "i)^[!^+#]{0,4}(?:[\p{L}\d_]+|[-=.,;/])$")
 }
 
 TaOppEnTast(sekunder := 8) {
@@ -3124,7 +3124,7 @@ ErTegnTast(tast) {
     if InStr(tast, "^") || InStr(tast, "!") || InStr(tast, "#")
         return false
     tasten := LTrim(tast, "+")
-    return StrLen(tasten) = 1 || RegExMatch(tasten, "i)^(Numpad(`d|Add|Sub|Mult|Div|Dot|Enter)|Space|Tab|Enter|Backspace)$")
+    return StrLen(tasten) = 1 || RegExMatch(tasten, "i)^(Numpad(\d|Add|Sub|Mult|Div|Dot|Enter)|Space|Tab|Enter|Backspace)$")
 }
 
 TrioSnarveiKrit(*) {
@@ -3403,7 +3403,7 @@ SendTast(tast) {
     tast := Trim(tast)
     if (tast = "")
         return ""
-    if (InStr(tast, "{") || !RegExMatch(tast, "^([`^!+#<>*~$]*)(.+)$", &m))
+    if (InStr(tast, "{") || !RegExMatch(tast, "^([\^!+#<>*~$]*)(.+)$", &m))
         return tast
     return RegExReplace(m[1], "[<>*~$]") "{" m[2] "}"
 }
