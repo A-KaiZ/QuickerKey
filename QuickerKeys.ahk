@@ -1278,7 +1278,7 @@ class VT_Tekstflyt extends VT_Base {
         tekst := StrReplace(this.EkTekst.Value, "`r`n", "`n")
         if (gammel = "")
             return this.EkMelding("Velg en eksisterende kode først.", false)
-        if (kode = "" || Trim(tekst) = "" || RegExMatch(kode, "\\s"))
+        if (kode = "" || Trim(tekst) = "" || RegExMatch(kode, "\s"))
             return this.EkMelding("Koden/teksten er tom eller koden har mellomrom.", false)
         if (kode != gammel && this.Koder.Has(kode))
             return this.EkMelding("Koden eksisterer allerede: " kode, false)
@@ -1440,6 +1440,7 @@ class VT_SMKontakt extends VT_Base {
         this.ManuellCb := ObjBindMethod(this, "ManuellFyll")
         this.KlikkCb := ObjBindMethod(this, "MusKlikk")
         this.KopiCb := ObjBindMethod(this, "KopiFerdig")
+        this.SnarveiCb := ObjBindMethod(this, "SnarveiKopiFerdig")
         this.Ventende := ""
         this.KlippTid := 0
         OnClipboardChange(ObjBindMethod(this, "KlippEndret"))
@@ -1658,6 +1659,12 @@ class VT_SMKontakt extends VT_Base {
             return
         if (this.LaerSteg = 1)
             return this.LaerKopi(pid)
+        ; Separat merking for IM/telefon kopiert via Trio Snarveier.
+        ; Disse skal aldri trigge SM Kontakt automatisk.
+        if (TrioKopiMerke() != "") {
+            SetTimer this.SnarveiCb, -250
+            return
+        }
         if (!this.Aktiv || this.Cfg["TrioKilde"] = "web" || this.LaerSteg)
             return
         if !this.ErFraTrio(pid)
@@ -1700,6 +1707,11 @@ class VT_SMKontakt extends VT_Base {
         st.TekstTid := A_TickCount                     ; meldingen blir stående en stund på siden
         verdi := ""
         try verdi := Trim(A_Clipboard, " `t`r`n")
+        if ErTelefonnummer(verdi) {
+            st.Tekst := "telefonnummer kopiert – ikke fylt inn", st.KopiertTid := 0
+            Varsel("Trio Attendant · Telefonnummer", KortVerdi(verdi), "Telefonnummer kopiert – ikke fylt inn", false)
+            return this.Sjekk()
+        }
         if !ErBrukernavn(verdi) {
             st.Tekst := "kopiert verdi er ikke et brukernavn – ikke fylt inn", st.KopiertTid := 0
             Varsel("Trio Attendant", "—", "Det som ble kopiert er ikke et brukernavn", false)
@@ -1725,7 +1737,20 @@ class VT_SMKontakt extends VT_Base {
         this.Sjekk()
     }
 
-    ; Trio Attendant: sist kopierte brukernavn vises til et nytt kopieres, eller i maks 10 minutter
+
+    ; IM og telefonnummer hører til Trio Snarveier, ikke SM Kontakt.
+    SnarveiKopiFerdig() {
+        type := TrioKopiMerke()
+        if (type = "")
+            return
+        TrioKopiMerke("")
+        verdi := Trim(A_Clipboard, " `t`r`n")
+        Varsel("Trio Attendant · " type, verdi = "" ? "—" : KortVerdi(verdi), type " kopiert")
+        Logg("Trio Snarveier: " type " kopiert")
+    }
+
+    ; Trio Attendant: sist kopierte brukernavn vises til et nytt kopieres, eller i maks 10 minutter 
+
     LesAttendantKopi() {
         st := this.Tilst["attendant"]
         vis := st.SistKopiert != "" && A_TickCount - st.KopiertTid < 600000
@@ -2559,6 +2584,23 @@ KlippEierPid() {
 ; Ser verdien ut som et brukernavn/kundenummer? (2–60 tegn, ingen mellomrom)
 ErBrukernavn(verdi) => RegExMatch(verdi, "^[\p{L}\d._@\\-]{2,60}$")
 
+; Merket gjelder kun neste kopiering. Merket utløper automatisk.
+TrioKopiMerke(type?) {
+    static merke := "", tid := 0
+    if IsSet(type) {
+        merke := type, tid := A_TickCount
+        return type
+    }
+    return (merke != "" && A_TickCount - tid < 3000) ? merke : ""
+}
+
+ErTelefonnummer(verdi) => RegExMatch(verdi, "^`+?[`d `-()]{5,25}$") && RegExMatch(verdi, "(`d`D*){5}")
+
+KortVerdi(verdi, maks := 22) {
+    verdi := Trim(RegExReplace(verdi, "`s+", " "))
+    return StrLen(verdi) > maks ? SubStr(verdi, 1, maks - 1) "…" : verdi
+}
+
 FinnTlf(tekst) {
     if RegExMatch(tekst, "i)Tlf\.?\s*nr\.?\s*:?\s*(\+?\d[\d ]{4,})", &t)
         return StrReplace(Trim(t[1]), " ")
@@ -3059,11 +3101,45 @@ TrioOppgaver() => [
     {key:"HKcopyTLF", navn:"Kopier telefonnummer", beskrivelse:"Bytt kopifelt midlertidig til A-nr"}
 ]
 
+; Validering uten å registrere en hotkey (en test med Hotkey ... Off
+; kan skru av en eksisterende snarvei i samme prosess).
+GyldigHurtigtast(tast) {
+    return tast != "" && RegExMatch(tast, "i)^[!^+#]{0,4}(?:[`p{L}`d_]+|[-=.,;/])$")
+}
+
+TaOppEnTast(sekunder := 8) {
+    ih := InputHook("L0 T" sekunder)
+    ih.KeyOpt("{All}", "E")
+    ih.KeyOpt("{LCtrl}{RCtrl}{LAlt}{RAlt}{LShift}{RShift}{LWin}{RWin}", "-E")
+    ih.Start()
+    ih.Wait()
+    if (ih.EndReason != "EndKey" || ih.EndKey = "Escape")
+        return ""
+    em := ih.EndMods
+    return (InStr(em, "^") ? "^" : "") (InStr(em, "!") ? "!" : "")
+        . (InStr(em, "+") ? "+" : "") (InStr(em, "#") ? "#" : "") ih.EndKey
+}
+
+ErTegnTast(tast) {
+    if InStr(tast, "^") || InStr(tast, "!") || InStr(tast, "#")
+        return false
+    tasten := LTrim(tast, "+")
+    return StrLen(tasten) = 1 || RegExMatch(tasten, "i)^(Numpad(`d|Add|Sub|Mult|Div|Dot|Enter)|Space|Tab|Enter|Backspace)$")
+}
+
+TrioSnarveiKrit(*) {
+    hwnd := FinnVindu(Innst("SMKontakt", "TrioVindu", "Trio Attendant"))
+    if !hwnd
+        hwnd := FinnVindu("Trio Attendant")
+    return hwnd && !ErNettleser(hwnd) && WinActive("ahk_id " hwnd)
+}
+
 class VT_TrioSnarveier extends VT_Base {
     Navn := "Trio Snarveier"
     Beskrivelse := "QuickKey-funksjoner direkte i Trio Attendant, ikke bare vindusbytte."
     Felt := ""
     Registrerte := ""
+    Opptak := false
 
     __New() {
         this.Felt := Map()
@@ -3082,22 +3158,72 @@ class VT_TrioSnarveier extends VT_Base {
         Skrift(gui, "s9 bold c" TEMA.dempet)
         this.Leg(gui.AddText("x" x " y" y " w230 h22 Background" TEMA.bg, "TRIO-HANDLING"))
         this.Leg(gui.AddText("x" (x+236) " y" y " w145 h22 Background" TEMA.bg, "HURTIGTAST"))
-        this.Leg(gui.AddText("x" (x+386) " y" y " w90 h22 Background" TEMA.bg, "AKTIV"))
+        this.Leg(gui.AddText("x" (x+422) " y" y " w60 h22 Background" TEMA.bg, "AKTIV"))
         for i, op in TrioOppgaver() {
             ry := y + 28 + (i-1)*47
             Skrift(gui, "s9 c" TEMA.tekst)
             this.Leg(gui.AddText("x" x " y" (ry+3) " w225 h28 +0x200 Background" TEMA.bg, op.navn))
-            edit := this.Leg(gui.AddEdit("x" (x+236) " y" ry " w145 h29 Background" TEMA.kort, this.Hent(op.key, "")))
+            tastKnapp := this.Leg(Knapp(gui, "x" (x+236) " y" ry " w145 h29", "", ObjBindMethod(this, "TaOppTast", op.key), TEMA.aksent2))
+            this.Leg(Knapp(gui, "x" (x+386) " y" ry " w28 h29", "✕", ObjBindMethod(this, "FjernTast", op.key), TEMA.av))
             paa := (StrLower(this.Hent("Enabled" op.key, "off")) = "on")
-            sjekk := this.Leg(gui.AddCheckBox("x" (x+402) " y" (ry+4) " w55 h23" (paa ? " Checked" : ""), "På"))
-            this.Felt[op.key] := {edit:edit, sjekk:sjekk}
+            sjekk := this.Leg(gui.AddCheckBox("x" (x+424) " y" (ry+4) " w60 h23" (paa ? " Checked" : ""), "På"))
+            this.Felt[op.key] := {knapp:tastKnapp, sjekk:sjekk, tast:this.Hent(op.key, ""), navn:op.navn}
+            this.VisTast(op.key)
         }
         yKnapp := y + 28 + TrioOppgaver().Length * 47 + 6
         Skrift(gui, "s10 bold c" TEMA.tekst)
         this.Leg(Knapp(gui, "x" x " y" yKnapp " w175 h34", "Lagre snarveier", ObjBindMethod(this, "LagreSnarveier")))
         Skrift(gui, "s9 c" TEMA.dempet)
         this.Leg(gui.AddText("x" (x+190) " y" (yKnapp+2) " w" (b-190) " h42 Background" TEMA.bg
-            , "Kopitast i Trio (HKCopy) kan importeres fra gamle QuickKey."))
+            , "Velg tast og trykk den. Ett tegn virker bare mens Trio Attendant er aktivt."))
+        Skrift(gui, "s9 bold c" TEMA.paa)
+        this.MeldingK := this.Leg(gui.AddText("x" x " y" (yKnapp+44) " w" b " h20 Background" TEMA.bg, ""))
+    }
+
+    VisTast(nokkel) {
+        felt := this.Felt[nokkel]
+        felt.knapp.Text := felt.tast = "" ? "Velg tast…" : TastTekst(felt.tast)
+        felt.knapp.Opt("Background" (felt.tast = "" ? TEMA.aksent2 : TEMA.aksent))
+        felt.knapp.Redraw()
+    }
+
+    Melding(tekst, ok := true) {
+        try {
+            this.MeldingK.SetFont("c" (ok ? TEMA.paa : "FF6B6B"))
+            this.MeldingK.Text := tekst
+        }
+    }
+
+    TaOppTast(nokkel, *) {
+        if this.Opptak
+            return
+        this.Opptak := true
+        felt := this.Felt[nokkel]
+        this.Stopp()
+        felt.knapp.Text := "Trykk tast…"
+        this.Melding("Trykk tastekombinasjon eller ett tegn (Esc = avbryt)")
+        tast := TaOppEnTast()
+        this.Opptak := false
+        if (tast = "")
+            this.Melding("Opptak avbrutt", false)
+        else if !GyldigHurtigtast(tast)
+            this.Melding("Ugyldig hurtigtast – prøv en annen", false)
+        else {
+            felt.tast := tast
+            felt.sjekk.Value := 1
+            this.Melding("Tast valgt – trykk Lagre snarveier")
+        }
+        this.VisTast(nokkel)
+        if this.Aktiv
+            this.Start()
+    }
+
+    FjernTast(nokkel, *) {
+        felt := this.Felt[nokkel]
+        felt.tast := ""
+        felt.sjekk.Value := 0
+        this.VisTast(nokkel)
+        this.Melding("Tast fjernet – trykk Lagre snarveier")
     }
 
     Konflikt(tast, egen) {
@@ -3120,33 +3246,29 @@ class VT_TrioSnarveier extends VT_Base {
         sett := Map()
         for op in TrioOppgaver() {
             felt := this.Felt[op.key]
-            tast := Trim(felt.edit.Value)
+            tast := felt.tast
             paa := felt.sjekk.Value = 1
-            if (paa && (tast = "" || !RegExMatch(tast, "^[!^+#]*[A-Za-z0-9]+$"))) {
-                MsgBox "Ugyldig hurtigtast for " op.navn ": " tast, APP_NAVN, "Icon!"
-                return
-            }
-            if (paa) {
-                for bruktTast, navn in sett
-                    if (bruktTast = tast) {
-                        MsgBox "Hurtigtasten " tast " er også brukt av " navn, APP_NAVN, "Icon!"
-                        return
-                    }
+            if (paa && !GyldigHurtigtast(tast))
+                return MsgBox("Ugyldig/manglende hurtigtast for " op.navn, APP_NAVN, "Icon!")
+            if paa {
+                if sett.Has(tast)
+                    return MsgBox("Tasten brukes også av " sett[tast], APP_NAVN, "Icon!")
                 sett[tast] := op.navn
                 konflikt := this.Konflikt(tast, op.key)
                 if (konflikt != "")
-                    return MsgBox("Hurtigtasten " tast " er allerede i bruk av " konflikt, APP_NAVN, "Icon!")
+                    return MsgBox("Tasten brukes av " konflikt, APP_NAVN, "Icon!")
             }
         }
         try {
             for op in TrioOppgaver() {
                 felt := this.Felt[op.key]
-                this.Lagre(op.key, Trim(felt.edit.Value))
+                this.Lagre(op.key, felt.tast)
                 this.Lagre("Enabled" op.key, felt.sjekk.Value = 1 ? "on" : "off")
             }
             this.Stopp()
             if this.Aktiv
                 this.Start()
+            this.Melding("Snarveiene er lagret ✓")
             Tip("Trio-snarveiene er lagret", 2000)
         } catch as feil {
             MsgBox "Kunne ikke lagre snarveiene:`n" feil.Message, APP_NAVN, "Icon!"
@@ -3165,20 +3287,29 @@ class VT_TrioSnarveier extends VT_Base {
                 Logg("Trio Snarveier: " op.navn " har konflikt med " konflikt)
                 continue
             }
+            kunTrio := ErTegnTast(tast)
             try {
+                if kunTrio
+                    HotIf TrioSnarveiKrit
                 Hotkey tast, ObjBindMethod(this, "Kjor", op.key), "On"
-                this.Registrerte[op.key] := tast
+                this.Registrerte[op.key] := {tast:tast, kunTrio:kunTrio}
                 antall++
             } catch as feil {
-                Logg("Trio Snarveier: " op.navn " kunne ikke registreres: " feil.Message)
+                Logg("Trio Snarveier: kunne ikke registrere " op.navn ": " feil.Message)
+            } finally {
+                HotIf
             }
         }
         this.SettStatus(antall " av " TrioOppgaver().Length " Trio-snarveier aktive")
     }
 
     Stopp() {
-        for key, tast in this.Registrerte
-            try Hotkey tast, "Off"
+        for key, reg in this.Registrerte {
+            if reg.kunTrio
+                HotIf TrioSnarveiKrit
+            try Hotkey reg.tast, "Off"
+            HotIf
+        }
         this.Registrerte := Map()
     }
 
@@ -3228,7 +3359,7 @@ class VT_TrioSnarveier extends VT_Base {
 
     KopierMedFelt(felt, trioId) {
         ; Bevar gammel funksjon fra QuickKey, men gjenopprett IDM Username også ved feil.
-        kopitast := this.Hent("HKCopy", "^d")
+        kopitast := SendTast(this.Hent("HKCopy", "^d"))
         if (kopitast = "")
             throw Error("HKCopy er ikke konfigurert.")
         try {
@@ -3240,7 +3371,18 @@ class VT_TrioSnarveier extends VT_Base {
             ControlClick "Button3", "Innstillinger"
             if !WinWaitActive(trioId, , 2)
                 throw Error("Fikk ikke fokus tilbake til Trio.")
-            Send kopitast
+            type := felt = "A-nr" ? "Telefonnummer" : "IM / Kommentar"
+            TrioKopiMerke(type)
+            sekvens := DllCall("GetClipboardSequenceNumber", "UInt")
+            SendInput kopitast
+            ; Ikke rapporter suksess uten faktisk oppdatert utklippstavle.
+            slutt := A_TickCount + 1500
+            while (A_TickCount < slutt && DllCall("GetClipboardSequenceNumber", "UInt") = sekvens)
+                Sleep 30
+            if (DllCall("GetClipboardSequenceNumber", "UInt") = sekvens) {
+                TrioKopiMerke("")
+                Logg("Trio Snarveier: ingen ny utklippstavledata ved kopiering")
+            }
         } finally {
             try {
                 WinActivate trioId
@@ -3256,6 +3398,16 @@ class VT_TrioSnarveier extends VT_Base {
         }
     }
 }
+; F12 -> {F12}, ^d -> ^{d}; fungerer også for navngitte numpad-taster.
+SendTast(tast) {
+    tast := Trim(tast)
+    if (tast = "")
+        return ""
+    if (InStr(tast, "{") || !RegExMatch(tast, "^([`^!+#<>*~$]*)(.+)$", &m))
+        return tast
+    return RegExReplace(m[1], "[<>*~$]") "{" m[2] "}"
+}
+
 
 ; =====================================================================
 ;  VERKTØY: VINDUSBYTTER
