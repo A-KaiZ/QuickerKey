@@ -680,6 +680,8 @@ ImporterGammelQuickKey(fil) {
             hoppetOver.Push(cfg.key " (ugyldig hurtigtast)")
         else if (tast = Innst("App", "VisTast", "^!m") || tast = Innst("SMKontakt", "ManuellTast", "^!k"))
             hoppetOver.Push(cfg.key " (hurtigtast er allerede i bruk)")
+        else if (tast = Innst("Vindusbytter", "Tast3", "") || tast = Innst("Vindusbytter", "Tast4", ""))
+            hoppetOver.Push(cfg.key " (hurtigtast brukes av vindu 3 eller 4)")
         else
             importerte.Push({key:cfg.key, rad:cfg.rad, id:cfg.id, navn:cfg.navn, tast:tast})
     }
@@ -2649,6 +2651,13 @@ UiaTekst(hwnd) {
 ; Teksten på nettsiden i et nettleservindu (aktiv fane). Dokument-elementene huskes per vindu.
 UiaDokTekst(hwnd) {
     static dokumenter := Map()
+    static sisteFane := Map()
+    ; Et Edge-vindu kan bytte mellom Trio, YouTube og Service Manager.
+    ; Gjenbruk ikke cached Document-elementer etter at aktiv fane er endret.
+    aktivTittel := WinGetTitle("ahk_id " hwnd)
+    if (sisteFane.Has(hwnd) && sisteFane[hwnd] != aktivTittel && dokumenter.Has(hwnd))
+        dokumenter.Delete(hwnd)
+    sisteFane[hwnd] := aktivTittel
     if dokumenter.Has(hwnd) {
         tekst := ""
         for dok in dokumenter[hwnd]
