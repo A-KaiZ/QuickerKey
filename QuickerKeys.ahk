@@ -21,6 +21,7 @@ SendMode "Input"
 VerktoyListe() => [
     VT_Tekstflyt(),
     VT_SMKontakt(),
+    VT_TrioSnarveier(),
     VT_Vindusbytter()
 ]
 
@@ -2761,6 +2762,217 @@ ProvRegex(tekst, uttrykk) {
     return 0
 }
 
+
+; =====================================================================
+;  TRIO SNARVEIER – ekte menyhandlinger fra QuickKey v1.05
+;  Forskjellig fra Vindusbytter: Agentvinduet og Tjenestevindu er
+;  handlinger under "Vis" i Trio Attendant, ikke egne Edge-vinduer.
+; =====================================================================
+TrioOppgaver() => [
+    {key:"HKAgentvindu", navn:"Vis Agentvindu", beskrivelse:"Trio → Vis → Agentvinduet"},
+    {key:"HkTjenestevindu", navn:"Vis Tjenestevindu", beskrivelse:"Trio → Vis → Tjenestevindu"},
+    {key:"HKetterarbeid", navn:"Legg til etterarbeid", beskrivelse:"Trio → Sett inn → Etterarbeid"},
+    {key:"HKcopyIM", navn:"Kopier IM / Kommentar", beskrivelse:"Bytt kopifelt midlertidig til Kommentar"},
+    {key:"HKcopyTLF", navn:"Kopier telefonnummer", beskrivelse:"Bytt kopifelt midlertidig til A-nr"}
+]
+
+class VT_TrioSnarveier extends VT_Base {
+    Navn := "Trio Snarveier"
+    Beskrivelse := "QuickKey-funksjoner direkte i Trio Attendant, ikke bare vindusbytte."
+    Felt := ""
+    Registrerte := ""
+
+    __New() {
+        this.Felt := Map()
+        this.Registrerte := Map()
+    }
+
+    Hjelp() {
+        return "•  Agentvindu og Tjenestevindu åpnes gjennom Vis-menyen i Trio Attendant.`n"
+            . "•  Etterarbeid bruker den gamle Trio-menysekvensen.`n"
+            . "•  IM og telefonnummer bytter kopifelt i Trio midlertidig; kopitast kommer fra HKCopy.`n"
+            . "•  Velg hurtigtast og aktiver den på raden, deretter trykk «Lagre snarveier».`n"
+            . "•  Test med syntetiske data før du bruker funksjonene i produksjon."
+    }
+
+    ByggPanel(gui, x, y, b) {
+        Skrift(gui, "s9 bold c" TEMA.dempet)
+        this.Leg(gui.AddText("x" x " y" y " w230 h22 Background" TEMA.bg, "TRIO-HANDLING"))
+        this.Leg(gui.AddText("x" (x+236) " y" y " w145 h22 Background" TEMA.bg, "HURTIGTAST"))
+        this.Leg(gui.AddText("x" (x+386) " y" y " w90 h22 Background" TEMA.bg, "AKTIV"))
+        for i, op in TrioOppgaver() {
+            ry := y + 28 + (i-1)*47
+            Skrift(gui, "s9 c" TEMA.tekst)
+            this.Leg(gui.AddText("x" x " y" (ry+3) " w225 h28 +0x200 Background" TEMA.bg, op.navn))
+            edit := this.Leg(gui.AddEdit("x" (x+236) " y" ry " w145 h29 Background" TEMA.kort, this.Hent(op.key, "")))
+            paa := (StrLower(this.Hent("Enabled" op.key, "off")) = "on")
+            sjekk := this.Leg(gui.AddCheckBox("x" (x+402) " y" (ry+4) " w55 h23" (paa ? " Checked" : ""), "På"))
+            this.Felt[op.key] := {edit:edit, sjekk:sjekk}
+        }
+        yKnapp := y + 28 + TrioOppgaver().Length * 47 + 6
+        Skrift(gui, "s10 bold c" TEMA.tekst)
+        this.Leg(Knapp(gui, "x" x " y" yKnapp " w175 h34", "Lagre snarveier", ObjBindMethod(this, "LagreSnarveier")))
+        Skrift(gui, "s9 c" TEMA.dempet)
+        this.Leg(gui.AddText("x" (x+190) " y" (yKnapp+2) " w" (b-190) " h42 Background" TEMA.bg
+            , "Kopitast i Trio (HKCopy) kan importeres fra gamle QuickKey."))
+    }
+
+    Konflikt(tast, egen) {
+        if (tast = Innst("App", "VisTast", "^!m"))
+            return "Vis/skjul QuickerKeys"
+        if (tast = Innst("SMKontakt", "ManuellTast", "^!k"))
+            return "SM Kontakt"
+        loop 4 {
+            if (tast = Innst("Vindusbytter", "Tast" A_Index, "") && tast != "")
+                return "Vindusbytter " A_Index
+        }
+        for op in TrioOppgaver()
+            if (op.key != egen && StrLower(this.Hent("Enabled" op.key, "off")) = "on"
+                && this.Hent(op.key, "") = tast)
+                return op.navn
+        return ""
+    }
+
+    LagreSnarveier(*) {
+        sett := Map()
+        for op in TrioOppgaver() {
+            felt := this.Felt[op.key]
+            tast := Trim(felt.edit.Value)
+            paa := felt.sjekk.Value = 1
+            if (paa && (tast = "" || !RegExMatch(tast, "^[!^+#]*[A-Za-z0-9]+$"))) {
+                MsgBox "Ugyldig hurtigtast for " op.navn ": " tast, APP_NAVN, "Icon!"
+                return
+            }
+            if (paa) {
+                for bruktTast, navn in sett
+                    if (bruktTast = tast) {
+                        MsgBox "Hurtigtasten " tast " er også brukt av " navn, APP_NAVN, "Icon!"
+                        return
+                    }
+                sett[tast] := op.navn
+                konflikt := this.Konflikt(tast, op.key)
+                if (konflikt != "" && !InStr(konflikt, "Trio"))
+                    return MsgBox("Hurtigtasten " tast " er allerede i bruk av " konflikt, APP_NAVN, "Icon!")
+            }
+        }
+        try {
+            for op in TrioOppgaver() {
+                felt := this.Felt[op.key]
+                this.Lagre(op.key, Trim(felt.edit.Value))
+                this.Lagre("Enabled" op.key, felt.sjekk.Value = 1 ? "on" : "off")
+            }
+            this.Stopp()
+            if this.Aktiv
+                this.Start()
+            Tip("Trio-snarveiene er lagret", 2000)
+        } catch as feil {
+            MsgBox "Kunne ikke lagre snarveiene:`n" feil.Message, APP_NAVN, "Icon!"
+        }
+    }
+
+    Start() {
+        this.Stopp()
+        antall := 0
+        for op in TrioOppgaver() {
+            tast := this.Hent(op.key, "")
+            if (tast = "" || StrLower(this.Hent("Enabled" op.key, "off")) != "on")
+                continue
+            konflikt := this.Konflikt(tast, op.key)
+            if (konflikt != "") {
+                Logg("Trio Snarveier: " op.navn " har konflikt med " konflikt)
+                continue
+            }
+            try {
+                Hotkey tast, ObjBindMethod(this, "Kjor", op.key), "On"
+                this.Registrerte[op.key] := tast
+                antall++
+            } catch as feil {
+                Logg("Trio Snarveier: " op.navn " kunne ikke registreres: " feil.Message)
+            }
+        }
+        this.SettStatus(antall " av " TrioOppgaver().Length " Trio-snarveier aktive")
+    }
+
+    Stopp() {
+        for key, tast in this.Registrerte
+            try Hotkey tast, "Off"
+        this.Registrerte := Map()
+    }
+
+    AktiverTrio() {
+        hwnd := FinnVindu(Innst("SMKontakt", "TrioVindu", "Trio Attendant"))
+        if !hwnd
+            hwnd := FinnVindu("Trio Attendant")
+        if (!hwnd || ErNettleser(hwnd))
+            throw Error("Fant ikke Trio Attendant (desktop-programmet).")
+        if (WinGetMinMax("ahk_id " hwnd) = -1)
+            WinRestore "ahk_id " hwnd
+        WinActivate "ahk_id " hwnd
+        if !WinWaitActive("ahk_id " hwnd, , 2)
+            throw Error("Trio Attendant ble ikke aktivt.")
+        return hwnd
+    }
+
+    Kjor(nokkel, *) {
+        forrige := WinExist("A")
+        try {
+            hwnd := this.AktiverTrio()
+            id := "ahk_id " hwnd
+            switch nokkel {
+                case "HKAgentvindu":
+                    MenuSelect id,, "Vis", "Agentvinduet"
+                case "HkTjenestevindu":
+                    MenuSelect id,, "Vis", "Tjenestevindu"
+                case "HKetterarbeid":
+                    MenuSelect id,, "Sett inn", "Etterarbeid"
+                    if !WinWaitActive("Sett inn", , 2)
+                        throw Error("Vinduet «Sett inn» åpnet seg ikke.")
+                    Send "{Down 2}^{Enter}"
+                case "HKcopyIM":
+                    this.KopierMedFelt("Kommentar", id)
+                case "HKcopyTLF":
+                    this.KopierMedFelt("A-nr", id)
+            }
+            Logg("Trio Snarveier: utførte " nokkel)
+        } catch as feil {
+            Logg("Trio Snarveier: FEIL " nokkel " – " feil.Message)
+            Tip("Trio-snarvei feilet – se Logg", 2400)
+        } finally {
+            if (forrige && WinExist("ahk_id " forrige))
+                try WinActivate "ahk_id " forrige
+        }
+    }
+
+    KopierMedFelt(felt, trioId) {
+        ; Bevar gammel funksjon fra QuickKey, men gjenopprett IDM Username også ved feil.
+        kopitast := this.Hent("HKCopy", "^d")
+        if (kopitast = "")
+            throw Error("HKCopy er ikke konfigurert.")
+        try {
+            MenuSelect trioId,, "Fil", "Innstillinger..."
+            if !WinWaitActive("Innstillinger", , 2)
+                throw Error("Trio-innstillingene ble ikke åpnet.")
+            ControlChooseIndex 3, "SysTabControl321", "Innstillinger"
+            ControlChooseString felt, "ComboBox1", "Innstillinger"
+            ControlClick "Button3", "Innstillinger"
+            if !WinWaitActive(trioId, , 2)
+                throw Error("Fikk ikke fokus tilbake til Trio.")
+            Send kopitast
+        } finally {
+            try {
+                WinActivate trioId
+                MenuSelect trioId,, "Fil", "Innstillinger..."
+                if WinWaitActive("Innstillinger", , 2) {
+                    ControlChooseIndex 3, "SysTabControl321", "Innstillinger"
+                    ControlChooseString "IDM Username", "ComboBox1", "Innstillinger"
+                    ControlClick "Button3", "Innstillinger"
+                }
+            } catch as feil {
+                Logg("Trio Snarveier: klarte ikke å gjenopprette IDM Username: " feil.Message)
+            }
+        }
+    }
+}
 
 ; =====================================================================
 ;  VERKTØY: VINDUSBYTTER
