@@ -1804,8 +1804,10 @@ class VT_SMKontakt extends VT_Base {
         alder := naa - st.SakTid
 
         if nySak {
-            ; Siden er ikke lesbar, eller viser fortsatt forrige samtale -> les med vinduet framme (maks 3 forsøk)
-            if (this.WebUtdatert(st, les) && alder <= this.Ventetid && alder > 1200
+            ; Les normalt Trio Web i bakgrunnen slik v2.8 gjorde.
+            ; Ikke stjel fokus fra video/bruker automatisk; fallback må eksplisitt tillates i INI.
+            if (this.Hent("TillatTrioFokus", "0") = "1"
+                && this.WebUtdatert(st, les) && alder <= this.Ventetid && alder > 1200
                 && st.FokusForsok < 3 && naa - st.SisteFokus > 2500) {
                 st.FokusForsok += 1, st.SisteFokus := naa
                 ny := this.LesWebMedFokus(les.hwnd)
@@ -2594,7 +2596,8 @@ UiaVelgFane(hwnd, nokkelord) {
             valg := ComValue(13, ptr)
             ComCall(3, valg)
             Sleep 180
-            return NettleserFaneBekreftet(hwnd, nokkelord)
+            if NettleserFaneBekreftet(hwnd, nokkelord)
+                return true
         }
     }
     return false
