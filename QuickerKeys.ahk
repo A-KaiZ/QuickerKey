@@ -21,26 +21,28 @@ SendMode "Input"
 VerktoyListe() => [
     VT_Tekstflyt(),
     VT_SMKontakt(),
+    VT_TrioSnarveier(),
     VT_Vindusbytter()
 ]
 
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "2.9"
+global APP_VERSJON := "3.0"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
 global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
 global LOGG_MAPPE  := DATA_MAPPE "\Logg"
 global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
-global HOVED := "", APP_B := 700, APP_H := 480, INNHOLD_X := 184, INNHOLD_B := 492
+global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
 
 ; ---------------- Oppstart ----------------
 global FLYTTET := LagMappestruktur()
 SikreIni()
+TEMA := TemaPalett(Innst("App", "Tema", "Midnatt"))
 RyddGamleLogger()
 lukketListe := LukkGamleSkript()
 Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser en tekstkode
@@ -102,13 +104,8 @@ class VT_Base {
 ;  OPPSTART / FILER
 ; =====================================================================
 FinnDataMappe() {
-    ; Bruk mappen skriptet ligger i. Er den skrivebeskyttet, bruk AppData.
-    test := A_ScriptDir "\.quickerkeys_skrivetest"
-    try {
-        FileOpen(test, "w").Close()
-        FileDelete test
-        return A_ScriptDir
-    }
+    ; Fast, isolert datamappe uavhengig av hvor QuickerKeys.ahk kjøres fra.
+    ; Import fra gamle QuickKey skal aldri flytte programmets datamappe.
     mappe := A_AppData "\QuickerKeys"
     if !DirExist(mappe)
         DirCreate mappe
@@ -125,13 +122,16 @@ LagMappestruktur() {
     }
 
     gamleMapper := [DATA_MAPPE]
+    if (StrLower(A_ScriptDir) != StrLower(DATA_MAPPE))
+        gamleMapper.Push(A_ScriptDir)
     gammelAppData := A_AppData "\MAAUNI Verktoy"
     if (StrLower(gammelAppData) != StrLower(DATA_MAPPE) && DirExist(gammelAppData))
         gamleMapper.Push(gammelAppData)
 
     if !FileExist(INI_FIL) {
         for mappe in gamleMapper {
-            for gammelIni in [mappe "\Innstillinger\MAAUNI.ini", mappe "\MAAUNI.ini"] {
+            for gammelIni in [mappe "\Innstillinger\QuickerKeys.ini", mappe "\QuickerKeys.ini"
+                , mappe "\Innstillinger\MAAUNI.ini", mappe "\MAAUNI.ini"] {
                 if !FileExist(gammelIni)
                     continue
                 try {
@@ -261,7 +261,7 @@ ByggHovedvindu() {
     for vt in VERKTOY_LISTE
         navValg.Push(vt.Navn)
     navValg.Push("Logg", "Innstillinger")
-    APP_H := Max(480, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + 40)
+    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + 40)
 
     HOVED := Gui("-MaximizeBox", APP_NAVN)
     HOVED.BackColor := TEMA.bg
@@ -297,6 +297,8 @@ ByggHovedvindu() {
 ByggOversikt() {
     pn := "Oversikt", x := INNHOLD_X, b := INNHOLD_B
     PanelTittel(pn, "Oversikt")
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x+b-195) " y87 w195 h34", "Start QuickerKeys", StartQuickerKeys))
     for i, vt in VERKTOY_LISTE {
         y := 132 + (i - 1) * 96
         Skrift(HOVED, "s12 bold c" TEMA.tekst)
@@ -366,8 +368,14 @@ ByggInnstillingerPanel() {
 
     y += 64
     Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne programmappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne datamappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 192) " y" y " w180 h34", "Avslutt programmet", (*) => ExitApp(), TEMA.av))
+
+    y += 52
+    Skrift(HOVED, "s9 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", "Importer konfigurasjon…", ImporterKonfigurasjon, TEMA.aksent))
+    Reg(pn, Knapp(HOVED, "x" (x + 198) " y" y " w132 h34", "Themes…", VisTemaer, TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" (x + 340) " y" y " w152 h34", "Last inn på nytt", (*) => Reload(), TEMA.aksent2))
 
     ; Utviklerkreditering nederst på Innstillinger-siden.
     Skrift(HOVED, "s9 bold c" TEMA.dempet)
@@ -415,7 +423,8 @@ HjelpTekst(side) {
             return vt.Hjelp()
     switch side {
         case "Oversikt":
-            return "•  PÅ / AV slår et verktøy av eller på.`n"
+            return "•  «Start QuickerKeys» leser inn hurtigtekster og bekrefter aktive hurtigtaster.`n"
+                . "•  PÅ / AV slår et verktøy av eller på.`n"
                 . "•  «Åpne →» viser verktøyets side.`n"
                 . "•  Alt kjører i bakgrunnen. Åpne vinduet igjen fra ikonet ved klokka."
         case "Logg":
@@ -425,8 +434,10 @@ HjelpTekst(side) {
         case "Innstillinger":
             return "•  Velg om programmet skal starte med Windows, og om det skal starte skjult.`n"
                 . "•  Hurtigtast: klikk i feltet, trykk tastene, trykk «Bruk».`n"
-                . "•  Programmappen har tre undermapper: Innstillinger, Tekstflyt og Logg.`n"
-                . "•  Mappe: " DATA_MAPPE
+                . "•  «Importer konfigurasjon» støtter ny INI og eldre QuickKey-vindussnarveier.`n"
+                . "•  «Themes» velger farger; programmet starter på nytt ved bytte.`n"
+                . "•  «Last inn på nytt» aktiverer endringer du har gjort direkte i INI-filen.`n"
+                . "•  Data: " DATA_MAPPE
     }
     return ""
 }
@@ -551,6 +562,273 @@ OppdaterOversikt(vt) {
     OVERSIKT[vt.Id].status.Text := vt.Beskrivelse "`n" (status != "" ? "• " status : "")
 }
 
+; Fire paletter. Tema leses fra INI ved oppstart, og endringer trer i kraft etter Reload().
+TemaNavn() => ["Midnatt", "Grafitt", "Skog", "Lys"]
+
+TemaPalett(navn) {
+    switch navn {
+        case "Grafitt":
+            return {bg:"191B22", kort:"282B35", nav:"111319", aksent:"655DD6", aksent2:"42435F"
+                , tekst:"F2F3F7", dempet:"AEB5C3", paa:"279D76", av:"566071", linje:"39404D"}
+        case "Skog":
+            return {bg:"10251F", kort:"1A362D", nav:"0B1C18", aksent:"267E6B", aksent2:"285D50"
+                , tekst:"F0F8F2", dempet:"A4C2B5", paa:"259D77", av:"546D64", linje:"33594A"}
+        case "Lys":
+            return {bg:"F1F5F9", kort:"E2EAF3", nav:"CBD9EA", aksent:"A7D4FF", aksent2:"D2E4F5"
+                , tekst:"12243D", dempet:"405E7A", paa:"B9E6D0", av:"C6D0DD", linje:"ADBED2"}
+        default:
+            return {bg:"0F1E3A", kort:"16294D", nav:"0B1730", aksent:"2F7BEA", aksent2:"24497F"
+                , tekst:"E8EEF9", dempet:"8FA3C7", paa:"1FA97A", av:"56637D", linje:"1E3560"}
+    }
+}
+
+VisTemaer(*) {
+    g := Gui("+Owner" HOVED.Hwnd " -MinimizeBox", "Themes – " APP_NAVN)
+    g.BackColor := TEMA.bg
+    Skrift(g, "s13 bold c" TEMA.tekst)
+    g.AddText("x20 y15 w360 h28 Background" TEMA.bg, "Velg tema")
+    Skrift(g, "s9 c" TEMA.dempet)
+    g.AddText("x20 y54 w360 h24 Background" TEMA.bg, "Temaet brukes etter en automatisk omstart.")
+    Skrift(g, "s10 c000000")
+    liste := g.AddDropDownList("x20 y85 w360 R4", TemaNavn())
+    for i, navn in TemaNavn()
+        if (navn = Innst("App", "Tema", "Midnatt"))
+            liste.Choose(i)
+    Skrift(g, "s10 bold c" TEMA.tekst)
+    Knapp(g, "x20 y137 w175 h36", "Bruk tema", (*) => LagreTema(g, liste.Text))
+    Knapp(g, "x205 y137 w175 h36", "Avbryt", (*) => g.Destroy(), TEMA.aksent2)
+    g.OnEvent("Escape", (*) => g.Destroy())
+    g.Show("w400 h190")
+}
+
+LagreTema(vindu, navn) {
+    if !InStr("|" StrJoinTemaer() "|", "|" navn "|")
+        return
+    try {
+        SettInnst("App", "Tema", navn)
+        Logg("Endret tema til " navn)
+        vindu.Destroy()
+        Reload()
+    } catch as feil {
+        MsgBox "Kunne ikke lagre tema: " feil.Message, APP_NAVN, "Icon!"
+    }
+}
+
+StrJoinTemaer() {
+    resultat := ""
+    for navn in TemaNavn()
+        resultat .= (resultat = "" ? "" : "|") navn
+    return resultat
+}
+
+; Import fra eksternt valgt fil. Leser kilden, men flytter aldri QuickerKeys-datamappen.
+ImporterKonfigurasjon(*) {
+    fil := FileSelect(1, INNST_MAPPE, "Velg konfigurasjonsfil", "INI-filer (*.ini)")
+    if (fil = "")
+        return
+    if (StrLower(fil) = StrLower(INI_FIL)) {
+        MsgBox "Du redigerer allerede aktiv QuickerKeys.ini. Trykk «Last inn på nytt» for å aktivere endringene.", APP_NAVN
+        return
+    }
+    try innhold := FileRead(fil)
+    catch as feil {
+        MsgBox "Kunne ikke lese INI-filen:`n" feil.Message, APP_NAVN, "Icon!"
+        return
+    }
+    if RegExMatch(innhold, "im)^\s*\[Shortcuts\]\s*$") {
+        ImporterGammelQuickKey(fil)
+        return
+    }
+    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier)\]\s*$") {
+        MsgBox "Ukjent konfigurasjonsformat. Forventet QuickerKeys/MAAUNI eller gamle QuickKey [Shortcuts].", APP_NAVN, "Icon!"
+        return
+    }
+    ; Kun anerkjente nøkkelverdier importeres: eksterne filstier og programmappe beholdes lokale.
+    seksjoner := Map(
+        "App", ["StartSkjult", "VisTast", "Tema"],
+        "Tekstflyt", ["Aktiv"],
+        "SMKontakt", ["Aktiv", "TrioKilde", "WebVindu", "WebEtikett", "TrioVindu", "Etikett"
+            , "AndreLinjeRegex", "ManuellTast", "TrioKontroll", "SMVindu"
+            , "KontaktX", "KontaktY", "KnappX", "KnappY"],
+        "Vindusbytter", ["Aktiv"],
+        "TrioSnarveier", ["Aktiv", "HKCopy"]
+    )
+    loop 4 {
+        i := A_Index
+        for k in ["Vindu", "Navn", "Tast"]
+            seksjoner["Vindusbytter"].Push(k i)
+    }
+    for k in ["HKAgentvindu", "HkTjenestevindu", "HKetterarbeid", "HKcopyIM", "HKcopyTLF"]
+        seksjoner["TrioSnarveier"].Push(k, "Enabled" k)
+
+    endringer := []
+    for seksjon, nokler in seksjoner
+        for nokkel in nokler {
+            verdi := IniRead(fil, seksjon, nokkel, "{QUICKERKEYS_MISSING}")
+            if (verdi != "{QUICKERKEYS_MISSING}")
+                endringer.Push({seksjon:seksjon, nokkel:nokkel, verdi:verdi})
+        }
+    if !endringer.Length {
+        MsgBox "Ingen støttede innstillinger ble funnet.", APP_NAVN, "Icon!"
+        return
+    }
+    valg := MsgBox("Fant " endringer.Length " støttede innstillinger. Importere dem til QuickerKeys?"
+        . "`n`nAktiv datamappe beholdes: " DATA_MAPPE
+        . "`nExcelFil og andre eksterne filstier endres ikke."
+        . "`nEksisterende INI sikkerhetskopieres før oppdatering.", APP_NAVN, "YesNo Icon?")
+    if (valg != "Yes")
+        return
+    try {
+        SikkerhetskopierIni()
+        for entry in endringer
+            SettInnst(entry.seksjon, entry.nokkel, entry.verdi)
+        Logg("Importerte " endringer.Length " INI-verdier fra ekstern fil")
+        Reload()
+    } catch as feil {
+        MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
+    }
+}
+
+SikkerhetskopierIni() {
+    if FileExist(INI_FIL) {
+        backup := INNST_MAPPE "\QuickerKeys-backup-" FormatTime(, "yyyyMMdd-HHmmss") "-" A_TickCount ".ini"
+        FileCopy INI_FIL, backup
+        return backup
+    }
+    return ""
+}
+
+; Gammel QuickKey v1.05 bruker Trio Attendant-menyer, IKKE vindusbytte.
+; Kilden blir aldri endret; støttede hurtigtaster importeres til [TrioSnarveier].
+ImporterGammelQuickKey(fil) {
+    oppgaver := TrioOppgaver()
+    importerte := []
+    ignorert := []
+    tastMap := Map()
+    for op in oppgaver {
+        tast := Trim(StrReplace(IniRead(fil, "Shortcuts", op.key, ""), '"', ""), " `t`r`n")
+        aktiv := StrLower(Trim(IniRead(fil, "Enabled", op.key, "off")))
+        if (tast = "")
+            continue
+        if !RegExMatch(tast, "^[!^+#]*[A-Za-z0-9]+$") {
+            ignorert.Push(op.key ": ukjent hurtigtast (" tast ")")
+            continue
+        }
+        paa := aktiv = "on" || aktiv = "1"
+        if paa {
+            konflikt := ""
+            if (tast = Innst("App", "VisTast", "^!m")
+                || tast = Innst("SMKontakt", "ManuellTast", "^!k"))
+                konflikt := "hurtigtasten brukes av QuickerKeys/SM Kontakt"
+            loop 4 {
+                ; Opprydning fra feil v3.0-import utføres under lagring nedenfor.
+                gammelFeil := (A_Index = 1 && IniRead(INI_FIL, "Vindusbytter", "Vindu1", "") = "Trio Agent ahk_exe msedge.exe"
+                    && tast = IniRead(INI_FIL, "Vindusbytter", "Tast1", ""))
+                    || (A_Index = 2 && IniRead(INI_FIL, "Vindusbytter", "Vindu2", "") = "Service Manager ahk_exe msedge.exe"
+                    && tast = IniRead(INI_FIL, "Vindusbytter", "Tast2", ""))
+                if (tast = Innst("Vindusbytter", "Tast" A_Index, "") && !gammelFeil)
+                    konflikt := "brukes av Vindusbytter " A_Index
+            }
+            if tastMap.Has(tast)
+                konflikt := "også brukt av " tastMap[tast]
+            if (konflikt != "") {
+                ignorert.Push(op.key ": " konflikt)
+                continue
+            }
+            tastMap[tast] := op.navn
+        }
+        importerte.Push({key:op.key, navn:op.navn, tast:tast, paa:paa})
+    }
+
+    kopitast := Trim(StrReplace(IniRead(fil, "Shortcuts", "HKCopy", ""), '"', ""), " `t`r`n")
+    if (kopitast != "" && !RegExMatch(kopitast, "^[!^+#]*[A-Za-z0-9]+$")) {
+        ignorert.Push("HKCopy: ugyldig kopitast " kopitast)
+        kopitast := ""
+    }
+    ikkeStottet := []
+    for key in ["HKLagreUtklipp", "HKCopyService", "HKHurtigtekst"]
+        if (IniRead(fil, "Shortcuts", key, "") != "")
+            ikkeStottet.Push(key)
+
+    rapport := "QuickKey v1.05 funnet (Trio Attendant).`n`n"
+    for item in importerte
+        rapport .= (item.paa ? "PÅ: " : "AV: ") item.navn "  —  " item.tast "`n"
+    if (kopitast != "")
+        rapport .= "Kopitast i Trio (HKCopy): " kopitast "`n"
+    if ikkeStottet.Length {
+        rapport .= "`nIkke støttet i QuickerKeys v3.0:`n"
+        for key in ikkeStottet
+            rapport .= "• " key "`n"
+    }
+    if ignorert.Length {
+        rapport .= "`nHoppet over pga. ugyldig tast eller konflikt:`n"
+        for feil in ignorert
+            rapport .= "• " feil "`n"
+    }
+    if (!importerte.Length && kopitast = "") {
+        MsgBox rapport "`nIngen støttede innstillinger å importere.", APP_NAVN, "Icon!"
+        return
+    }
+    rapport .= "`nDet opprettes lokal sikkerhetskopi av QuickerKeys.ini."
+        . "`nQuickKey sin config.ini og programmappe blir ikke endret."
+        . "`n`nVil du importere de støttede innstillingene?"
+    if (MsgBox(rapport, APP_NAVN, "YesNo Icon?") != "Yes")
+        return
+    try {
+        SikkerhetskopierIni()
+        ; Fjern KUN de to feilaktige Edge-mappingene fra den tidligere v3.0-importen.
+        feilId := ["Trio Agent ahk_exe msedge.exe", "Service Manager ahk_exe msedge.exe"]
+        for i, id in feilId {
+            if (IniRead(INI_FIL, "Vindusbytter", "Vindu" i, "") = id) {
+                for k in ["Vindu", "Navn", "Tast"]
+                    SettInnst("Vindusbytter", k i, "")
+            }
+        }
+        for item in importerte {
+            SettInnst("TrioSnarveier", item.key, item.tast)
+            SettInnst("TrioSnarveier", "Enabled" item.key, item.paa ? "on" : "off")
+        }
+        if (kopitast != "")
+            SettInnst("TrioSnarveier", "HKCopy", kopitast)
+        SettInnst("TrioSnarveier", "Aktiv", "1")
+        Logg("QuickKey v1.05: importerte " importerte.Length " Trio-snarveier; kildefil beholdt")
+        Reload()
+    } catch as feil {
+        MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
+    }
+}
+
+; Gir samme tydelige bekreftelse som gamle QuickKey «Start hurtigtekst».
+; Respekterer PÅ/AV-valgene; aktiverer ikke verktøy brukeren har slått av.
+StartQuickerKeys(*) {
+    meldinger := []
+    aktive := 0
+    for vt in VERKTOY_LISTE {
+        if !vt.Aktiv
+            continue
+        aktive++
+        if (vt is VT_Tekstflyt) {
+            if vt.Sync(false)
+                meldinger.Push("Tekstflyt: " vt.Koder.Count " hurtigtekster importert og klare.")
+            else
+                meldinger.Push("Tekstflyt: feil ved lasting – se Logg.")
+        } else if (vt is VT_TrioSnarveier) {
+            vt.Start()
+            meldinger.Push("Trio Snarveier: " vt.Registrerte.Count " taster registrert.")
+        } else if (vt is VT_Vindusbytter) {
+            vt.Registrer()
+            meldinger.Push("Vindusbytter: " vt.StatusTekst)
+        } else if (vt is VT_SMKontakt) {
+            meldinger.Push("SM Kontakt: " (vt.ErLart() ? "oppsett funnet" : "må læres opp først"))
+        }
+    }
+    rapport := "QuickerKeys " APP_VERSJON " er startet.`n"
+        . aktive " av " VERKTOY_LISTE.Length " verktøy er slått på.`n`n"
+    for melding in meldinger
+        rapport .= "• " melding "`n"
+    MsgBox rapport, APP_NAVN, "Iconi"
+}
+
 ; ---- App-innstillinger ----
 AutostartLnk() => A_Startup "\" APP_NAVN ".lnk"
 
@@ -635,12 +913,10 @@ class VT_Tekstflyt extends VT_Base {
     __New() {
         VT_Tekstflyt.Instans := this
         this.Koder.CaseSense := "Off"
-        this.ExcelFil := this.Hent("ExcelFil", TEKST_MAPPE "\Tekstflyt.xlsx")
-        ny := TEKST_MAPPE "\Tekstflyt.xlsx"
-        if (!FileExist(this.ExcelFil) && FileExist(ny)) {      ; gammel sti (f.eks. før flytting) – bruk filen i Tekstflyt-mappen
-            this.ExcelFil := ny
-            this.Lagre("ExcelFil", ny)
-        }
+        ; Respekter valgt Excel-fil selv hvis den er midlertidig utilgjengelig.
+        ; Aldri overstyr valget med en eksempel-/standardfil uten brukerens samtykke.
+        valgt := this.Hent("ExcelFil", "")
+        this.ExcelFil := valgt != "" ? valgt : TEKST_MAPPE "\Tekstflyt.xlsx"
         this.SjekkCb := ObjBindMethod(this, "SjekkEndring")
     }
 
@@ -653,12 +929,14 @@ class VT_Tekstflyt extends VT_Base {
         this.SyncK := this.Leg(Knapp(gui, "x" (x + kb + 12) " y" (y + 28) " w" kb " h40", "Synkroniser", ObjBindMethod(this, "Sync", true)))
         this.Leg(Knapp(gui, "x" (x + 2 * (kb + 12)) " y" (y + 28) " w" kb " h40", "Teksteditor", ObjBindMethod(this, "VisEditor")))
         Skrift(gui, "s9 c" TEMA.tekst)
-        this.Leg(Knapp(gui, "x" x " y" (y + 80) " w" kb " h32", "Velg Excel-fil…", ObjBindMethod(this, "VelgFil"), TEMA.aksent2))
+        this.Leg(Knapp(gui, "x" x " y" (y + 80) " w" (kb + 90) " h32", "Importer / velg Excel…", ObjBindMethod(this, "VelgFil"), TEMA.aksent2))
     }
 
     Hjelp() {
         return "•  Skriv en kode, f.eks. #løst, og trykk Mellomrom eller Enter.`n"
             . "•  Ny kode: «Teksteditor» → skriv kode og tekst → «Lagre i Excel».`n"
+            . "•  «Importer / velg Excel»: Ja = lag en lokal kopi, Nei = bruk filen der den ligger.`n"
+            . "•  Valgt fil beholdes ved omstart. Mangler den, får du feilmelding i stedet for at en annen fil lastes.`n"
             . "•  Endre eller slette koder: «Åpne Excel». Endringer hentes automatisk."
     }
 
@@ -671,37 +949,61 @@ class VT_Tekstflyt extends VT_Base {
         SetTimer this.SjekkCb, 0
     }
 
-    ; Lager Excel-filen hvis den mangler. Returnerer true hvis den finnes etterpå.
+    ; Lag kun eksempelregneark for en ny, tom installasjon.
+    ; Mangler en eksplisitt valgt fil, så IKKE lag en tom kopi eller bytt filsti.
     SikreFil() {
         if FileExist(this.ExcelFil)
             return true
+        std := TEKST_MAPPE "\Tekstflyt.xlsx"
+        if (StrLower(this.ExcelFil) != StrLower(std)) {
+            this.SettStatus("Valgt Excel-fil finnes ikke – velg en gyldig fil")
+            Logg("Tekstflyt: valgt Excel-fil mangler: " this.ExcelFil)
+            return false
+        }
+        if (this.Hent("ExcelFil", "") != "" && !FileExist(std)) {
+            this.SettStatus("Lagret Excel-fil mangler – importer den på nytt")
+            Logg("Tekstflyt: lagret standardfil mangler: " std)
+            return false
+        }
         try {
-            XlsxSkriv(this.ExcelFil, [
+            XlsxSkriv(std, [
                 ["#løst", "Hei!`n`nSaken er nå løst. Ta gjerne kontakt igjen hvis problemet kommer tilbake.`n`nMvh"],
                 ["#brannmur", "Henvendelsen er sendt videre til brannmur-gruppen for vurdering."]
             ])
-            Logg("Laget ny Excel-fil med eksempelkoder: " this.ExcelFil)
+            Logg("Opprettet eksempelfil ved førstegangsoppstart: " std)
             return true
         } catch as feil {
-            Logg("Klarte ikke å lage " this.ExcelFil ": " feil.Message)
+            Logg("Tekstflyt: kunne ikke opprette eksempelfil: " feil.Message)
+            this.SettStatus("Kunne ikke opprette eksempelfil – se Logg")
+            return false
         }
-        std := TEKST_MAPPE "\Tekstflyt.xlsx"
-        if (this.ExcelFil != std) {
-            this.SettFil(std)
-            return this.SikreFil()
-        }
-        return false
     }
 
     SettFil(fil) {
+        if !FileExist(fil)
+            throw Error("Excel-filen finnes ikke: " fil)
+        ; Prøv å lese filen FØR lagring, så en ugyldig fil ikke blir permanent valgt.
+        LesKoder(fil)
+        forrige := this.ExcelFil
         this.ExcelFil := fil
-        this.Lagre("ExcelFil", fil)
-        try this.FilK.Text := fil
+        try {
+            if !this.Sync(false)
+                throw Error("Klarte ikke å laste hurtigtekstene")
+            this.Lagre("ExcelFil", fil)
+            try this.FilK.Text := fil
+            Logg("Tekstflyt: ny Excel-fil aktiv: " fil)
+        } catch as feil {
+            this.ExcelFil := forrige
+            this.Sync(false)
+            throw feil
+        }
     }
 
     Sync(visMelding := false, *) {
         if !this.SikreFil() {
-            this.SettStatus("Fant ikke Excel-filen – se Logg")
+            if visMelding
+                MsgBox "Den valgte Excel-filen ble ikke funnet:`n" this.ExcelFil
+                    . "`n`nBruk «Importer / velg Excel» og velg riktig fil.", APP_NAVN, "Icon!"
             return false
         }
         try {
@@ -718,60 +1020,79 @@ class VT_Tekstflyt extends VT_Base {
         this.SisteFeil := ""
 
         HotIf TekstflytKrit
-        for kode in this.Koder                      ; slå av koder som er fjernet
+        for kode in this.Koder
             if !nye.Has(kode)
                 try Hotstring(":XC1:" kode, , false)
         feilet := 0
         for kode, tekst in nye {
-            try {
-                Hotstring(":XC1:" kode, TekstflytSettInn, true)
-            } catch as feil {
+            try Hotstring(":XC1:" kode, TekstflytSettInn, true)
+            catch as feil {
                 feilet++
                 Logg("Tekstflyt: kunne ikke lage koden " kode ": " feil.Message)
             }
         }
         HotIf
-
         this.Koder := nye
         try this.SistEndret := FileGetTime(this.ExcelFil, "M")
         this.SettStatus(nye.Count " koder lastet  ·  synkronisert " FormatTime(, "HH:mm"))
-        Logg("Tekstflyt: synkronisert " nye.Count " koder" (feilet ? " (" feilet " feilet)" : ""))
+        Logg("Tekstflyt: synkronisert " nye.Count " koder fra " this.ExcelFil (feilet ? " (" feilet " feilet)" : ""))
         if visMelding {
             knapp := this.SyncK
             knapp.Text := "Synkronisert!"
             SetTimer () => knapp.Text := "Synkroniser", -1500
         }
-        return true
+        return feilet = 0
     }
 
     SjekkEndring() {
         if (this.SistEndret = "" || !FileExist(this.ExcelFil))
             return
-        try {
-            endret := FileGetTime(this.ExcelFil, "M")
-        } catch {
+        try endret := FileGetTime(this.ExcelFil, "M")
+        catch
             return
-        }
         if (endret != this.SistEndret)
             this.Sync(false)
     }
 
     ApneExcel(*) {
         if !this.SikreFil()
-            return MsgBox("Klarte ikke å lage Excel-filen. Se Logg.", APP_NAVN, "Icon!")
-        try {
-            Run '"' this.ExcelFil '"'
-        } catch as feil {
+            return MsgBox("Den valgte Excel-filen finnes ikke. Bruk «Importer / velg Excel».", APP_NAVN, "Icon!")
+        try Run '"' this.ExcelFil '"'
+        catch as feil
             MsgBox "Klarte ikke å åpne filen:`n" this.ExcelFil "`n`n" feil.Message, APP_NAVN, "Icon!"
-        }
     }
 
     VelgFil(*) {
-        valgt := FileSelect(1, this.ExcelFil, "Velg Excel-filen med koder", "Excel (*.xlsx; *.xlsm)")
+        valgt := FileSelect(1, this.ExcelFil, "Importer eller velg Excel-fil", "Excel (*.xlsx; *.xlsm)")
         if (valgt = "")
             return
-        this.SettFil(valgt)
-        this.Sync(true)
+        try antall := LesKoder(valgt).Count
+        catch as feil {
+            MsgBox "Kunne ikke lese Excel-filen:`n" feil.Message, APP_NAVN, "Icon!"
+            return
+        }
+        valg := MsgBox("Fant " antall " tekstkoder i:`n" valgt
+            . "`n`nJA: Importer en egen kopi til QuickerKeys under AppData."
+            . "`nNEI: Behold filen på den valgte plasseringen og bruk den direkte."
+            . "`nAVBRYT: Ikke gjør endringer.", APP_NAVN, "YesNoCancel Icon?")
+        if (valg = "Cancel")
+            return
+        maal := valgt
+        if (valg = "Yes") {
+            SplitPath valgt, , , &ext
+            maal := TEKST_MAPPE "\Tekstflyt-importert-" FormatTime(, "yyyyMMdd-HHmmss") "-" A_TickCount "." ext
+            try FileCopy valgt, maal
+            catch as feil {
+                MsgBox "Kunne ikke kopiere Excel-filen:`n" feil.Message, APP_NAVN, "Icon!"
+                return
+            }
+        }
+        try {
+            this.SettFil(maal)
+            Tip("Tekstflyt: " antall " koder lastet ✓", 2500)
+        } catch as feil {
+            MsgBox "Filen ble ikke aktivert:`n" feil.Message, APP_NAVN, "Icon!"
+        }
     }
 
     ; Legger til / oppdaterer en kode i Excel-filen. Returnerer true hvis ny.
@@ -1093,7 +1414,7 @@ class VT_SMKontakt extends VT_Base {
         this.Sjekk()                                   ; vis med en gang hva som leses
     }
 
-    ErLart() => this.Cfg["SMVindu"] != "" && this.Cfg["KontaktX"] != ""
+    ErLart() => this.Cfg["SMVindu"] != "" && InStr(this.Cfg["SMVindu"], "Service Manager") && this.Cfg["KontaktX"] != ""
 
     OppdaterTekster() {
         sm := this.Cfg["KontaktX"] != "" ? VennligNavn(this.Cfg["SMVindu"]) (this.Cfg["KnappX"] != "" ? "  ·  knapp lært" : "  ·  ingen knapp") : "ikke lært ennå – trykk «Lær oppsett»"
@@ -1483,8 +1804,10 @@ class VT_SMKontakt extends VT_Base {
         alder := naa - st.SakTid
 
         if nySak {
-            ; Siden er ikke lesbar, eller viser fortsatt forrige samtale -> les med vinduet framme (maks 3 forsøk)
-            if (this.WebUtdatert(st, les) && alder <= this.Ventetid && alder > 1200
+            ; Les normalt Trio Web i bakgrunnen slik v2.8 gjorde.
+            ; Ikke stjel fokus fra video/bruker automatisk; fallback må eksplisitt tillates i INI.
+            if (this.Hent("TillatTrioFokus", "0") = "1"
+                && this.WebUtdatert(st, les) && alder <= this.Ventetid && alder > 1200
                 && st.FokusForsok < 3 && naa - st.SisteFokus > 2500) {
                 st.FokusForsok += 1, st.SisteFokus := naa
                 ny := this.LesWebMedFokus(les.hwnd)
@@ -1571,7 +1894,7 @@ class VT_SMKontakt extends VT_Base {
 
         smHwnd := 0
         loop 3 {                                       ; Trio kan ta fokus – prøv opptil 3 ganger
-            h := AktiverFane(this.Cfg["SMVindu"])
+            h := AktiverFane(this.Cfg["SMVindu"], false)  ; SM Kontakt skal aldri bla gjennom urelaterte Edge-faner
             if h {
                 Sleep 300
                 if this.ErTrygt(h) {
@@ -1618,6 +1941,12 @@ class VT_SMKontakt extends VT_Base {
     ErTrygt(smHwnd) {
         if !WinActive("ahk_id " smHwnd)
             return false
+        ; Riktig Edge-vindu er ikke nok: avbryt hvis aktiv fane er f.eks. YouTube.
+        if RegExMatch(this.Cfg["SMVindu"], "i)^(.*?)\s+ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe", &sm) {
+            if (!InStr(Trim(sm[1]), "Service Manager")
+                || !NettleserFaneBekreftet(smHwnd, Trim(sm[1])))
+                return false
+        }
         exe := this.TrioExe()
         if (exe != "" && WinActive("ahk_exe " exe))
             return false
@@ -1759,9 +2088,25 @@ class VT_SMKontakt extends VT_Base {
             this.LaerInfo := "Trio Web: " WinGetTitle("ahk_id " win)
             this.LaerSteg := 3                        ; ingen legg på-knapp for Trio Web
         } else if (this.LaerSteg = 3) {
-            this.Ny["SMVindu"] := VindusId(win), this.Ny["KontaktX"] := ox, this.Ny["KontaktY"] := oy
+            ; Bruk en stabil Service Manager-identifikator, ikke Edge sin tilfeldige fanetittel.
+            ; Stopper læring hvis det er YouTube eller en annen side som er aktiv.
+            if ErNettleser(win) {
+                if !NettleserFaneBekreftet(win, "Service Manager") {
+                    Logg("SM Kontakt: læring – klikket i Edge, men kunne ikke bekrefte Service Manager-fanen")
+                    Tip("Fant ikke bekreftet Service Manager-fane. Åpne SM 02 og klikk i Kontakt-feltet.", 4200)
+                    return
+                }
+                smId := "Service Manager ahk_exe " WinGetProcessName("ahk_id " win)
+            } else {
+                smId := VindusId(win)
+                if !InStr(smId, "Service Manager") {
+                    Tip("Dette ser ikke ut som Service Manager. Klikk i riktig Kontakt-felt.", 4000)
+                    return
+                }
+            }
+            this.Ny["SMVindu"] := smId, this.Ny["KontaktX"] := ox, this.Ny["KontaktY"] := oy
             this.SmHwnd := win
-            this.LaerInfo .= "`nService Manager: " WinGetTitle("ahk_id " win)
+            this.LaerInfo .= "`nService Manager: " smId
             this.LaerSteg := 4
         } else if (this.LaerSteg = 4) {
             if (win != this.SmHwnd)
@@ -2116,37 +2461,146 @@ ErNettleser(hwnd) {
     return false
 }
 
-; Bytter til fanen/vinduet. Er det en nettleserfane som ikke er aktiv, blas gjennom fanene med Ctrl+Tab.
-AktiverFane(id) {
-    hwnd := FinnVindu(id, false)
-    if hwnd {
-        WinActivate "ahk_id " hwnd
-        return WinWaitActive("ahk_id " hwnd, , 2) ? hwnd : 0
+; Bruk kun aktiv fane eller UIA til å finne målet i SM Kontakt.
+; Vindusbytter kan valgfritt fortsatt bruke Ctrl+Tab ved eksplisitt hurtigtast.
+NettleserFaneBekreftet(hwnd, nokkelord) {
+    if !hwnd
+        return false
+    try {
+        if InStr(WinGetTitle("ahk_id " hwnd), nokkelord)
+            return true
+        rot := UiaFraVindu(hwnd)
+        if !IsObject(rot)
+            return false
+        for fane in UiaFinnAlle(rot, 50019) {
+            if (InStr(UiaStreng(fane, 30005), nokkelord) && UiaBool(fane, 30079))
+                return true
+        }
     }
-    if !RegExMatch(id, "^(.*?)\s*ahk_exe\s+(\S+)", &del) || Trim(del[1]) = ""
+    return false
+}
+
+AktiverFane(id, tillatFaneblading := true) {
+    if (id = "")
         return 0
-    nokkelord := Trim(del[1]), exe := del[2]
-    egen := ProcessExist()
-    for w in WinGetList("ahk_exe " exe) {
+    nettleser := RegExMatch(id, "i)^(.*?)\s+ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe$", &del)
+    if !nettleser {
+        hwnd := FinnVindu(id, false)
+        if !hwnd
+            return 0
         try {
-            if (WinGetPID("ahk_id " w) = egen || WinGetTitle("ahk_id " w) = "" || !(WinGetStyle("ahk_id " w) & 0x10000000))
+            if (WinGetMinMax("ahk_id " hwnd) = -1)
+                WinRestore "ahk_id " hwnd
+            WinActivate "ahk_id " hwnd
+            return WinWaitActive("ahk_id " hwnd, , 2) ? hwnd : 0
+        }
+        return 0
+    }
+
+    nokkelord := Trim(del[1]), exe := del[2] ".exe"
+    if (nokkelord = "")
+        return 0
+    ; SM Kontakt nekter å bruke tilfeldige korte lærte titler (f.eks. "! W$").
+    if (!tillatFaneblading && !InStr(nokkelord, "Service Manager")) {
+        Logg("SM Kontakt: avviser ugyldig mål-fane. Lær Service Manager på nytt.")
+        return 0
+    }
+
+    ; 1: Finn vindu med riktig fane allerede valgt – uten å påvirke andre vinduer.
+    for hwnd in WinGetList("ahk_exe " exe) {
+        if !NettleserFaneBekreftet(hwnd, nokkelord)
+            continue
+        try {
+            if (WinGetMinMax("ahk_id " hwnd) = -1)
+                WinRestore "ahk_id " hwnd
+            WinActivate "ahk_id " hwnd
+            if (WinWaitActive("ahk_id " hwnd, , 2) && NettleserFaneBekreftet(hwnd, nokkelord))
+                return hwnd
+        }
+    }
+
+    ; 2: Finn en kjent UIA-tab uten å endre faner i feil vindu.
+    for hwnd in WinGetList("ahk_exe " exe) {
+        if !UiaHarFane(hwnd, nokkelord)
+            continue
+        try {
+            if (WinGetMinMax("ahk_id " hwnd) = -1)
+                WinRestore "ahk_id " hwnd
+            WinActivate "ahk_id " hwnd
+            if !WinWaitActive("ahk_id " hwnd, , 2)
                 continue
-            WinActivate "ahk_id " w
-            if !WinWaitActive("ahk_id " w, , 1)
-                continue
-            start := WinGetTitle("ahk_id " w)
-            loop 30 {
-                Send "^{Tab}"
-                Sleep 150
-                tittel := WinGetTitle("ahk_id " w)
-                if InStr(tittel, nokkelord)
-                    return w
-                if (tittel = start)
-                    break
+            if UiaVelgFane(hwnd, nokkelord)
+                return hwnd
+        }
+    }
+
+    ; 3: Kun for brukerutløst Vindusbytter. SM Kontakt passerer false.
+    if tillatFaneblading {
+        for hwnd in WinGetList("ahk_exe " exe) {
+            try {
+                if (WinGetTitle("ahk_id " hwnd) = "" || !(WinGetStyle("ahk_id " hwnd) & 0x10000000))
+                    continue
+                if (WinGetMinMax("ahk_id " hwnd) = -1)
+                    WinRestore "ahk_id " hwnd
+                WinActivate "ahk_id " hwnd
+                if !WinWaitActive("ahk_id " hwnd, , 1)
+                    continue
+                bytter := 0
+                loop 30 {
+                    if !WinActive("ahk_id " hwnd)
+                        break
+                    Send "^{Tab}"
+                    bytter++
+                    Sleep 160
+                    if NettleserFaneBekreftet(hwnd, nokkelord)
+                        return hwnd
+                }
+                if WinActive("ahk_id " hwnd) {
+                    loop bytter {
+                        Send "^+{Tab}"
+                        Sleep 35
+                    }
+                }
             }
         }
     }
+    Logg("Vindussøk: finner ikke verifisert fane for " nokkelord " (" exe "). Ingen innskriving utført.")
     return 0
+}
+
+UiaHarFane(hwnd, nokkelord) {
+    try {
+        rot := UiaFraVindu(hwnd)
+        if IsObject(rot) {
+            for element in UiaFinnAlle(rot, 50019)
+                if InStr(UiaStreng(element, 30005), nokkelord)
+                    return true
+        }
+    }
+    return false
+}
+
+; Microsoft UI Automation: TabItem 50019, SelectionItemPattern 10010.
+UiaVelgFane(hwnd, nokkelord) {
+    try {
+        rot := UiaFraVindu(hwnd)
+        if !IsObject(rot)
+            return false
+        for element in UiaFinnAlle(rot, 50019) {
+            if !InStr(UiaStreng(element, 30005), nokkelord)
+                continue
+            ptr := 0
+            ComCall(16, element, "Int", 10010, "Ptr*", &ptr)
+            if !ptr
+                continue
+            valg := ComValue(13, ptr)
+            ComCall(3, valg)
+            Sleep 180
+            if NettleserFaneBekreftet(hwnd, nokkelord)
+                return true
+        }
+    }
+    return false
 }
 
 ; Lager en vindus-ID som finner vinduet igjen senere (også etter omstart):
@@ -2398,6 +2852,13 @@ UiaTekst(hwnd) {
 ; Teksten på nettsiden i et nettleservindu (aktiv fane). Dokument-elementene huskes per vindu.
 UiaDokTekst(hwnd) {
     static dokumenter := Map()
+    static sisteFane := Map()
+    ; Et Edge-vindu kan bytte mellom Trio, YouTube og Service Manager.
+    ; Gjenbruk ikke cached Document-elementer etter at aktiv fane er endret.
+    aktivTittel := WinGetTitle("ahk_id " hwnd)
+    if (sisteFane.Has(hwnd) && sisteFane[hwnd] != aktivTittel && dokumenter.Has(hwnd))
+        dokumenter.Delete(hwnd)
+    sisteFane[hwnd] := aktivTittel
     if dokumenter.Has(hwnd) {
         tekst := ""
         for dok in dokumenter[hwnd]
@@ -2470,6 +2931,217 @@ ProvRegex(tekst, uttrykk) {
     return 0
 }
 
+
+; =====================================================================
+;  TRIO SNARVEIER – ekte menyhandlinger fra QuickKey v1.05
+;  Forskjellig fra Vindusbytter: Agentvinduet og Tjenestevindu er
+;  handlinger under "Vis" i Trio Attendant, ikke egne Edge-vinduer.
+; =====================================================================
+TrioOppgaver() => [
+    {key:"HKAgentvindu", navn:"Vis Agentvindu", beskrivelse:"Trio → Vis → Agentvinduet"},
+    {key:"HkTjenestevindu", navn:"Vis Tjenestevindu", beskrivelse:"Trio → Vis → Tjenestevindu"},
+    {key:"HKetterarbeid", navn:"Legg til etterarbeid", beskrivelse:"Trio → Sett inn → Etterarbeid"},
+    {key:"HKcopyIM", navn:"Kopier IM / Kommentar", beskrivelse:"Bytt kopifelt midlertidig til Kommentar"},
+    {key:"HKcopyTLF", navn:"Kopier telefonnummer", beskrivelse:"Bytt kopifelt midlertidig til A-nr"}
+]
+
+class VT_TrioSnarveier extends VT_Base {
+    Navn := "Trio Snarveier"
+    Beskrivelse := "QuickKey-funksjoner direkte i Trio Attendant, ikke bare vindusbytte."
+    Felt := ""
+    Registrerte := ""
+
+    __New() {
+        this.Felt := Map()
+        this.Registrerte := Map()
+    }
+
+    Hjelp() {
+        return "•  Agentvindu og Tjenestevindu åpnes gjennom Vis-menyen i Trio Attendant.`n"
+            . "•  Etterarbeid bruker den gamle Trio-menysekvensen.`n"
+            . "•  IM og telefonnummer bytter kopifelt i Trio midlertidig; kopitast kommer fra HKCopy.`n"
+            . "•  Velg hurtigtast og aktiver den på raden, deretter trykk «Lagre snarveier».`n"
+            . "•  Test med syntetiske data før du bruker funksjonene i produksjon."
+    }
+
+    ByggPanel(gui, x, y, b) {
+        Skrift(gui, "s9 bold c" TEMA.dempet)
+        this.Leg(gui.AddText("x" x " y" y " w230 h22 Background" TEMA.bg, "TRIO-HANDLING"))
+        this.Leg(gui.AddText("x" (x+236) " y" y " w145 h22 Background" TEMA.bg, "HURTIGTAST"))
+        this.Leg(gui.AddText("x" (x+386) " y" y " w90 h22 Background" TEMA.bg, "AKTIV"))
+        for i, op in TrioOppgaver() {
+            ry := y + 28 + (i-1)*47
+            Skrift(gui, "s9 c" TEMA.tekst)
+            this.Leg(gui.AddText("x" x " y" (ry+3) " w225 h28 +0x200 Background" TEMA.bg, op.navn))
+            edit := this.Leg(gui.AddEdit("x" (x+236) " y" ry " w145 h29 Background" TEMA.kort, this.Hent(op.key, "")))
+            paa := (StrLower(this.Hent("Enabled" op.key, "off")) = "on")
+            sjekk := this.Leg(gui.AddCheckBox("x" (x+402) " y" (ry+4) " w55 h23" (paa ? " Checked" : ""), "På"))
+            this.Felt[op.key] := {edit:edit, sjekk:sjekk}
+        }
+        yKnapp := y + 28 + TrioOppgaver().Length * 47 + 6
+        Skrift(gui, "s10 bold c" TEMA.tekst)
+        this.Leg(Knapp(gui, "x" x " y" yKnapp " w175 h34", "Lagre snarveier", ObjBindMethod(this, "LagreSnarveier")))
+        Skrift(gui, "s9 c" TEMA.dempet)
+        this.Leg(gui.AddText("x" (x+190) " y" (yKnapp+2) " w" (b-190) " h42 Background" TEMA.bg
+            , "Kopitast i Trio (HKCopy) kan importeres fra gamle QuickKey."))
+    }
+
+    Konflikt(tast, egen) {
+        if (tast = Innst("App", "VisTast", "^!m"))
+            return "Vis/skjul QuickerKeys"
+        if (tast = Innst("SMKontakt", "ManuellTast", "^!k"))
+            return "SM Kontakt"
+        loop 4 {
+            if (tast = Innst("Vindusbytter", "Tast" A_Index, "") && tast != "")
+                return "Vindusbytter " A_Index
+        }
+        for op in TrioOppgaver()
+            if (op.key != egen && StrLower(this.Hent("Enabled" op.key, "off")) = "on"
+                && this.Hent(op.key, "") = tast)
+                return op.navn
+        return ""
+    }
+
+    LagreSnarveier(*) {
+        sett := Map()
+        for op in TrioOppgaver() {
+            felt := this.Felt[op.key]
+            tast := Trim(felt.edit.Value)
+            paa := felt.sjekk.Value = 1
+            if (paa && (tast = "" || !RegExMatch(tast, "^[!^+#]*[A-Za-z0-9]+$"))) {
+                MsgBox "Ugyldig hurtigtast for " op.navn ": " tast, APP_NAVN, "Icon!"
+                return
+            }
+            if (paa) {
+                for bruktTast, navn in sett
+                    if (bruktTast = tast) {
+                        MsgBox "Hurtigtasten " tast " er også brukt av " navn, APP_NAVN, "Icon!"
+                        return
+                    }
+                sett[tast] := op.navn
+                konflikt := this.Konflikt(tast, op.key)
+                if (konflikt != "")
+                    return MsgBox("Hurtigtasten " tast " er allerede i bruk av " konflikt, APP_NAVN, "Icon!")
+            }
+        }
+        try {
+            for op in TrioOppgaver() {
+                felt := this.Felt[op.key]
+                this.Lagre(op.key, Trim(felt.edit.Value))
+                this.Lagre("Enabled" op.key, felt.sjekk.Value = 1 ? "on" : "off")
+            }
+            this.Stopp()
+            if this.Aktiv
+                this.Start()
+            Tip("Trio-snarveiene er lagret", 2000)
+        } catch as feil {
+            MsgBox "Kunne ikke lagre snarveiene:`n" feil.Message, APP_NAVN, "Icon!"
+        }
+    }
+
+    Start() {
+        this.Stopp()
+        antall := 0
+        for op in TrioOppgaver() {
+            tast := this.Hent(op.key, "")
+            if (tast = "" || StrLower(this.Hent("Enabled" op.key, "off")) != "on")
+                continue
+            konflikt := this.Konflikt(tast, op.key)
+            if (konflikt != "") {
+                Logg("Trio Snarveier: " op.navn " har konflikt med " konflikt)
+                continue
+            }
+            try {
+                Hotkey tast, ObjBindMethod(this, "Kjor", op.key), "On"
+                this.Registrerte[op.key] := tast
+                antall++
+            } catch as feil {
+                Logg("Trio Snarveier: " op.navn " kunne ikke registreres: " feil.Message)
+            }
+        }
+        this.SettStatus(antall " av " TrioOppgaver().Length " Trio-snarveier aktive")
+    }
+
+    Stopp() {
+        for key, tast in this.Registrerte
+            try Hotkey tast, "Off"
+        this.Registrerte := Map()
+    }
+
+    AktiverTrio() {
+        hwnd := FinnVindu(Innst("SMKontakt", "TrioVindu", "Trio Attendant"))
+        if !hwnd
+            hwnd := FinnVindu("Trio Attendant")
+        if (!hwnd || ErNettleser(hwnd))
+            throw Error("Fant ikke Trio Attendant (desktop-programmet).")
+        if (WinGetMinMax("ahk_id " hwnd) = -1)
+            WinRestore "ahk_id " hwnd
+        WinActivate "ahk_id " hwnd
+        if !WinWaitActive("ahk_id " hwnd, , 2)
+            throw Error("Trio Attendant ble ikke aktivt.")
+        return hwnd
+    }
+
+    Kjor(nokkel, *) {
+        forrige := WinExist("A")
+        try {
+            hwnd := this.AktiverTrio()
+            id := "ahk_id " hwnd
+            switch nokkel {
+                case "HKAgentvindu":
+                    MenuSelect id,, "Vis", "Agentvinduet"
+                case "HkTjenestevindu":
+                    MenuSelect id,, "Vis", "Tjenestevindu"
+                case "HKetterarbeid":
+                    MenuSelect id,, "Sett inn", "Etterarbeid"
+                    if !WinWaitActive("Sett inn", , 2)
+                        throw Error("Vinduet «Sett inn» åpnet seg ikke.")
+                    Send "{Down 2}^{Enter}"
+                case "HKcopyIM":
+                    this.KopierMedFelt("Kommentar", id)
+                case "HKcopyTLF":
+                    this.KopierMedFelt("A-nr", id)
+            }
+            Logg("Trio Snarveier: utførte " nokkel)
+        } catch as feil {
+            Logg("Trio Snarveier: FEIL " nokkel " – " feil.Message)
+            Tip("Trio-snarvei feilet – se Logg", 2400)
+        } finally {
+            if (forrige && WinExist("ahk_id " forrige))
+                try WinActivate "ahk_id " forrige
+        }
+    }
+
+    KopierMedFelt(felt, trioId) {
+        ; Bevar gammel funksjon fra QuickKey, men gjenopprett IDM Username også ved feil.
+        kopitast := this.Hent("HKCopy", "^d")
+        if (kopitast = "")
+            throw Error("HKCopy er ikke konfigurert.")
+        try {
+            MenuSelect trioId,, "Fil", "Innstillinger..."
+            if !WinWaitActive("Innstillinger", , 2)
+                throw Error("Trio-innstillingene ble ikke åpnet.")
+            ControlChooseIndex 3, "SysTabControl321", "Innstillinger"
+            ControlChooseString felt, "ComboBox1", "Innstillinger"
+            ControlClick "Button3", "Innstillinger"
+            if !WinWaitActive(trioId, , 2)
+                throw Error("Fikk ikke fokus tilbake til Trio.")
+            Send kopitast
+        } finally {
+            try {
+                WinActivate trioId
+                MenuSelect trioId,, "Fil", "Innstillinger..."
+                if WinWaitActive("Innstillinger", , 2) {
+                    ControlChooseIndex 3, "SysTabControl321", "Innstillinger"
+                    ControlChooseString "IDM Username", "ComboBox1", "Innstillinger"
+                    ControlClick "Button3", "Innstillinger"
+                }
+            } catch as feil {
+                Logg("Trio Snarveier: klarte ikke å gjenopprette IDM Username: " feil.Message)
+            }
+        }
+    }
+}
 
 ; =====================================================================
 ;  VERKTØY: VINDUSBYTTER

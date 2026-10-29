@@ -1,0 +1,15 @@
+# Lokale brukerinnstillinger, testdata og logger
+*.ini
+*.log
+*.cache
+*.xlsx
+*.xlsm
+*.bak
+
+# Midlertidige og lokale filer
+*.tmp
+*.swp
+~$*
+*.ahk~
+Thumbs.db
+.DS_Store
