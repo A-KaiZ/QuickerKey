@@ -1127,6 +1127,10 @@ class VT_Tekstflyt extends VT_Base {
         }
         if ny
             rader.Push([kode, tekst])
+        ; Makrobaserte filer må redigeres via Excel COM; den interne skriveren
+        ; ville erstattet .xlsm med en vanlig .xlsx og fjernet makroene.
+        if RegExMatch(this.ExcelFil, "i)\.xlsm$")
+            throw Error("En .xlsm-fil krever Excel for sikker redigering.")
         ; Den interne XLSX-skriveren gjenskaper ark 1. Behold alltid originalen.
         backup := this.ExcelFil ".backup-" FormatTime(, "yyyyMMdd-HHmmss") "-" A_TickCount ".xlsx"
         FileCopy this.ExcelFil, backup
@@ -3116,8 +3120,7 @@ TaOppEnTast(sekunder := 8) {
     if (ih.EndReason != "EndKey" || ih.EndKey = "Escape")
         return ""
     em := ih.EndMods
-    return (InStr(em, "^") ? "^" : "") (InStr(em, "!") ? "!" : "")
-        . (InStr(em, "+") ? "+" : "") (InStr(em, "#") ? "#" : "") ih.EndKey
+    return (InStr(em, "^") ? "^" : "") (InStr(em, "!") ? "!" : "") (InStr(em, "+") ? "+" : "") (InStr(em, "#") ? "#" : "") ih.EndKey
 }
 
 ErTegnTast(tast) {
@@ -3150,7 +3153,9 @@ class VT_TrioSnarveier extends VT_Base {
         return "•  Agentvindu og Tjenestevindu åpnes gjennom Vis-menyen i Trio Attendant.`n"
             . "•  Etterarbeid bruker den gamle Trio-menysekvensen.`n"
             . "•  IM og telefonnummer bytter kopifelt i Trio midlertidig; kopitast kommer fra HKCopy.`n"
-            . "•  Velg hurtigtast og aktiver den på raden, deretter trykk «Lagre snarveier».`n"
+            . "•  Trykk «Velg tast…», deretter ønsket tastekombinasjon eller et tegn.`n"
+            . "•  Ett tegn uten Ctrl/Alt/Win er aktivt kun når Trio Attendant har fokus.`n"
+            . "•  Trykk «Lagre snarveier» for å aktivere valgene.`n"
             . "•  Test med syntetiske data før du bruker funksjonene i produksjon."
     }
 
