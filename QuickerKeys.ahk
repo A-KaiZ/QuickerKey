@@ -27,20 +27,21 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "2.9"
+global APP_VERSJON := "3.0"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
 global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
 global LOGG_MAPPE  := DATA_MAPPE "\Logg"
 global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
-global HOVED := "", APP_B := 700, APP_H := 480, INNHOLD_X := 184, INNHOLD_B := 492
+global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
 
 ; ---------------- Oppstart ----------------
 global FLYTTET := LagMappestruktur()
 SikreIni()
+TEMA := TemaPalett(Innst("App", "Tema", "Midnatt"))
 RyddGamleLogger()
 lukketListe := LukkGamleSkript()
 Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser en tekstkode
@@ -261,7 +262,7 @@ ByggHovedvindu() {
     for vt in VERKTOY_LISTE
         navValg.Push(vt.Navn)
     navValg.Push("Logg", "Innstillinger")
-    APP_H := Max(480, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + 40)
+    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + 40)
 
     HOVED := Gui("-MaximizeBox", APP_NAVN)
     HOVED.BackColor := TEMA.bg
@@ -369,6 +370,12 @@ ByggInnstillingerPanel() {
     Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne programmappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 192) " y" y " w180 h34", "Avslutt programmet", (*) => ExitApp(), TEMA.av))
 
+    y += 52
+    Skrift(HOVED, "s9 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", "Importer konfigurasjon…", ImporterKonfigurasjon, TEMA.aksent))
+    Reg(pn, Knapp(HOVED, "x" (x + 198) " y" y " w132 h34", "Themes…", VisTemaer, TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" (x + 340) " y" y " w152 h34", "Last inn på nytt", (*) => Reload(), TEMA.aksent2))
+
     ; Utviklerkreditering nederst på Innstillinger-siden.
     Skrift(HOVED, "s9 bold c" TEMA.dempet)
     Reg(pn, HOVED.AddText("x" x " y" (APP_H - 108) " w" b " h22 Background" TEMA.bg, "Developers"))
@@ -425,8 +432,10 @@ HjelpTekst(side) {
         case "Innstillinger":
             return "•  Velg om programmet skal starte med Windows, og om det skal starte skjult.`n"
                 . "•  Hurtigtast: klikk i feltet, trykk tastene, trykk «Bruk».`n"
-                . "•  Programmappen har tre undermapper: Innstillinger, Tekstflyt og Logg.`n"
-                . "•  Mappe: " DATA_MAPPE
+                . "•  «Importer konfigurasjon» støtter ny INI og eldre QuickKey-vindussnarveier.`n"
+                . "•  «Themes» velger farger; programmet starter på nytt ved bytte.`n"
+                . "•  «Last inn på nytt» aktiverer endringer du har gjort direkte i INI-filen.`n"
+                . "•  Data: " DATA_MAPPE
     }
     return ""
 }
@@ -549,6 +558,175 @@ OppdaterOversikt(vt) {
         return
     status := vt.Aktiv ? vt.StatusTekst : "Slått av"
     OVERSIKT[vt.Id].status.Text := vt.Beskrivelse "`n" (status != "" ? "• " status : "")
+}
+
+; Fire paletter. Tema leses fra INI ved oppstart, og endringer trer i kraft etter Reload().
+TemaNavn() => ["Midnatt", "Grafitt", "Skog", "Lys"]
+
+TemaPalett(navn) {
+    switch navn {
+        case "Grafitt":
+            return {bg:"191B22", kort:"282B35", nav:"111319", aksent:"655DD6", aksent2:"42435F"
+                , tekst:"F2F3F7", dempet:"AEB5C3", paa:"279D76", av:"566071", linje:"39404D"}
+        case "Skog":
+            return {bg:"10251F", kort:"1A362D", nav:"0B1C18", aksent:"267E6B", aksent2:"285D50"
+                , tekst:"F0F8F2", dempet:"A4C2B5", paa:"259D77", av:"546D64", linje:"33594A"}
+        case "Lys":
+            return {bg:"F1F5F9", kort:"E2EAF3", nav:"CBD9EA", aksent:"A7D4FF", aksent2:"D2E4F5"
+                , tekst:"12243D", dempet:"405E7A", paa:"B9E6D0", av:"C6D0DD", linje:"ADBED2"}
+        default:
+            return {bg:"0F1E3A", kort:"16294D", nav:"0B1730", aksent:"2F7BEA", aksent2:"24497F"
+                , tekst:"E8EEF9", dempet:"8FA3C7", paa:"1FA97A", av:"56637D", linje:"1E3560"}
+    }
+}
+
+VisTemaer(*) {
+    g := Gui("+Owner" HOVED.Hwnd " -MinimizeBox", "Themes – " APP_NAVN)
+    g.BackColor := TEMA.bg
+    Skrift(g, "s13 bold c" TEMA.tekst)
+    g.AddText("x20 y15 w360 h28 Background" TEMA.bg, "Velg tema")
+    Skrift(g, "s9 c" TEMA.dempet)
+    g.AddText("x20 y54 w360 h24 Background" TEMA.bg, "Temaet brukes etter en automatisk omstart.")
+    Skrift(g, "s10 c000000")
+    liste := g.AddDropDownList("x20 y85 w360 R4", TemaNavn())
+    for i, navn in TemaNavn()
+        if (navn = Innst("App", "Tema", "Midnatt"))
+            liste.Choose(i)
+    Skrift(g, "s10 bold c" TEMA.tekst)
+    Knapp(g, "x20 y137 w175 h36", "Bruk tema", (*) => LagreTema(g, liste.Text))
+    Knapp(g, "x205 y137 w175 h36", "Avbryt", (*) => g.Destroy(), TEMA.aksent2)
+    g.OnEvent("Escape", (*) => g.Destroy())
+    g.Show("w400 h190")
+}
+
+LagreTema(vindu, navn) {
+    if !InStr("|" StrJoinTemaer() "|", "|" navn "|")
+        return
+    try {
+        SettInnst("App", "Tema", navn)
+        Logg("Endret tema til " navn)
+        vindu.Destroy()
+        Reload()
+    } catch as feil {
+        MsgBox "Kunne ikke lagre tema: " feil.Message, APP_NAVN, "Icon!"
+    }
+}
+
+StrJoinTemaer() {
+    resultat := ""
+    for navn in TemaNavn()
+        resultat .= (resultat = "" ? "" : "|") navn
+    return resultat
+}
+
+; Importer eksisterende QuickerKeys-/MAAUNI-konfigurasjon eller eldre QuickKey-snarveier.
+ImporterKonfigurasjon(*) {
+    fil := FileSelect(1, INNST_MAPPE, "Velg konfigurasjonsfil", "INI-filer (*.ini)")
+    if (fil = "")
+        return
+    if (StrLower(fil) = StrLower(INI_FIL)) {
+        MsgBox "Dette er allerede den aktive konfigurasjonsfilen. Bruk «Last inn på nytt» etter manuelle endringer.", APP_NAVN
+        return
+    }
+    try innhold := FileRead(fil)
+    catch as feil {
+        MsgBox "Kunne ikke lese filen:`n" feil.Message, APP_NAVN, "Icon!"
+        return
+    }
+    if RegExMatch(innhold, "im)^\s*\[Shortcuts\]\s*$") {
+        ImporterGammelQuickKey(fil)
+        return
+    }
+    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt)\]\s*$") {
+        MsgBox "Ukjent INI-format. Forventet QuickerKeys/MAAUNI eller QuickKey med [Shortcuts].", APP_NAVN, "Icon!"
+        return
+    }
+    valg := MsgBox("Importer hele filen som QuickerKeys.ini?`n`n"
+        . "Eksisterende innstillinger sikkerhetskopieres. Programmet starter på nytt etter import.", APP_NAVN, "YesNo Icon?")
+    if (valg != "Yes")
+        return
+    try {
+        SikkerhetskopierIni()
+        FileCopy fil, INI_FIL, true
+        Reload()
+    } catch as feil {
+        MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
+    }
+}
+
+SikkerhetskopierIni() {
+    if FileExist(INI_FIL) {
+        backup := INNST_MAPPE "\QuickerKeys-backup-" FormatTime(, "yyyyMMdd-HHmmss") "-" A_TickCount ".ini"
+        FileCopy INI_FIL, backup
+        return backup
+    }
+    return ""
+}
+
+; Gammelt QuickKey hadde ni snarveier, men bare to har direkte tilsvarende funksjon nå.
+; Importer ikke uimplementerte arbeidsflyter som om de var aktive.
+ImporterGammelQuickKey(fil) {
+    oversettelser := [
+        {key:"HKAgentvindu", rad:1, id:"Trio Agent ahk_exe msedge.exe", navn:"Trio Agent"},
+        {key:"HkTjenestevindu", rad:2, id:"Service Manager ahk_exe msedge.exe", navn:"Service Manager"}
+    ]
+    importerte := [], hoppetOver := []
+    for cfg in oversettelser {
+        tast := Trim(StrReplace(IniRead(fil, "Shortcuts", cfg.key, ""), '"', ""), " `t`r`n")
+        aktiv := StrLower(Trim(IniRead(fil, "Enabled", cfg.key, "on")))
+        if (tast = "" || aktiv = "off" || aktiv = "0")
+            continue
+        if !RegExMatch(tast, "^[!^+#]*[A-Za-z0-9]+$")
+            hoppetOver.Push(cfg.key " (ugyldig hurtigtast)")
+        else if (tast = Innst("App", "VisTast", "^!m") || tast = Innst("SMKontakt", "ManuellTast", "^!k"))
+            hoppetOver.Push(cfg.key " (hurtigtast er allerede i bruk)")
+        else
+            importerte.Push({key:cfg.key, rad:cfg.rad, id:cfg.id, navn:cfg.navn, tast:tast})
+    }
+    for i, a in importerte
+        for j, b in importerte
+            if (i < j && a.tast = b.tast)
+                hoppetOver.Push("Vindussnarveier deler samme hurtigtast: " a.tast)
+    andre := []
+    for key in ["HKetterarbeid", "HKcopyIM", "HKcopyTLF", "HKCopy", "HKLagreUtklipp", "HKCopyService", "HKHurtigtekst"] {
+        if (IniRead(fil, "Shortcuts", key, "") != "")
+            andre.Push(key)
+    }
+    rapport := "Eldre QuickKey-konfigurasjon oppdaget.`n`n"
+    if importerte.Length {
+        for cfg in importerte
+            rapport .= "• " cfg.key " → " cfg.navn ": " cfg.tast "`n"
+    } else {
+        rapport .= "Ingen støttede vindussnarveier ble funnet.`n"
+    }
+    if andre.Length
+        rapport .= "`n" andre.Length " andre QuickKey-snarveier støttes ikke ennå og blir IKKE aktivert.`n"
+    if hoppetOver.Length {
+        rapport .= "`nHoppet over:`n"
+        for melding in hoppetOver
+            rapport .= "• " melding "`n"
+    }
+    if !importerte.Length || (hoppetOver.Length && InStr(rapport, "deler samme hurtigtast")) {
+        MsgBox rapport, APP_NAVN, "Icon!"
+        return
+    }
+    rapport .= "`nDette erstatter Vindusbytter-rad 1 og/eller 2, men beholder øvrige innstillinger."
+        . "`nOriginalfilen beholdes, og QuickerKeys sikkerhetskopieres.`n`nVil du fortsette?"
+    if (MsgBox(rapport, APP_NAVN, "YesNo Icon?") != "Yes")
+        return
+    try {
+        SikkerhetskopierIni()
+        for cfg in importerte {
+            SettInnst("Vindusbytter", "Vindu" cfg.rad, cfg.id)
+            SettInnst("Vindusbytter", "Navn" cfg.rad, cfg.navn)
+            SettInnst("Vindusbytter", "Tast" cfg.rad, cfg.tast)
+        }
+        SettInnst("Vindusbytter", "Aktiv", "1")
+        Logg("QuickKey-import: " importerte.Length " vindussnarveier importert. Andre snarveier er ikke implementert.")
+        Reload()
+    } catch as feil {
+        MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
+    }
 }
 
 ; ---- App-innstillinger ----
