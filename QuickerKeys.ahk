@@ -297,6 +297,8 @@ ByggHovedvindu() {
 ByggOversikt() {
     pn := "Oversikt", x := INNHOLD_X, b := INNHOLD_B
     PanelTittel(pn, "Oversikt")
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x+b-195) " y87 w195 h34", "Start QuickerKeys", StartQuickerKeys))
     for i, vt in VERKTOY_LISTE {
         y := 132 + (i - 1) * 96
         Skrift(HOVED, "s12 bold c" TEMA.tekst)
@@ -421,7 +423,8 @@ HjelpTekst(side) {
             return vt.Hjelp()
     switch side {
         case "Oversikt":
-            return "•  PÅ / AV slår et verktøy av eller på.`n"
+            return "•  «Start QuickerKeys» leser inn hurtigtekster og bekrefter aktive hurtigtaster.`n"
+                . "•  PÅ / AV slår et verktøy av eller på.`n"
                 . "•  «Åpne →» viser verktøyets side.`n"
                 . "•  Alt kjører i bakgrunnen. Åpne vinduet igjen fra ikonet ved klokka."
         case "Logg":
@@ -793,6 +796,37 @@ ImporterGammelQuickKey(fil) {
     } catch as feil {
         MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
     }
+}
+
+; Gir samme tydelige bekreftelse som gamle QuickKey «Start hurtigtekst».
+; Respekterer PÅ/AV-valgene; aktiverer ikke verktøy brukeren har slått av.
+StartQuickerKeys(*) {
+    meldinger := []
+    aktive := 0
+    for vt in VERKTOY_LISTE {
+        if !vt.Aktiv
+            continue
+        aktive++
+        if (vt is VT_Tekstflyt) {
+            if vt.Sync(false)
+                meldinger.Push("Tekstflyt: " vt.Koder.Count " hurtigtekster importert og klare.")
+            else
+                meldinger.Push("Tekstflyt: feil ved lasting – se Logg.")
+        } else if (vt is VT_TrioSnarveier) {
+            vt.Start()
+            meldinger.Push("Trio Snarveier: " vt.Registrerte.Count " taster registrert.")
+        } else if (vt is VT_Vindusbytter) {
+            vt.Registrer()
+            meldinger.Push("Vindusbytter: " vt.StatusTekst)
+        } else if (vt is VT_SMKontakt) {
+            meldinger.Push("SM Kontakt: " (vt.ErLart() ? "oppsett funnet" : "må læres opp først"))
+        }
+    }
+    rapport := "QuickerKeys " APP_VERSJON " er startet.`n"
+        . aktive " av " VERKTOY_LISTE.Length " verktøy er slått på.`n`n"
+    for melding in meldinger
+        rapport .= "• " melding "`n"
+    MsgBox rapport, APP_NAVN, "Iconi"
 }
 
 ; ---- App-innstillinger ----
