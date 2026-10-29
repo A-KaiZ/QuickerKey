@@ -6,10 +6,10 @@ DetectHiddenText true
 SendMode "Input"
 
 ; =====================================================================
-;  MAAUNI Verktøy  –  alle verktøyene samlet i ett program
+;  QuickerKeys – alle verktøyene samlet i ett program
 ; ---------------------------------------------------------------------
 ;  • Bare start denne filen. Alt annet lages automatisk i undermapper:
-;      Innstillinger\MAAUNI.ini     – innstillinger for alle verktøy
+;      Innstillinger\QuickerKeys.ini – innstillinger for alle verktøy
 ;      Tekstflyt\Tekstflyt.xlsx     – kodene til Tekstflyt
 ;      Logg\ÅÅÅÅ-MM-DD.log          – én loggfil per dag (30 dager tilbake)
 ;  • Alle verktøy kjører i bakgrunnen, også når vinduet er lukket.
@@ -26,14 +26,14 @@ VerktoyListe() => [
 
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
-global APP_NAVN    := "MAAUNI Verktøy"
+global APP_NAVN    := "QuickerKeys"
 global APP_VERSJON := "2.9"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
 global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
 global LOGG_MAPPE  := DATA_MAPPE "\Logg"
-global INI_FIL     := INNST_MAPPE "\MAAUNI.ini"
+global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
 global HOVED := "", APP_B := 700, APP_H := 480, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
@@ -103,43 +103,87 @@ class VT_Base {
 ; =====================================================================
 FinnDataMappe() {
     ; Bruk mappen skriptet ligger i. Er den skrivebeskyttet, bruk AppData.
-    test := A_ScriptDir "\.maauni_skrivetest"
+    test := A_ScriptDir "\.quickerkeys_skrivetest"
     try {
         FileOpen(test, "w").Close()
         FileDelete test
         return A_ScriptDir
     }
-    mappe := A_AppData "\MAAUNI Verktoy"
+    mappe := A_AppData "\QuickerKeys"
     if !DirExist(mappe)
         DirCreate mappe
     return mappe
 }
 
-; Lager undermappene og flytter filer fra gammel plassering (rett i programmappen) inn i dem.
-; Returnerer en liste med meldinger til loggen.
+; Oppretter datamappene og importerer tidligere oppsett uten å slette originalfilene.
+; Støtter både gammel flat struktur (v2.8) og undermapper (v2.9), også fra gammel AppData-mappe.
 LagMappestruktur() {
     meldinger := []
-    for mappe in [INNST_MAPPE, TEKST_MAPPE, LOGG_MAPPE]
+    for mappe in [INNST_MAPPE, TEKST_MAPPE, LOGG_MAPPE] {
         if !DirExist(mappe)
-            try DirCreate mappe
-    gammelIni := DATA_MAPPE "\MAAUNI.ini"
-    if (FileExist(gammelIni) && !FileExist(INI_FIL)) {
-        try {
-            FileMove gammelIni, INI_FIL
-            meldinger.Push("Flyttet MAAUNI.ini til mappen Innstillinger")
-        } catch as feil {
-            meldinger.Push("FEIL: klarte ikke å flytte MAAUNI.ini: " feil.Message)
+            DirCreate mappe
+    }
+
+    gamleMapper := [DATA_MAPPE]
+    gammelAppData := A_AppData "\MAAUNI Verktoy"
+    if (StrLower(gammelAppData) != StrLower(DATA_MAPPE) && DirExist(gammelAppData))
+        gamleMapper.Push(gammelAppData)
+
+    if !FileExist(INI_FIL) {
+        for mappe in gamleMapper {
+            for gammelIni in [mappe "\Innstillinger\MAAUNI.ini", mappe "\MAAUNI.ini"] {
+                if !FileExist(gammelIni)
+                    continue
+                try {
+                    FileCopy gammelIni, INI_FIL
+                    meldinger.Push("Importerte tidligere innstillinger til QuickerKeys.ini")
+                } catch as feil {
+                    meldinger.Push("FEIL: kunne ikke kopiere innstillinger: " feil.Message)
+                }
+                if FileExist(INI_FIL)
+                    break
+            }
+            if FileExist(INI_FIL)
+                break
         }
     }
-    gammelXlsx := DATA_MAPPE "\Tekstflyt.xlsx", nyXlsx := TEKST_MAPPE "\Tekstflyt.xlsx"
-    if (FileExist(gammelXlsx) && !FileExist(nyXlsx)) {
-        try {
-            FileMove gammelXlsx, nyXlsx
-            meldinger.Push("Flyttet Tekstflyt.xlsx til mappen Tekstflyt")
-            if FileExist(INI_FIL) && StrLower(IniRead(INI_FIL, "Tekstflyt", "ExcelFil", "")) = StrLower(gammelXlsx)
-                IniWrite nyXlsx, INI_FIL, "Tekstflyt", "ExcelFil"
-        } catch as feil {
-            meldinger.Push("FEIL: klarte ikke å flytte Tekstflyt.xlsx (er den åpen i Excel?): " feil.Message)
+
+    nyXlsx := TEKST_MAPPE "\Tekstflyt.xlsx"
+    if !FileExist(nyXlsx) {
+        for mappe in gamleMapper {
+            for gammelXlsx in [mappe "\Tekstflyt\Tekstflyt.xlsx", mappe "\Tekstflyt.xlsx"] {
+                if (StrLower(gammelXlsx) = StrLower(nyXlsx) || !FileExist(gammelXlsx))
+                    continue
+                try {
+                    FileCopy gammelXlsx, nyXlsx
+                    meldinger.Push("Importerte tidligere Tekstflyt.xlsx")
+                } catch as feil {
+                    meldinger.Push("FEIL: kunne ikke kopiere Tekstflyt.xlsx: " feil.Message)
+                }
+                if FileExist(nyXlsx)
+                    break
+            }
+            if FileExist(nyXlsx)
+                break
+        }
+    }
+
+    ; Oppdater kun den gamle standardstien; egendefinerte Excel-stier beholdes.
+    if (FileExist(INI_FIL) && FileExist(nyXlsx)) {
+        valgtFil := IniRead(INI_FIL, "Tekstflyt", "ExcelFil", "")
+        for mappe in gamleMapper {
+            if (StrLower(valgtFil) = StrLower(mappe "\Tekstflyt.xlsx")
+                || StrLower(valgtFil) = StrLower(mappe "\Tekstflyt\Tekstflyt.xlsx")) {
+                if (StrLower(valgtFil) != StrLower(nyXlsx)) {
+                    try {
+                        IniWrite nyXlsx, INI_FIL, "Tekstflyt", "ExcelFil"
+                        meldinger.Push("Oppdaterte standardstien til Tekstflyt.xlsx")
+                    } catch as feil {
+                        meldinger.Push("FEIL: kunne ikke oppdatere Excel-stien: " feil.Message)
+                    }
+                }
+                break
+            }
         }
     }
     return meldinger
@@ -324,6 +368,12 @@ ByggInnstillingerPanel() {
     Skrift(HOVED, "s10 norm c" TEMA.tekst)
     Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne programmappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 192) " y" y " w180 h34", "Avslutt programmet", (*) => ExitApp(), TEMA.av))
+
+    ; Utviklerkreditering nederst på Innstillinger-siden.
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 108) " w" b " h22 Background" TEMA.bg, "Developers"))
+    Skrift(HOVED, "s10 norm c" TEMA.tekst)
+    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 82) " w" b " h26 Background" TEMA.bg, "MAUUNI  ·  KAISAD"))
 }
 
 ; Sidetittel med «?»-knapp. medToggle = siden har PÅ/AV-knapp oppe til høyre.
@@ -3144,7 +3194,7 @@ LagHuff(lengder) {
 ;  1. Kopier klassen under, fjern semikolonene og gi den et eget navn.
 ;  2. Legg den til i VerktoyListe() øverst i filen.
 ;  Den får automatisk egen side, plass i oversikten, PÅ/AV-knapp,
-;  egen seksjon i MAAUNI.ini og en linje i menyen ved klokka.
+;  egen seksjon i QuickerKeys.ini og en linje i menyen ved klokka.
 ; =====================================================================
 ; class VT_MittVerktoy extends VT_Base {
 ;     Navn := "Mitt verktøy"
