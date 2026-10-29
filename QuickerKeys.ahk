@@ -1796,6 +1796,11 @@ class VT_SMKontakt extends VT_Base {
     ErTrygt(smHwnd) {
         if !WinActive("ahk_id " smHwnd)
             return false
+        ; Riktig Edge-vindu er ikke nok: avbryt hvis aktiv fane er f.eks. YouTube.
+        if RegExMatch(this.Cfg["SMVindu"], "i)^(.*?)\s+ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe", &sm) {
+            if (Trim(sm[1]) = "" || !InStr(WinGetTitle("ahk_id " smHwnd), Trim(sm[1])))
+                return false
+        }
         exe := this.TrioExe()
         if (exe != "" && WinActive("ahk_exe " exe))
             return false
@@ -2294,37 +2299,105 @@ ErNettleser(hwnd) {
     return false
 }
 
-; Bytter til fanen/vinduet. Er det en nettleserfane som ikke er aktiv, blas gjennom fanene med Ctrl+Tab.
+; Bytter til en bestemt nettleserfane. Finn først fanen via UI Automation;
+; bruk kontrollert Ctrl+Tab som reserve. Returnerer kun vinduet når riktig fane er bekreftet.
 AktiverFane(id) {
-    hwnd := FinnVindu(id, false)
-    if hwnd {
-        WinActivate "ahk_id " hwnd
-        return WinWaitActive("ahk_id " hwnd, , 2) ? hwnd : 0
-    }
-    if !RegExMatch(id, "^(.*?)\s*ahk_exe\s+(\S+)", &del) || Trim(del[1]) = ""
+    if (id = "")
         return 0
-    nokkelord := Trim(del[1]), exe := del[2]
-    egen := ProcessExist()
-    for w in WinGetList("ahk_exe " exe) {
+    nettleser := RegExMatch(id, "i)^(.*?)\s+ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe", &del)
+    if !nettleser {
+        hwnd := FinnVindu(id, false)
+        if !hwnd
+            return 0
         try {
-            if (WinGetPID("ahk_id " w) = egen || WinGetTitle("ahk_id " w) = "" || !(WinGetStyle("ahk_id " w) & 0x10000000))
+            if (WinGetMinMax("ahk_id " hwnd) = -1)
+                WinRestore "ahk_id " hwnd
+            WinActivate "ahk_id " hwnd
+            return WinWaitActive("ahk_id " hwnd, , 2) ? hwnd : 0
+        }
+        return 0
+    }
+
+    nokkelord := Trim(del[1]), exe := del[2]
+    if (nokkelord = "")
+        return 0
+    forrige := WinExist("A")
+
+    ; Prøv først et vindu som allerede har fanen aktiv.
+    for hwnd in WinGetList("ahk_exe " exe) {
+        try {
+            if !InStr(WinGetTitle("ahk_id " hwnd), nokkelord)
                 continue
-            WinActivate "ahk_id " w
-            if !WinWaitActive("ahk_id " w, , 1)
+            if (WinGetMinMax("ahk_id " hwnd) = -1)
+                WinRestore "ahk_id " hwnd
+            WinActivate "ahk_id " hwnd
+            if (WinWaitActive("ahk_id " hwnd, , 2) && InStr(WinGetTitle("ahk_id " hwnd), nokkelord))
+                return hwnd
+        }
+    }
+
+    for hwnd in WinGetList("ahk_exe " exe) {
+        try {
+            if (WinGetTitle("ahk_id " hwnd) = "" || !(WinGetStyle("ahk_id " hwnd) & 0x10000000))
                 continue
-            start := WinGetTitle("ahk_id " w)
+            if (WinGetMinMax("ahk_id " hwnd) = -1)
+                WinRestore "ahk_id " hwnd
+            WinActivate "ahk_id " hwnd
+            if !WinWaitActive("ahk_id " hwnd, , 1)
+                continue
+
+            ; UIA velger riktig TabItem uten å måtte bla gjennom YouTube og andre faner.
+            if (UiaVelgFane(hwnd, nokkelord) && InStr(WinGetTitle("ahk_id " hwnd), nokkelord))
+                return hwnd
+
+            ; Fallback: bla gjennom opptil 30 faner. Gå tilbake hvis ingen passer.
+            bytter := 0
             loop 30 {
-                Send "^{Tab}"
-                Sleep 150
-                tittel := WinGetTitle("ahk_id " w)
-                if InStr(tittel, nokkelord)
-                    return w
-                if (tittel = start)
+                if !WinActive("ahk_id " hwnd)
                     break
+                Send "^{Tab}"
+                bytter++
+                Sleep 180
+                if InStr(WinGetTitle("ahk_id " hwnd), nokkelord)
+                    return hwnd
+            }
+            if WinActive("ahk_id " hwnd) {
+                loop bytter {
+                    Send "^+{Tab}"
+                    Sleep 35
+                }
             }
         }
     }
+    if forrige
+        try WinActivate "ahk_id " forrige
+    Logg("Vindussøk: fant ikke aktiv fane for " nokkelord " (" exe ")")
     return 0
+}
+
+; Microsoft UI Automation: TabItem = 50019, Name = 30005,
+; SelectionItemPattern = 10010 og Select-metoden er COM-vtable-indeks 3.
+UiaVelgFane(hwnd, nokkelord) {
+    try {
+        rot := UiaFraVindu(hwnd)
+        if !IsObject(rot)
+            return false
+        for element in UiaFinnAlle(rot, 50019) {
+            tittel := UiaStreng(element, 30005)
+            if !InStr(tittel, nokkelord)
+                continue
+            ptr := 0
+            ComCall(16, element, "Int", 10010, "Ptr*", &ptr)
+            if !ptr
+                continue
+            valg := ComValue(13, ptr)
+            ComCall(3, valg)
+            Sleep 120
+            if InStr(WinGetTitle("ahk_id " hwnd), nokkelord)
+                return true
+        }
+    }
+    return false
 }
 
 ; Lager en vindus-ID som finner vinduet igjen senere (også etter omstart):
