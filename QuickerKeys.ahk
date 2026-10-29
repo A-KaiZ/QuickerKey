@@ -28,7 +28,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.0"
+global APP_VERSJON := "3.1"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -909,6 +909,8 @@ class VT_Tekstflyt extends VT_Base {
     SistEndret := ""
     SisteFeil := ""
     Editor := ""
+    EkVindu := ""
+    EkValgt := ""
 
     __New() {
         VT_Tekstflyt.Instans := this
@@ -937,7 +939,8 @@ class VT_Tekstflyt extends VT_Base {
             . "•  Ny kode: «Teksteditor» → skriv kode og tekst → «Lagre i Excel».`n"
             . "•  «Importer / velg Excel»: Ja = lag en lokal kopi, Nei = bruk filen der den ligger.`n"
             . "•  Valgt fil beholdes ved omstart. Mangler den, får du feilmelding i stedet for at en annen fil lastes.`n"
-            . "•  Endre eller slette koder: «Åpne Excel». Endringer hentes automatisk."
+            . "•  Rediger koder: «Teksteditor» → «Eksisterende tekster…».`n"
+            . "•  Slett koder: «Åpne Excel». Endringer hentes automatisk."
     }
 
     Start() {
@@ -1096,10 +1099,16 @@ class VT_Tekstflyt extends VT_Base {
     }
 
     ; Legger til / oppdaterer en kode i Excel-filen. Returnerer true hvis ny.
-    LeggTil(kode, tekst) {
-        this.SikreFil()
+    LeggTil(kode, tekst) => this.Endre(kode, kode, tekst)
+
+    ; Støtter redigering og omdøping av eksisterende koder.
+    Endre(gammel, kode, tekst) {
+        if !this.SikreFil()
+            throw Error("Excel-filen finnes ikke eller kunne ikke åpnes.")
+        if (gammel != kode && this.Koder.Has(kode))
+            throw Error("Koden finnes allerede: " kode)
         try {
-            return LeggTilViaExcel(this.ExcelFil, kode, tekst)   ; bevarer formatering når Excel finnes
+            return LeggTilViaExcel(this.ExcelFil, kode, tekst, gammel)
         } catch as feil {
             if (feil.Message != "INGEN_EXCEL")
                 throw feil
@@ -1109,7 +1118,8 @@ class VT_Tekstflyt extends VT_Base {
         for par in XlsxLesRader(this.ExcelFil) {
             if (Trim(par[1]) = "" || Trim(par[1]) = "Kode")
                 continue
-            if (Trim(par[1]) = kode) {
+            if (ny && Trim(par[1]) = gammel) {
+                par[1] := kode
                 par[2] := tekst
                 ny := false
             }
@@ -1117,6 +1127,9 @@ class VT_Tekstflyt extends VT_Base {
         }
         if ny
             rader.Push([kode, tekst])
+        ; Den interne XLSX-skriveren gjenskaper ark 1. Behold alltid originalen.
+        backup := this.ExcelFil ".backup-" FormatTime(, "yyyyMMdd-HHmmss") "-" A_TickCount ".xlsx"
+        FileCopy this.ExcelFil, backup
         XlsxSkriv(this.ExcelFil, rader)
         return ny
     }
@@ -1142,6 +1155,7 @@ class VT_Tekstflyt extends VT_Base {
         this.EdLagreK := Knapp(eg, "x16 y428 w220 h42", "Lagre i Excel", ObjBindMethod(this, "EdLagre"))
         Skrift(eg, "s10 c" TEMA.tekst)
         Knapp(eg, "x248 y428 w120 h42", "Tøm", ObjBindMethod(this, "EdTom"), TEMA.aksent2)
+        Knapp(eg, "x380 y428 w244 h42", "Eksisterende tekster…", ObjBindMethod(this, "VisEksisterende"), TEMA.aksent2)
         Skrift(eg, "s10 bold c" TEMA.tekst)
         this.EdStatus := eg.AddText("x16 y482 w608 h22 Background" TEMA.bg, "")
         eg.Show("w640 h516")
@@ -1183,6 +1197,104 @@ class VT_Tekstflyt extends VT_Base {
         this.EdMelding("")
         this.EdKode.Focus()
     }
+    ; Velg en eksisterende kode, søk i kode/tekst, rediger og lagre.
+    VisEksisterende(*) {
+        if !this.Sync(false)
+            return MsgBox("Kunne ikke lese Excel-filen. Se Logg.", APP_NAVN, "Icon!")
+        if IsObject(this.EkVindu) {
+            this.EkFyllListe()
+            this.EkVindu.Show()
+            return
+        }
+        ev := Gui("+Owner" this.Editor.Hwnd, "Eksisterende tekster – " APP_NAVN)
+        this.EkVindu := ev
+        ev.BackColor := TEMA.bg
+        Skrift(ev, "s9 c" TEMA.dempet)
+        ev.AddText("x16 y14 w400 Background" TEMA.bg, "Søk i kode eller tekst")
+        Skrift(ev, "s11 c" TEMA.tekst)
+        this.EkSok := ev.AddEdit("x16 y34 w688 h28 Background" TEMA.kort)
+        this.EkSok.OnEvent("Change", (*) => this.EkFyllListe())
+        Skrift(ev, "s10 c" TEMA.tekst)
+        this.EkLV := ev.AddListView("x16 y72 w688 h200 -Multi Background" TEMA.kort, ["Kode", "Tekst"])
+        this.EkLV.OnEvent("ItemSelect", ObjBindMethod(this, "EkVelg"))
+        Skrift(ev, "s9 c" TEMA.dempet)
+        ev.AddText("x16 y286 w220 Background" TEMA.bg, "Kode")
+        Skrift(ev, "s11 c" TEMA.tekst)
+        this.EkKode := ev.AddEdit("x16 y306 w220 h28 Background" TEMA.kort)
+        Skrift(ev, "s9 c" TEMA.dempet)
+        ev.AddText("x16 y344 w400 Background" TEMA.bg, "Tekst")
+        Skrift(ev, "s10 c" TEMA.tekst)
+        this.EkTekst := ev.AddEdit("x16 y364 w688 h220 Multi WantTab Background" TEMA.kort)
+        Skrift(ev, "s11 bold c" TEMA.tekst)
+        this.EkLagreK := Knapp(ev, "x16 y598 w220 h42", "Lagre endring", ObjBindMethod(this, "EkLagre"))
+        Skrift(ev, "s10 bold c" TEMA.tekst)
+        this.EkStatus := ev.AddText("x16 y652 w688 h22 Background" TEMA.bg, "")
+        this.EkFyllListe()
+        ev.Show("w720 h686")
+        this.EkSok.Focus()
+    }
+
+    EkMelding(tekst, ok := true) {
+        this.EkStatus.SetFont("c" (ok ? TEMA.paa : "FF6B6B"))
+        this.EkStatus.Text := tekst
+    }
+
+    EkFyllListe(velg := "") {
+        sok := Trim(this.EkSok.Value)
+        lv := this.EkLV
+        lv.Opt("-Redraw")
+        lv.Delete()
+        valgtRad := 0
+        for kode, tekst in this.Koder {
+            if (sok != "" && !InStr(kode, sok) && !InStr(tekst, sok))
+                continue
+            rad := lv.Add(, kode, KortVerdi(tekst, 110))
+            if (kode = velg)
+                valgtRad := rad
+        }
+        lv.ModifyCol(1, 170)
+        lv.ModifyCol(2, 500)
+        lv.Opt("+Redraw")
+        if valgtRad
+            lv.Modify(valgtRad, "Select Focus Vis")
+        else
+            this.EkMelding(lv.GetCount() " av " this.Koder.Count " tekster")
+    }
+
+    EkVelg(lv, rad, valgt) {
+        if (!valgt || !rad)
+            return
+        kode := lv.GetText(rad, 1)
+        if !this.Koder.Has(kode)
+            return
+        this.EkValgt := kode
+        this.EkKode.Value := kode
+        this.EkTekst.Value := StrReplace(this.Koder[kode], "`n", "`r`n")
+    }
+
+    EkLagre(*) {
+        gammel := this.EkValgt
+        kode := Trim(this.EkKode.Value)
+        tekst := StrReplace(this.EkTekst.Value, "`r`n", "`n")
+        if (gammel = "")
+            return this.EkMelding("Velg en eksisterende kode først.", false)
+        if (kode = "" || Trim(tekst) = "" || RegExMatch(kode, "\\s"))
+            return this.EkMelding("Koden/teksten er tom eller koden har mellomrom.", false)
+        if (kode != gammel && this.Koder.Has(kode))
+            return this.EkMelding("Koden eksisterer allerede: " kode, false)
+        try {
+            this.Endre(gammel, kode, tekst)
+            if !this.Sync(false)
+                throw Error("Lagret, men synkronisering feilet.")
+            this.EkValgt := kode
+            this.EkFyllListe(kode)
+            this.EkMelding("Lagret og synkronisert: " kode)
+            Logg("Tekstflyt: redigerte kode " gammel (kode != gammel ? " til " kode : ""))
+        } catch as feil {
+            this.EkMelding("Feil ved lagring: " feil.Message, false)
+        }
+    }
+
 }
 
 ; Kalles når en kode er skrevet. Koden + Mellomrom/Enter er allerede fjernet.
@@ -1235,7 +1347,9 @@ LesKoder(fil) {
 }
 
 ; Skriver direkte i Excel hvis Excel finnes (og helst i en allerede åpen bok). Ellers kastes INGEN_EXCEL.
-LeggTilViaExcel(fil, kode, tekst) {
+LeggTilViaExcel(fil, kode, tekst, gammel := "") {
+    if (gammel = "")
+        gammel := kode
     bok := "", xl := "", egen := false
     try {
         for b in ComObjActive("Excel.Application").Workbooks
@@ -1264,7 +1378,7 @@ LeggTilViaExcel(fil, kode, tekst) {
         sist := ark.Cells(ark.Rows.Count, 1).End(-4162).Row     ; -4162 = xlUp
         rad := 0
         loop sist
-            if (Trim(ark.Cells(A_Index, 1).Text) = kode) {
+            if (Trim(ark.Cells(A_Index, 1).Text) = gammel) {
                 rad := A_Index
                 break
             }
