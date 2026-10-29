@@ -695,68 +695,100 @@ SikkerhetskopierIni() {
     return ""
 }
 
-; Gammelt QuickKey hadde ni snarveier, men bare to har direkte tilsvarende funksjon nå.
-; Importer ikke uimplementerte arbeidsflyter som om de var aktive.
+; Gammel QuickKey v1.05 bruker Trio Attendant-menyer, IKKE vindusbytte.
+; Kilden blir aldri endret; støttede hurtigtaster importeres til [TrioSnarveier].
 ImporterGammelQuickKey(fil) {
-    oversettelser := [
-        {key:"HKAgentvindu", rad:1, id:"Trio Agent ahk_exe msedge.exe", navn:"Trio Agent"},
-        {key:"HkTjenestevindu", rad:2, id:"Service Manager ahk_exe msedge.exe", navn:"Service Manager"}
-    ]
-    importerte := [], hoppetOver := []
-    for cfg in oversettelser {
-        tast := Trim(StrReplace(IniRead(fil, "Shortcuts", cfg.key, ""), '"', ""), " `t`r`n")
-        aktiv := StrLower(Trim(IniRead(fil, "Enabled", cfg.key, "on")))
-        if (tast = "" || aktiv = "off" || aktiv = "0")
+    oppgaver := TrioOppgaver()
+    importerte := []
+    ignorert := []
+    tastMap := Map()
+    for op in oppgaver {
+        tast := Trim(StrReplace(IniRead(fil, "Shortcuts", op.key, ""), '"', ""), " `t`r`n")
+        aktiv := StrLower(Trim(IniRead(fil, "Enabled", op.key, "off")))
+        if (tast = "")
             continue
-        if !RegExMatch(tast, "^[!^+#]*[A-Za-z0-9]+$")
-            hoppetOver.Push(cfg.key " (ugyldig hurtigtast)")
-        else if (tast = Innst("App", "VisTast", "^!m") || tast = Innst("SMKontakt", "ManuellTast", "^!k"))
-            hoppetOver.Push(cfg.key " (hurtigtast er allerede i bruk)")
-        else if (tast = Innst("Vindusbytter", "Tast3", "") || tast = Innst("Vindusbytter", "Tast4", ""))
-            hoppetOver.Push(cfg.key " (hurtigtast brukes av vindu 3 eller 4)")
-        else
-            importerte.Push({key:cfg.key, rad:cfg.rad, id:cfg.id, navn:cfg.navn, tast:tast})
+        if !RegExMatch(tast, "^[!^+#]*[A-Za-z0-9]+$") {
+            ignorert.Push(op.key ": ukjent hurtigtast (" tast ")")
+            continue
+        }
+        paa := aktiv = "on" || aktiv = "1"
+        if paa {
+            konflikt := ""
+            if (tast = Innst("App", "VisTast", "^!m")
+                || tast = Innst("SMKontakt", "ManuellTast", "^!k"))
+                konflikt := "hurtigtasten brukes av QuickerKeys/SM Kontakt"
+            loop 4 {
+                ; Opprydning fra feil v3.0-import utføres under lagring nedenfor.
+                gammelFeil := (A_Index = 1 && IniRead(INI_FIL, "Vindusbytter", "Vindu1", "") = "Trio Agent ahk_exe msedge.exe"
+                    && tast = IniRead(INI_FIL, "Vindusbytter", "Tast1", ""))
+                    || (A_Index = 2 && IniRead(INI_FIL, "Vindusbytter", "Vindu2", "") = "Service Manager ahk_exe msedge.exe"
+                    && tast = IniRead(INI_FIL, "Vindusbytter", "Tast2", ""))
+                if (tast = Innst("Vindusbytter", "Tast" A_Index, "") && !gammelFeil)
+                    konflikt := "brukes av Vindusbytter " A_Index
+            }
+            if tastMap.Has(tast)
+                konflikt := "også brukt av " tastMap[tast]
+            if (konflikt != "") {
+                ignorert.Push(op.key ": " konflikt)
+                continue
+            }
+            tastMap[tast] := op.navn
+        }
+        importerte.Push({key:op.key, navn:op.navn, tast:tast, paa:paa})
     }
-    for i, a in importerte
-        for j, b in importerte
-            if (i < j && a.tast = b.tast)
-                hoppetOver.Push("Vindussnarveier deler samme hurtigtast: " a.tast)
-    andre := []
-    for key in ["HKetterarbeid", "HKcopyIM", "HKcopyTLF", "HKCopy", "HKLagreUtklipp", "HKCopyService", "HKHurtigtekst"] {
+
+    kopitast := Trim(StrReplace(IniRead(fil, "Shortcuts", "HKCopy", ""), '"', ""), " `t`r`n")
+    if (kopitast != "" && !RegExMatch(kopitast, "^[!^+#]*[A-Za-z0-9]+$")) {
+        ignorert.Push("HKCopy: ugyldig kopitast " kopitast)
+        kopitast := ""
+    }
+    ikkeStottet := []
+    for key in ["HKLagreUtklipp", "HKCopyService", "HKHurtigtekst"]
         if (IniRead(fil, "Shortcuts", key, "") != "")
-            andre.Push(key)
+            ikkeStottet.Push(key)
+
+    rapport := "QuickKey v1.05 funnet (Trio Attendant).`n`n"
+    for item in importerte
+        rapport .= (item.paa ? "PÅ: " : "AV: ") item.navn "  —  " item.tast "`n"
+    if (kopitast != "")
+        rapport .= "Kopitast i Trio (HKCopy): " kopitast "`n"
+    if ikkeStottet.Length {
+        rapport .= "`nIkke støttet i QuickerKeys v3.0:`n"
+        for key in ikkeStottet
+            rapport .= "• " key "`n"
     }
-    rapport := "Eldre QuickKey-konfigurasjon oppdaget.`n`n"
-    if importerte.Length {
-        for cfg in importerte
-            rapport .= "• " cfg.key " → " cfg.navn ": " cfg.tast "`n"
-    } else {
-        rapport .= "Ingen støttede vindussnarveier ble funnet.`n"
+    if ignorert.Length {
+        rapport .= "`nHoppet over pga. ugyldig tast eller konflikt:`n"
+        for feil in ignorert
+            rapport .= "• " feil "`n"
     }
-    if andre.Length
-        rapport .= "`n" andre.Length " andre QuickKey-snarveier støttes ikke ennå og blir IKKE aktivert.`n"
-    if hoppetOver.Length {
-        rapport .= "`nHoppet over:`n"
-        for melding in hoppetOver
-            rapport .= "• " melding "`n"
-    }
-    if !importerte.Length || (hoppetOver.Length && InStr(rapport, "deler samme hurtigtast")) {
-        MsgBox rapport, APP_NAVN, "Icon!"
+    if (!importerte.Length && kopitast = "") {
+        MsgBox rapport "`nIngen støttede innstillinger å importere.", APP_NAVN, "Icon!"
         return
     }
-    rapport .= "`nDette erstatter Vindusbytter-rad 1 og/eller 2, men beholder øvrige innstillinger."
-        . "`nOriginalfilen beholdes, og QuickerKeys sikkerhetskopieres.`n`nVil du fortsette?"
+    rapport .= "`nDet opprettes lokal sikkerhetskopi av QuickerKeys.ini."
+        . "`nQuickKey sin config.ini og programmappe blir ikke endret."
+        . "`n`nVil du importere de støttede innstillingene?"
     if (MsgBox(rapport, APP_NAVN, "YesNo Icon?") != "Yes")
         return
     try {
         SikkerhetskopierIni()
-        for cfg in importerte {
-            SettInnst("Vindusbytter", "Vindu" cfg.rad, cfg.id)
-            SettInnst("Vindusbytter", "Navn" cfg.rad, cfg.navn)
-            SettInnst("Vindusbytter", "Tast" cfg.rad, cfg.tast)
+        ; Fjern KUN de to feilaktige Edge-mappingene fra den tidligere v3.0-importen.
+        feilId := ["Trio Agent ahk_exe msedge.exe", "Service Manager ahk_exe msedge.exe"]
+        for i, id in feilId {
+            if (IniRead(INI_FIL, "Vindusbytter", "Vindu" i, "") = id) {
+                for k in ["Vindu", "Navn", "Tast"]
+                    SettInnst("Vindusbytter", k i, "")
+            }
         }
-        SettInnst("Vindusbytter", "Aktiv", "1")
-        Logg("QuickKey-import: " importerte.Length " vindussnarveier importert. Andre snarveier er ikke implementert.")
+        for item in importerte {
+            SettInnst("TrioSnarveier", item.key, item.tast)
+            SettInnst("TrioSnarveier", "Enabled" item.key, item.paa ? "on" : "off")
+        }
+        if (kopitast != "")
+            SettInnst("TrioSnarveier", "HKCopy", kopitast)
+        SettInnst("TrioSnarveier", "Aktiv", "1")
+        Logg("QuickKey v1.05: importerte " importerte.Length " Trio-snarveier; kildefil beholdt")
         Reload()
     } catch as feil {
         MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
@@ -2851,7 +2883,7 @@ class VT_TrioSnarveier extends VT_Base {
                     }
                 sett[tast] := op.navn
                 konflikt := this.Konflikt(tast, op.key)
-                if (konflikt != "" && !InStr(konflikt, "Trio"))
+                if (konflikt != "")
                     return MsgBox("Hurtigtasten " tast " er allerede i bruk av " konflikt, APP_NAVN, "Icon!")
             }
         }
