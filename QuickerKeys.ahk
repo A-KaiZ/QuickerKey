@@ -3362,45 +3362,108 @@ class VT_TrioSnarveier extends VT_Base {
         }
     }
 
+
+    ; Magnus sin skjulte Trio-variant: endre kopifelt midlertidig via
+    ; usynlig Innstillinger-vindu, kopier, og sett Parameter tilbake.
+    ; Innstillinger skal aldri bli stående åpent (heller ikke ved feil).
     KopierMedFelt(felt, trioId) {
-        ; Bevar gammel funksjon fra QuickKey, men gjenopprett IDM Username også ved feil.
+        type := felt = "A-nr" ? "Telefonnummer" : "IM / Kommentar"
         kopitast := SendTast(this.Hent("HKCopy", "^d"))
         if (kopitast = "")
-            throw Error("HKCopy er ikke konfigurert.")
+            throw Error("Kopitasten i Trio (HKCopy) er ikke satt.")
+
+        ; Bind dialogen til Trio sin PID, ikke et tilfeldig Innstillinger-vindu.
+        dlg := "Innstillinger ahk_pid " WinGetPID(trioId)
+        this.LukkInnstillinger(dlg)
+        original := ""
+        kopiert := false
+
         try {
-            MenuSelect trioId,, "Fil", "Innstillinger..."
-            if !WinWaitActive("Innstillinger", , 2)
-                throw Error("Trio-innstillingene ble ikke åpnet.")
-            ControlChooseIndex 3, "SysTabControl321", "Innstillinger"
-            ControlChooseString felt, "ComboBox1", "Innstillinger"
-            ControlClick "Button3", "Innstillinger"
+            original := this.SettParameter(trioId, dlg, felt)
+            WinActivate trioId
             if !WinWaitActive(trioId, , 2)
                 throw Error("Fikk ikke fokus tilbake til Trio.")
-            type := felt = "A-nr" ? "Telefonnummer" : "IM / Kommentar"
+
+            ; Marker kopien så SM Kontakt ikke tolker IM/telefon som brukernavn.
             TrioKopiMerke(type)
             sekvens := DllCall("GetClipboardSequenceNumber", "UInt")
             SendInput kopitast
-            ; Ikke rapporter suksess uten faktisk oppdatert utklippstavle.
             slutt := A_TickCount + 1500
-            while (A_TickCount < slutt && DllCall("GetClipboardSequenceNumber", "UInt") = sekvens)
+            while (A_TickCount < slutt) {
+                if (DllCall("GetClipboardSequenceNumber", "UInt") != sekvens) {
+                    kopiert := true
+                    break
+                }
                 Sleep 30
-            if (DllCall("GetClipboardSequenceNumber", "UInt") = sekvens) {
-                TrioKopiMerke("")
-                Logg("Trio Snarveier: ingen ny utklippstavledata ved kopiering")
             }
         } finally {
+            ; Hvis et mellomliggende steg feilet, lukk først eventuelt
+            ; halvåpent dialogvindu, så gjenopprett Parameter.
+            this.LukkInnstillinger(dlg)
+
+            ; Som Magnus sin variant: bruk IDM Username hvis opprinnelig felt
+            ; er ukjent eller var et midlertidig Kommentar/A-nr-felt.
+            tilbake := (original = "" || RegExMatch(original, "i)^(Kommentar|A-nr)$")) ? "IDM Username" : original
             try {
-                WinActivate trioId
-                MenuSelect trioId,, "Fil", "Innstillinger..."
-                if WinWaitActive("Innstillinger", , 2) {
-                    ControlChooseIndex 3, "SysTabControl321", "Innstillinger"
-                    ControlChooseString "IDM Username", "ComboBox1", "Innstillinger"
-                    ControlClick "Button3", "Innstillinger"
-                }
+                this.SettParameter(trioId, dlg, tilbake)
             } catch as feil {
-                Logg("Trio Snarveier: klarte ikke å gjenopprette IDM Username: " feil.Message)
+                Logg("Trio Snarveier: FEIL – kunne ikke gjenopprette Parameter til "
+                    . tilbake ": " feil.Message)
+                Tip("Trio: kontroller Hurtigkopiering → Parameter manuelt", 5000)
+            } finally {
+                this.LukkInnstillinger(dlg)
             }
         }
+
+        if !kopiert {
+            TrioKopiMerke("")
+            Logg("Trio Snarveier: FEIL – ingen utklippstavleendring ved kopiering av " type)
+            Varsel("Trio Attendant · " type, "—", "Ingenting ble kopiert – kontroller kopitasten", false)
+        }
+    }
+
+    ; Åpner Innstillinger, gjør vinduet transparent, og bruker kontroll-API
+    ; fremfor museklikk i skjermkoordinater. Returnerer tidligere Parameter.
+    SettParameter(trioId, dlg, verdi) {
+        WinActivate trioId
+        if !WinWaitActive(trioId, , 2)
+            throw Error("Trio Attendant var ikke aktivt.")
+        MenuSelect trioId,, "Fil", "Innstillinger..."
+        if !WinWait(dlg, , 2)
+            throw Error("Trio-innstillingene ble ikke åpnet.")
+
+        try WinSetTransparent 0, dlg
+        ControlChooseIndex 3, "SysTabControl321", dlg
+        Sleep 50
+
+        forrige := ""
+        try forrige := ControlGetChoice("ComboBox1", dlg)
+        ControlChooseString verdi, "ComboBox1", dlg
+
+        ; NA = No Activate. Kontrollklikk skal ikke flytte musepekeren.
+        ControlClick "Button3", dlg, , "Left", 1, "NA"
+        Sleep 150
+
+        if WinExist(dlg) {
+            try ControlClick "OK", dlg, , "Left", 1, "NA"
+            WinWaitClose dlg, , 2
+        }
+        if WinExist(dlg)
+            throw Error("Trio-innstillingene lot seg ikke lukke etter lagring.")
+        return forrige
+    }
+
+    ; Lukker eventuelt gjenglemt dialog med Avbryt, også ved feil.
+    LukkInnstillinger(dlg) {
+        if !WinExist(dlg)
+            return
+        try ControlClick "Avbryt", dlg, , "Left", 1, "NA"
+        if !WinWaitClose(dlg, , 1) {
+            try WinClose dlg
+            WinWaitClose dlg, , 1
+        }
+        if WinExist(dlg)
+            Logg("Trio Snarveier: ADVARSEL – Innstillinger i Trio lot seg ikke lukke")
     }
 }
 ; F12 -> {F12}, ^d -> ^{d}; fungerer også for navngitte numpad-taster.
