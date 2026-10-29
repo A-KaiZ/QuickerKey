@@ -1371,7 +1371,7 @@ class VT_SMKontakt extends VT_Base {
         this.Sjekk()                                   ; vis med en gang hva som leses
     }
 
-    ErLart() => this.Cfg["SMVindu"] != "" && this.Cfg["KontaktX"] != ""
+    ErLart() => this.Cfg["SMVindu"] != "" && InStr(this.Cfg["SMVindu"], "Service Manager") && this.Cfg["KontaktX"] != ""
 
     OppdaterTekster() {
         sm := this.Cfg["KontaktX"] != "" ? VennligNavn(this.Cfg["SMVindu"]) (this.Cfg["KnappX"] != "" ? "  ·  knapp lært" : "  ·  ingen knapp") : "ikke lært ennå – trykk «Lær oppsett»"
@@ -1849,7 +1849,7 @@ class VT_SMKontakt extends VT_Base {
 
         smHwnd := 0
         loop 3 {                                       ; Trio kan ta fokus – prøv opptil 3 ganger
-            h := AktiverFane(this.Cfg["SMVindu"])
+            h := AktiverFane(this.Cfg["SMVindu"], false)  ; SM Kontakt skal aldri bla gjennom urelaterte Edge-faner
             if h {
                 Sleep 300
                 if this.ErTrygt(h) {
@@ -1898,7 +1898,8 @@ class VT_SMKontakt extends VT_Base {
             return false
         ; Riktig Edge-vindu er ikke nok: avbryt hvis aktiv fane er f.eks. YouTube.
         if RegExMatch(this.Cfg["SMVindu"], "i)^(.*?)\s+ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe", &sm) {
-            if (Trim(sm[1]) = "" || !InStr(WinGetTitle("ahk_id " smHwnd), Trim(sm[1])))
+            if (!InStr(Trim(sm[1]), "Service Manager")
+                || !NettleserFaneBekreftet(smHwnd, Trim(sm[1])))
                 return false
         }
         exe := this.TrioExe()
@@ -2042,9 +2043,25 @@ class VT_SMKontakt extends VT_Base {
             this.LaerInfo := "Trio Web: " WinGetTitle("ahk_id " win)
             this.LaerSteg := 3                        ; ingen legg på-knapp for Trio Web
         } else if (this.LaerSteg = 3) {
-            this.Ny["SMVindu"] := VindusId(win), this.Ny["KontaktX"] := ox, this.Ny["KontaktY"] := oy
+            ; Bruk en stabil Service Manager-identifikator, ikke Edge sin tilfeldige fanetittel.
+            ; Stopper læring hvis det er YouTube eller en annen side som er aktiv.
+            if ErNettleser(win) {
+                if !NettleserFaneBekreftet(win, "Service Manager") {
+                    Logg("SM Kontakt: læring – klikket i Edge, men kunne ikke bekrefte Service Manager-fanen")
+                    Tip("Fant ikke bekreftet Service Manager-fane. Åpne SM 02 og klikk i Kontakt-feltet.", 4200)
+                    return
+                }
+                smId := "Service Manager ahk_exe " WinGetProcessName("ahk_id " win)
+            } else {
+                smId := VindusId(win)
+                if !InStr(smId, "Service Manager") {
+                    Tip("Dette ser ikke ut som Service Manager. Klikk i riktig Kontakt-felt.", 4000)
+                    return
+                }
+            }
+            this.Ny["SMVindu"] := smId, this.Ny["KontaktX"] := ox, this.Ny["KontaktY"] := oy
             this.SmHwnd := win
-            this.LaerInfo .= "`nService Manager: " WinGetTitle("ahk_id " win)
+            this.LaerInfo .= "`nService Manager: " smId
             this.LaerSteg := 4
         } else if (this.LaerSteg = 4) {
             if (win != this.SmHwnd)
@@ -2399,12 +2416,29 @@ ErNettleser(hwnd) {
     return false
 }
 
-; Bytter til en bestemt nettleserfane. Finn først fanen via UI Automation;
-; bruk kontrollert Ctrl+Tab som reserve. Returnerer kun vinduet når riktig fane er bekreftet.
-AktiverFane(id) {
+; Bruk kun aktiv fane eller UIA til å finne målet i SM Kontakt.
+; Vindusbytter kan valgfritt fortsatt bruke Ctrl+Tab ved eksplisitt hurtigtast.
+NettleserFaneBekreftet(hwnd, nokkelord) {
+    if !hwnd
+        return false
+    try {
+        if InStr(WinGetTitle("ahk_id " hwnd), nokkelord)
+            return true
+        rot := UiaFraVindu(hwnd)
+        if !IsObject(rot)
+            return false
+        for fane in UiaFinnAlle(rot, 50019) {
+            if (InStr(UiaStreng(fane, 30005), nokkelord) && UiaBool(fane, 30079))
+                return true
+        }
+    }
+    return false
+}
+
+AktiverFane(id, tillatFaneblading := true) {
     if (id = "")
         return 0
-    nettleser := RegExMatch(id, "i)^(.*?)\s+ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe", &del)
+    nettleser := RegExMatch(id, "i)^(.*?)\s+ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe$", &del)
     if !nettleser {
         hwnd := FinnVindu(id, false)
         if !hwnd
@@ -2418,73 +2452,97 @@ AktiverFane(id) {
         return 0
     }
 
-    nokkelord := Trim(del[1]), exe := del[2]
+    nokkelord := Trim(del[1]), exe := del[2] ".exe"
     if (nokkelord = "")
         return 0
-    forrige := WinExist("A")
+    ; SM Kontakt nekter å bruke tilfeldige korte lærte titler (f.eks. "! W$").
+    if (!tillatFaneblading && !InStr(nokkelord, "Service Manager")) {
+        Logg("SM Kontakt: avviser ugyldig mål-fane. Lær Service Manager på nytt.")
+        return 0
+    }
 
-    ; Prøv først et vindu som allerede har fanen aktiv.
+    ; 1: Finn vindu med riktig fane allerede valgt – uten å påvirke andre vinduer.
     for hwnd in WinGetList("ahk_exe " exe) {
+        if !NettleserFaneBekreftet(hwnd, nokkelord)
+            continue
         try {
-            if !InStr(WinGetTitle("ahk_id " hwnd), nokkelord)
-                continue
             if (WinGetMinMax("ahk_id " hwnd) = -1)
                 WinRestore "ahk_id " hwnd
             WinActivate "ahk_id " hwnd
-            if (WinWaitActive("ahk_id " hwnd, , 2) && InStr(WinGetTitle("ahk_id " hwnd), nokkelord))
+            if (WinWaitActive("ahk_id " hwnd, , 2) && NettleserFaneBekreftet(hwnd, nokkelord))
                 return hwnd
         }
     }
 
+    ; 2: Finn en kjent UIA-tab uten å endre faner i feil vindu.
     for hwnd in WinGetList("ahk_exe " exe) {
+        if !UiaHarFane(hwnd, nokkelord)
+            continue
         try {
-            if (WinGetTitle("ahk_id " hwnd) = "" || !(WinGetStyle("ahk_id " hwnd) & 0x10000000))
-                continue
             if (WinGetMinMax("ahk_id " hwnd) = -1)
                 WinRestore "ahk_id " hwnd
             WinActivate "ahk_id " hwnd
-            if !WinWaitActive("ahk_id " hwnd, , 1)
+            if !WinWaitActive("ahk_id " hwnd, , 2)
                 continue
-
-            ; UIA velger riktig TabItem uten å måtte bla gjennom YouTube og andre faner.
-            if (UiaVelgFane(hwnd, nokkelord) && InStr(WinGetTitle("ahk_id " hwnd), nokkelord))
+            if UiaVelgFane(hwnd, nokkelord)
                 return hwnd
+        }
+    }
 
-            ; Fallback: bla gjennom opptil 30 faner. Gå tilbake hvis ingen passer.
-            bytter := 0
-            loop 30 {
-                if !WinActive("ahk_id " hwnd)
-                    break
-                Send "^{Tab}"
-                bytter++
-                Sleep 180
-                if InStr(WinGetTitle("ahk_id " hwnd), nokkelord)
-                    return hwnd
-            }
-            if WinActive("ahk_id " hwnd) {
-                loop bytter {
-                    Send "^+{Tab}"
-                    Sleep 35
+    ; 3: Kun for brukerutløst Vindusbytter. SM Kontakt passerer false.
+    if tillatFaneblading {
+        for hwnd in WinGetList("ahk_exe " exe) {
+            try {
+                if (WinGetTitle("ahk_id " hwnd) = "" || !(WinGetStyle("ahk_id " hwnd) & 0x10000000))
+                    continue
+                if (WinGetMinMax("ahk_id " hwnd) = -1)
+                    WinRestore "ahk_id " hwnd
+                WinActivate "ahk_id " hwnd
+                if !WinWaitActive("ahk_id " hwnd, , 1)
+                    continue
+                bytter := 0
+                loop 30 {
+                    if !WinActive("ahk_id " hwnd)
+                        break
+                    Send "^{Tab}"
+                    bytter++
+                    Sleep 160
+                    if NettleserFaneBekreftet(hwnd, nokkelord)
+                        return hwnd
+                }
+                if WinActive("ahk_id " hwnd) {
+                    loop bytter {
+                        Send "^+{Tab}"
+                        Sleep 35
+                    }
                 }
             }
         }
     }
-    if forrige
-        try WinActivate "ahk_id " forrige
-    Logg("Vindussøk: fant ikke aktiv fane for " nokkelord " (" exe ")")
+    Logg("Vindussøk: finner ikke verifisert fane for " nokkelord " (" exe "). Ingen innskriving utført.")
     return 0
 }
 
-; Microsoft UI Automation: TabItem = 50019, Name = 30005,
-; SelectionItemPattern = 10010 og Select-metoden er COM-vtable-indeks 3.
+UiaHarFane(hwnd, nokkelord) {
+    try {
+        rot := UiaFraVindu(hwnd)
+        if IsObject(rot) {
+            for element in UiaFinnAlle(rot, 50019)
+                if InStr(UiaStreng(element, 30005), nokkelord)
+                    return true
+        }
+    }
+    return false
+}
+
+; Microsoft UI Automation: TabItem 50019, SelectionItemPattern 10010.
 UiaVelgFane(hwnd, nokkelord) {
     try {
         rot := UiaFraVindu(hwnd)
         if !IsObject(rot)
             return false
         for element in UiaFinnAlle(rot, 50019) {
-            tittel := UiaStreng(element, 30005)
-            if !InStr(tittel, nokkelord)
+            if !InStr(UiaStreng(element, 30005), nokkelord)
                 continue
             ptr := 0
             ComCall(16, element, "Int", 10010, "Ptr*", &ptr)
@@ -2492,9 +2550,8 @@ UiaVelgFane(hwnd, nokkelord) {
                 continue
             valg := ComValue(13, ptr)
             ComCall(3, valg)
-            Sleep 120
-            if InStr(WinGetTitle("ahk_id " hwnd), nokkelord)
-                return true
+            Sleep 180
+            return NettleserFaneBekreftet(hwnd, nokkelord)
         }
     }
     return false
