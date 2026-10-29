@@ -24,6 +24,18 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 
 **Edge/Service Manager:** UI Automation forsøker å aktivere riktig fane og verifiserer fanetittelen før innskriving. Ingen garanti mot alle UI-endringer; se QA-testene.
 
+## Regresjonsrettelser: SM Kontakt og Tekstflyt (2026-10-29)
+
+**Hvor er filene?** v3.0 bruker som standard `%AppData%\QuickerKeys`, selv når `QuickerKeys.ahk` ligger under `Downloads\quickerkey-test`. Dette er bevisst for å beholde personlige innstillinger mellom kodeoppdateringer, men krever at testere bruker appens **Åpne datamappen**-knapp og ikke redigerer en gammel INI i Downloads. Ikke flytt hele QuickKey-mappen.
+
+**Excel-valg:** Tekstflyt → **Importer / velg Excel…** åpner en eksisterende Excel-fil. Dialogen tilbyr **Ja = kopier en ny, tidsstemplet fil til AppData**, **Nei = bruk eksisterende fil på opprinnelig sted**, **Avbryt = ingen endring**. Filen prøveleses før ny sti lagres. Ved manglende valgt fil vises feil; programmet bytter ikke automatisk til eksempelkoder.
+
+**SM Kontakt:** Opplæring godtar bare en bekreftet Service Manager-fane; lagret `SMVindu` får stabilt navn som `Service Manager ahk_exe msedge.exe`. Eldre oppsett med ugyldig navn (f.eks. `! W$ ahk_exe msedge.exe`) må læres på nytt. Under automatisk innfylling velges fanen uten å bla gjennom Edge-fanene med Ctrl+Tab; feil mål gir avbrudd fremfor innskriving i feil fane.
+
+**Trio Web i bakgrunnen:** Den eksisterende UIA-lesingen beholdes. Nødvarianten som fremhever Trio ved ulesbar side er slått **av** som standard; kan ved behov aktiveres eksplisitt i `[SMKontakt]` med `TillatTrioFokus=1`. Dette bør kun gjøres når brukeren aksepterer fokusbytte.
+
+**Begrensning:** Vi har ikke kjørt denne koden i HSØ-/Trio-miljøet. UI Automation av Edge-faner og skjermkoordinater må testes på Windows før merge.
+
 ## Mapper og konfigurasjon
 
 QuickerKeys legger alltid egne data i `%AppData%\QuickerKeys` (normalt `C:\Users\<bruker>\AppData\Roaming\QuickerKeys`), med:
