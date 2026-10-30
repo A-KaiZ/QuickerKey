@@ -28,7 +28,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.6"
+global APP_VERSJON := "3.8"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -2138,6 +2138,9 @@ class VT_SMKontakt extends VT_Base {
     ; Steg 1: Trio (Web: klikk på kundenummeret · Attendant: trykk hurtigkopiering)
     ; Steg 3: Kontakt-feltet · Steg 4: knappen ved siden av · Steg 5: Test og Lagre   (steg 2 finnes ikke lenger)
     Laer(*) {
+        for vt in VERKTOY_LISTE
+            if (vt is VT_TrioSnarveier && vt.ImLaerer)
+                return Tip("Avslutt læring av IM Search før du lærer SM Kontakt")
         this.LaerSteg := 1
         this.LaerInfo := ""
         this.LaerKilde := ""
@@ -2906,6 +2909,14 @@ UiaStreng(element, egenskap) {
     return verdi
 }
 
+UiaTall(element, egenskap) {
+    variant := Buffer(24, 0)
+    ComCall(10, element, "Int", egenskap, "Ptr", variant)
+    verdi := NumGet(variant, 0, "UShort") = 3 ? NumGet(variant, 8, "Int") : 0
+    DllCall("oleaut32\VariantClear", "Ptr", variant)
+    return verdi
+}
+
 UiaBool(element, egenskap) {
     variant := Buffer(24, 0)
     ComCall(10, element, "Int", egenskap, "Ptr", variant)
@@ -3159,10 +3170,17 @@ class VT_TrioSnarveier extends VT_Base {
     Registrerte := ""
     Opptak := false
     KopiModus := ""                    ; "lukket" = Trio kopierer bare fra hovedvinduet (oppdages automatisk)
+    Etter := ""                        ; handling etter Trio-snarvei (åpne IM)
+    ImVenter := ""                     ; vent på at Search åpnes i Service Manager
+    ImLaerer := false
+    SistIM := ""
 
     __New() {
         this.Felt := Map()
         this.Registrerte := Map()
+        this.ImPollCb := ObjBindMethod(this, "ImSjekk")
+        this.ImKlikkCb := ObjBindMethod(this, "ImLaerKlikk")
+        this.ImEscCb := ObjBindMethod(this, "ImLaerAvbryt")
     }
 
     Hjelp() {
@@ -3171,6 +3189,9 @@ class VT_TrioSnarveier extends VT_Base {
             . "•  IM og telefonnummer bytter Parameter midlertidig, kopierer og gjenoppretter innstillingene.`n"
             . "•  Kopitasten leses automatisk fra Hurtigkopiering i Trio (f.eks. Ctrl + |).`n"
             . "•  «Velg tast…» for kopitasten vises hvis automatisk lesing feiler.`n"
+            . "•  Åpne IM-en (valgfritt): «Lær oppsett» → klikk i Search-feltet i Service Manager.`n"
+            . "•  Hvis Search er lukket, venter programmet inntil 30 sekunder på at du åpner det.`n"
+            . "•  «Test» prøver et valgfritt IM-nummer med samme automatikk som ved kopiering.`n"
             . "•  Hurtigtaster kan være tastaturkombinasjoner, enkelttegn eller musknapper.`n"
             . "•  Enkelttegn og midtre/sideknapper uten Ctrl/Alt fungerer bare når Trio er aktivt.`n"
             . "•  Kryss av «På» og trykk «Lagre snarveier».`n"
@@ -3183,7 +3204,7 @@ class VT_TrioSnarveier extends VT_Base {
         this.Leg(gui.AddText("x" (x+236) " y" y " w145 h22 Background" TEMA.bg, "HURTIGTAST"))
         this.Leg(gui.AddText("x" (x+422) " y" y " w60 h22 Background" TEMA.bg, "AKTIV"))
         for i, op in TrioOppgaver() {
-            ry := y + 28 + (i-1)*47
+            ry := y + 28 + (i-1)*42
             Skrift(gui, "s9 c" TEMA.tekst)
             this.Leg(gui.AddText("x" x " y" (ry+3) " w225 h28 +0x200 Background" TEMA.bg, op.navn))
             tastKnapp := this.Leg(Knapp(gui, "x" (x+236) " y" ry " w145 h29", "", ObjBindMethod(this, "TaOppTast", op.key), TEMA.aksent2))
@@ -3193,7 +3214,7 @@ class VT_TrioSnarveier extends VT_Base {
             this.Felt[op.key] := {knapp:tastKnapp, sjekk:sjekk, tast:this.Hent(op.key, ""), navn:op.navn}
             this.VisTast(op.key)
         }
-        yKnapp := y + 28 + TrioOppgaver().Length * 47 + 6
+        yKnapp := y + 28 + TrioOppgaver().Length * 42 + 6
         Skrift(gui, "s10 bold c" TEMA.tekst)
         this.Leg(Knapp(gui, "x" x " y" yKnapp " w175 h34", "Lagre snarveier", ObjBindMethod(this, "LagreSnarveier")))
         Skrift(gui, "s9 c" TEMA.dempet)
@@ -3202,8 +3223,15 @@ class VT_TrioSnarveier extends VT_Base {
         Skrift(gui, "s9 bold c" TEMA.paa)
         this.MeldingK := this.Leg(gui.AddText("x" x " y" (yKnapp+44) " w" b " h20 Background" TEMA.bg, ""))
         Skrift(gui, "s9 c" TEMA.tekst)
-        this.KopiK := this.Leg(gui.AddText("x" x " y" (yKnapp+74) " w" (b-130) " h28 +0x200 Background" TEMA.bg, ""))
-        this.KopiKnapp := this.Leg(Knapp(gui, "x" (x+b-120) " y" (yKnapp+74) " w120 h28", "Velg tast…", ObjBindMethod(this, "TaOppKopitast"), TEMA.aksent2))
+        this.KopiK := this.Leg(gui.AddText("x" x " y" (yKnapp+70) " w" (b-130) " h28 +0x200 Background" TEMA.bg, ""))
+        this.KopiKnapp := this.Leg(Knapp(gui, "x" (x+b-120) " y" (yKnapp+70) " w120 h28", "Velg tast…", ObjBindMethod(this, "TaOppKopitast"), TEMA.aksent2))
+        Skrift(gui, "s9 c" TEMA.tekst)
+        this.ImSjekkK := this.Leg(gui.AddCheckBox("x" x " y" (yKnapp+106) " w" (b-196) " h28"
+            . (this.Hent("ApneIM", "0") = "1" ? " Checked" : ""), ""))
+        this.ImSjekkK.OnEvent("Click", ObjBindMethod(this, "ImSlaPaAv"))
+        this.Leg(Knapp(gui, "x" (x+b-186) " y" (yKnapp+106) " w100 h28", "Lær oppsett", ObjBindMethod(this, "ImLaer"), TEMA.aksent2))
+        this.Leg(Knapp(gui, "x" (x+b-80) " y" (yKnapp+106) " w80 h28", "Test", ObjBindMethod(this, "ImTest"), TEMA.aksent2))
+        this.ImVisStatus()
         VIS_VILKAR[this.KopiKnapp] := () => this.TrengerKopiKnapp()
         this.VisKopitast()
     }
@@ -3334,6 +3362,11 @@ class VT_TrioSnarveier extends VT_Base {
     }
 
     Stopp() {
+        if this.ImLaerer
+            this.ImLaerStopp()
+        SetTimer this.ImPollCb, 0
+        this.ImVenter := ""
+        this.Etter := ""
         for key, reg in this.Registrerte {
             if reg.kunTrio
                 HotIf TrioSnarveiKrit
@@ -3386,6 +3419,12 @@ class VT_TrioSnarveier extends VT_Base {
         } finally {
             if (forrige && WinExist("ahk_id " forrige))
                 try WinActivate "ahk_id " forrige
+        }
+        if IsObject(this.Etter) {
+            f := this.Etter, this.Etter := ""
+            try f()
+            catch as feil
+                Logg("Trio Snarveier: FEIL etter " nokkel " – " feil.Message)
         }
     }
 
@@ -3467,6 +3506,8 @@ class VT_TrioSnarveier extends VT_Base {
             try verdi := Trim(A_Clipboard, " " Chr(9) Chr(13) Chr(10))
             Logg("Trio Snarveier: " type " kopiert – " KortVerdi(verdi, 60))
             Varsel("Trio Attendant · " type, verdi = "" ? "—" : KortVerdi(verdi), type " kopiert")
+            if (felt = "Kommentar" && this.Hent("ApneIM", "0") = "1" && RegExMatch(verdi, "i)\bIM\d{4,}\b"))
+                this.Etter := ObjBindMethod(this, "ApneIM", verdi)
         } else {
             TrioKopiMerke("")
             Logg("Trio Snarveier: FEIL " type " – ingenting ble kopiert (kopitast " TastTekst(tast) ")")
@@ -3544,6 +3585,224 @@ class VT_TrioSnarveier extends VT_Base {
     }
 
     ; Trykker Trios kopitast og venter (maks 1 sekund) til utklippstavlen endres.
+
+    ; ---------------- Åpne IM i Service Manager (frivillig) ----------------
+    ImLart() => this.Hent("IMVindu", "") != "" && this.Hent("IMX", "") != ""
+
+    ImVisStatus() {
+        try this.ImSjekkK.Text := "Åpne IM-en i Service Manager" (this.ImLart() ? "" : "  (ikke lært)")
+    }
+
+    ImSlaPaAv(ktrl, *) {
+        if (ktrl.Value && !this.ImLart()) {
+            ktrl.Value := 0
+            return this.Melding("Trykk «Lær oppsett» og klikk i Search-feltet i Service Manager først", false)
+        }
+        this.Lagre("ApneIM", ktrl.Value ? "1" : "0")
+        if !ktrl.Value {
+            SetTimer this.ImPollCb, 0
+            this.ImVenter := ""
+            this.Etter := ""
+        }
+        this.Melding(ktrl.Value ? "IM-en åpnes i Service Manager etter kopiering" : "IM-en åpnes ikke lenger automatisk")
+    }
+
+    ; Egen ~*LButton-variant for ikke å overskrive SM Kontakts ~LButton-handler.
+    ImLaer(*) {
+        if this.ImLaerer
+            return
+        for vt in VERKTOY_LISTE
+            if (vt is VT_SMKontakt && vt.LaerSteg)
+                return this.Melding("Fullfør eller avbryt læringen av SM Kontakt først", false)
+        this.ImLaerer := true
+        try {
+            Hotkey "~*LButton", this.ImKlikkCb, "On"
+            Hotkey "Esc", this.ImEscCb, "On"
+            SetTimer this.ImEscCb, -60000
+            ToolTip "Lær Search-feltet:" Chr(10) "Åpne Search i Service Manager (ikonet ved Smart Search)" Chr(10)
+                . "og klikk i Search-feltet." Chr(10) "(Esc = avbryt)"
+            this.Melding("Klikk i Search-feltet i Service Manager (Esc = avbryt)")
+        } catch as feil {
+            this.ImLaerStopp()
+            this.Melding("Kunne ikke starte læringen: " feil.Message, false)
+        }
+    }
+
+    ImLaerStopp() {
+        try Hotkey "~*LButton", "Off"
+        try Hotkey "Esc", "Off"
+        SetTimer this.ImEscCb, 0
+        this.ImLaerer := false
+        ToolTip
+    }
+
+    ImLaerAvbryt(*) {
+        if !this.ImLaerer
+            return
+        this.ImLaerStopp()
+        this.Melding("Læring avbrutt – ingenting er endret", false)
+    }
+
+    ImLaerKlikk(*) {
+        if !this.ImLaerer
+            return
+        CoordMode "Mouse", "Screen"
+        MouseGetPos &sx, &sy, &win
+        if (!win || WinGetPID("ahk_id " win) = ProcessExist())
+            return
+        if (!ErNettleser(win) || !NettleserFaneBekreftet(win, "Service Manager")) {
+            ToolTip "Dette var ikke Service Manager." Chr(10)
+                . "Åpne Search i Service Manager og klikk i Search-feltet." Chr(10) "(Esc = avbryt)"
+            return
+        }
+        t := 0, n := ""
+        try {
+            el := UiaFraPunkt(sx, sy)
+            if IsObject(el) {
+                t := UiaTall(el, 30003)
+                n := UiaStreng(el, 30005)
+            }
+        }
+        if (t != 50004) {
+            ToolTip "Dette var ikke et tekstfelt." Chr(10)
+                . "Klikk i Search-feltet til venstre for Smart Search." Chr(10) "(Esc = avbryt)"
+            return
+        }
+        if InStr(n, "Smart") {
+            ToolTip "Du klikket i Smart Search." Chr(10)
+                . "Klikk i Search-feltet til venstre for ikonet." Chr(10) "(Esc = avbryt)"
+            return
+        }
+        WinGetClientPos &cx, &cy, &cw, , "ahk_id " win
+        this.Lagre("IMVindu", "Service Manager ahk_exe " WinGetProcessName("ahk_id " win))
+        this.Lagre("IMX", cw - (sx - cx))
+        this.Lagre("IMY", sy - cy)
+        this.Lagre("IMNavn", n)
+        this.Lagre("ApneIM", "1")
+        this.ImLaerStopp()
+        try this.ImSjekkK.Value := 1
+        this.ImVisStatus()
+        this.Melding("Search-feltet er lært. IM-en åpnes etter kopiering.")
+        Logg("Trio Snarveier: Search-feltet i Service Manager lært (navn " n ")")
+    }
+
+    ; Lagre avstand fra høyre klientkant for bedre toleranse ved vindusendring.
+    ImPunkt(h) {
+        WinGetClientPos &cx, &cy, &cw, , "ahk_id " h
+        return {x: cx + cw - this.Hent("IMX", 0), y: cy + this.Hent("IMY", 0)}
+    }
+
+    ; Bare les målpunktet. Klikk aldri hvis en annen fane eller kontroll er der.
+    ImSearchApent(h) {
+        if (!h || !WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
+            return false
+        p := this.ImPunkt(h)
+        under := DllCall("WindowFromPoint", "Int64", (p.y << 32) | (p.x & 0xFFFFFFFF), "Ptr")
+        if (!under || DllCall("GetAncestor", "Ptr", under, "UInt", 2, "Ptr") != h)
+            return false
+        try {
+            el := UiaFraPunkt(p.x, p.y)
+            if !IsObject(el)
+                return false
+            navn := this.Hent("IMNavn", "")
+            return UiaTall(el, 30003) = 50004 && (navn = "" || UiaStreng(el, 30005) = navn)
+        }
+        return false
+    }
+
+    ImTest(*) {
+        if !this.ImLart()
+            return this.Melding("Lær Search-feltet i Service Manager først", false)
+        svar := InputBox("Skriv et IM-nummer som skal åpnes i Service Manager:", "Test – åpne IM", "w340 h130", this.SistIM)
+        if (svar.Result != "OK" || Trim(svar.Value) = "")
+            return this.Melding("Test avbrutt", false)
+        this.Melding("Tester: åpner " Trim(svar.Value) " i Service Manager …")
+        Logg("Trio Snarveier: test av IM-åpning med " Trim(svar.Value))
+        this.ApneIM(Trim(svar.Value))
+    }
+
+    ApneIM(tekst) {
+        if !RegExMatch(tekst, "i)\bIM\d{4,}\b", &m) {
+            this.Melding("Fant ikke IM-nummer i «" KortVerdi(tekst, 40) "»", false)
+            Logg("Trio Snarveier: fant ikke IM-nummer i «" KortVerdi(tekst, 60) "» – ingenting åpnet")
+            return Varsel("Service Manager", "—", "Fant ikke IM-nummer – ingenting ble åpnet", false)
+        }
+        im := StrUpper(m[0])
+        this.SistIM := im
+        SetTimer this.ImPollCb, 0
+        this.ImVenter := ""
+        VentTasterSluppet(1500)
+        h := AktiverFane(this.Hent("IMVindu", ""), false)
+        if !h {
+            this.Melding("Fant ikke Service Manager – " im " ble ikke åpnet", false)
+            Logg("Trio Snarveier: fant ikke Service Manager – " im " ble ikke åpnet")
+            return Varsel("Service Manager", im, "Fant ikke Service Manager – IM-en ble ikke åpnet", false)
+        }
+        Sleep 150
+        if this.ImSearchApent(h)
+            return this.ImSkriv(h, im)
+        this.ImVenter := {im: im, slutt: A_TickCount + 30000}
+        this.Melding("Search er lukket i Service Manager – åpne det, så åpnes " im, false)
+        Logg("Trio Snarveier: Search er lukket – venter på åpning (" im ")")
+        Varsel("Service Manager", im, "Åpne Search ved Smart Search – så åpnes IM-en", false)
+        SetTimer this.ImPollCb, 500
+    }
+
+    ImSjekk() {
+        v := this.ImVenter
+        if !IsObject(v) {
+            SetTimer this.ImPollCb, 0
+            return
+        }
+        if (A_TickCount > v.slutt) {
+            SetTimer this.ImPollCb, 0
+            this.ImVenter := ""
+            this.Melding("Search ble ikke åpnet innen 30 sekunder – " v.im " ble ikke åpnet", false)
+            Logg("Trio Snarveier: Search ble ikke åpnet innen 30 sekunder – " v.im " ble ikke åpnet")
+            return Varsel("Service Manager", v.im, "Search ble ikke åpnet – IM-en ble ikke åpnet", false)
+        }
+        h := WinExist("A")
+        if (!h || !ErNettleser(h) || !this.ImSearchApent(h))
+            return
+        SetTimer this.ImPollCb, 0
+        this.ImVenter := ""
+        this.ImSkriv(h, v.im)
+    }
+
+    ; Klikker i verifisert Search, skriver IM og Enter. Bevarer museposisjon.
+    ImSkriv(h, im) {
+        if !this.ImSearchApent(h) {
+            this.Melding("Search-feltet er ikke tilgjengelig – " im " ble ikke skrevet", false)
+            return false
+        }
+        CoordMode "Mouse", "Screen"
+        MouseGetPos &mx, &my
+        p := this.ImPunkt(h)
+        try {
+            Click p.x, p.y
+            Sleep 80
+            if !this.ImSearchApent(h) {
+                this.Melding("Service Manager/Search mistet fokus – " im " ble ikke åpnet", false)
+                Logg("Trio Snarveier: Search var ikke lenger verifisert etter klikk")
+                return false
+            }
+            Send "^a"
+            SendText im
+            Sleep 30
+            if (!WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager")) {
+                this.Melding("Service Manager mistet fokus – Enter ble ikke sendt", false)
+                return false
+            }
+            Send "{Enter}"
+            this.Melding(im " ble skrevet i Search og Enter trykket")
+            Logg("Trio Snarveier: søkte etter " im " i Service Manager")
+            Varsel("Service Manager", im, "IM-søk startet i Service Manager")
+            return true
+        } finally {
+            MouseMove mx, my, 0
+        }
+    }
+
     TrykkKopi(kopitast, type) {
         TrioKopiMerke(type)
         SetTimer () => TrioKopiMerke(""), -1500
