@@ -2138,6 +2138,9 @@ class VT_SMKontakt extends VT_Base {
     ; Steg 1: Trio (Web: klikk på kundenummeret · Attendant: trykk hurtigkopiering)
     ; Steg 3: Kontakt-feltet · Steg 4: knappen ved siden av · Steg 5: Test og Lagre   (steg 2 finnes ikke lenger)
     Laer(*) {
+        for vt in VERKTOY_LISTE
+            if (vt is VT_TrioSnarveier && vt.ImLaerer)
+                return Tip("Avslutt læring av IM Search før du lærer SM Kontakt")
         this.LaerSteg := 1
         this.LaerInfo := ""
         this.LaerKilde := ""
@@ -3359,6 +3362,11 @@ class VT_TrioSnarveier extends VT_Base {
     }
 
     Stopp() {
+        if this.ImLaerer
+            this.ImLaerStopp()
+        SetTimer this.ImPollCb, 0
+        this.ImVenter := ""
+        this.Etter := ""
         for key, reg in this.Registrerte {
             if reg.kunTrio
                 HotIf TrioSnarveiKrit
@@ -3591,6 +3599,11 @@ class VT_TrioSnarveier extends VT_Base {
             return this.Melding("Trykk «Lær oppsett» og klikk i Search-feltet i Service Manager først", false)
         }
         this.Lagre("ApneIM", ktrl.Value ? "1" : "0")
+        if !ktrl.Value {
+            SetTimer this.ImPollCb, 0
+            this.ImVenter := ""
+            this.Etter := ""
+        }
         this.Melding(ktrl.Value ? "IM-en åpnes i Service Manager etter kopiering" : "IM-en åpnes ikke lenger automatisk")
     }
 
