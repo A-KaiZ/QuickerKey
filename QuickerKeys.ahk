@@ -28,7 +28,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.6"
+global APP_VERSJON := "3.8"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -2906,6 +2906,14 @@ UiaStreng(element, egenskap) {
     return verdi
 }
 
+UiaTall(element, egenskap) {
+    variant := Buffer(24, 0)
+    ComCall(10, element, "Int", egenskap, "Ptr", variant)
+    verdi := NumGet(variant, 0, "UShort") = 3 ? NumGet(variant, 8, "Int") : 0
+    DllCall("oleaut32\VariantClear", "Ptr", variant)
+    return verdi
+}
+
 UiaBool(element, egenskap) {
     variant := Buffer(24, 0)
     ComCall(10, element, "Int", egenskap, "Ptr", variant)
@@ -3159,10 +3167,17 @@ class VT_TrioSnarveier extends VT_Base {
     Registrerte := ""
     Opptak := false
     KopiModus := ""                    ; "lukket" = Trio kopierer bare fra hovedvinduet (oppdages automatisk)
+    Etter := ""                        ; handling etter Trio-snarvei (åpne IM)
+    ImVenter := ""                     ; vent på at Search åpnes i Service Manager
+    ImLaerer := false
+    SistIM := ""
 
     __New() {
         this.Felt := Map()
         this.Registrerte := Map()
+        this.ImPollCb := ObjBindMethod(this, "ImSjekk")
+        this.ImKlikkCb := ObjBindMethod(this, "ImLaerKlikk")
+        this.ImEscCb := ObjBindMethod(this, "ImLaerAvbryt")
     }
 
     Hjelp() {
@@ -3171,6 +3186,9 @@ class VT_TrioSnarveier extends VT_Base {
             . "•  IM og telefonnummer bytter Parameter midlertidig, kopierer og gjenoppretter innstillingene.`n"
             . "•  Kopitasten leses automatisk fra Hurtigkopiering i Trio (f.eks. Ctrl + |).`n"
             . "•  «Velg tast…» for kopitasten vises hvis automatisk lesing feiler.`n"
+            . "•  Åpne IM-en (valgfritt): «Lær oppsett» → klikk i Search-feltet i Service Manager.`n"
+            . "•  Hvis Search er lukket, venter programmet inntil 30 sekunder på at du åpner det.`n"
+            . "•  «Test» prøver et valgfritt IM-nummer med samme automatikk som ved kopiering.`n"
             . "•  Hurtigtaster kan være tastaturkombinasjoner, enkelttegn eller musknapper.`n"
             . "•  Enkelttegn og midtre/sideknapper uten Ctrl/Alt fungerer bare når Trio er aktivt.`n"
             . "•  Kryss av «På» og trykk «Lagre snarveier».`n"
@@ -3183,7 +3201,7 @@ class VT_TrioSnarveier extends VT_Base {
         this.Leg(gui.AddText("x" (x+236) " y" y " w145 h22 Background" TEMA.bg, "HURTIGTAST"))
         this.Leg(gui.AddText("x" (x+422) " y" y " w60 h22 Background" TEMA.bg, "AKTIV"))
         for i, op in TrioOppgaver() {
-            ry := y + 28 + (i-1)*47
+            ry := y + 28 + (i-1)*42
             Skrift(gui, "s9 c" TEMA.tekst)
             this.Leg(gui.AddText("x" x " y" (ry+3) " w225 h28 +0x200 Background" TEMA.bg, op.navn))
             tastKnapp := this.Leg(Knapp(gui, "x" (x+236) " y" ry " w145 h29", "", ObjBindMethod(this, "TaOppTast", op.key), TEMA.aksent2))
@@ -3193,7 +3211,7 @@ class VT_TrioSnarveier extends VT_Base {
             this.Felt[op.key] := {knapp:tastKnapp, sjekk:sjekk, tast:this.Hent(op.key, ""), navn:op.navn}
             this.VisTast(op.key)
         }
-        yKnapp := y + 28 + TrioOppgaver().Length * 47 + 6
+        yKnapp := y + 28 + TrioOppgaver().Length * 42 + 6
         Skrift(gui, "s10 bold c" TEMA.tekst)
         this.Leg(Knapp(gui, "x" x " y" yKnapp " w175 h34", "Lagre snarveier", ObjBindMethod(this, "LagreSnarveier")))
         Skrift(gui, "s9 c" TEMA.dempet)
@@ -3202,8 +3220,15 @@ class VT_TrioSnarveier extends VT_Base {
         Skrift(gui, "s9 bold c" TEMA.paa)
         this.MeldingK := this.Leg(gui.AddText("x" x " y" (yKnapp+44) " w" b " h20 Background" TEMA.bg, ""))
         Skrift(gui, "s9 c" TEMA.tekst)
-        this.KopiK := this.Leg(gui.AddText("x" x " y" (yKnapp+74) " w" (b-130) " h28 +0x200 Background" TEMA.bg, ""))
-        this.KopiKnapp := this.Leg(Knapp(gui, "x" (x+b-120) " y" (yKnapp+74) " w120 h28", "Velg tast…", ObjBindMethod(this, "TaOppKopitast"), TEMA.aksent2))
+        this.KopiK := this.Leg(gui.AddText("x" x " y" (yKnapp+70) " w" (b-130) " h28 +0x200 Background" TEMA.bg, ""))
+        this.KopiKnapp := this.Leg(Knapp(gui, "x" (x+b-120) " y" (yKnapp+70) " w120 h28", "Velg tast…", ObjBindMethod(this, "TaOppKopitast"), TEMA.aksent2))
+        Skrift(gui, "s9 c" TEMA.tekst)
+        this.ImSjekkK := this.Leg(gui.AddCheckBox("x" x " y" (yKnapp+106) " w" (b-196) " h28"
+            . (this.Hent("ApneIM", "0") = "1" ? " Checked" : ""), ""))
+        this.ImSjekkK.OnEvent("Click", ObjBindMethod(this, "ImSlaPaAv"))
+        this.Leg(Knapp(gui, "x" (x+b-186) " y" (yKnapp+106) " w100 h28", "Lær oppsett", ObjBindMethod(this, "ImLaer"), TEMA.aksent2))
+        this.Leg(Knapp(gui, "x" (x+b-80) " y" (yKnapp+106) " w80 h28", "Test", ObjBindMethod(this, "ImTest"), TEMA.aksent2))
+        this.ImVisStatus()
         VIS_VILKAR[this.KopiKnapp] := () => this.TrengerKopiKnapp()
         this.VisKopitast()
     }
@@ -3387,6 +3412,12 @@ class VT_TrioSnarveier extends VT_Base {
             if (forrige && WinExist("ahk_id " forrige))
                 try WinActivate "ahk_id " forrige
         }
+        if IsObject(this.Etter) {
+            f := this.Etter, this.Etter := ""
+            try f()
+            catch as feil
+                Logg("Trio Snarveier: FEIL etter " nokkel " – " feil.Message)
+        }
     }
 
 
@@ -3467,6 +3498,8 @@ class VT_TrioSnarveier extends VT_Base {
             try verdi := Trim(A_Clipboard, " " Chr(9) Chr(13) Chr(10))
             Logg("Trio Snarveier: " type " kopiert – " KortVerdi(verdi, 60))
             Varsel("Trio Attendant · " type, verdi = "" ? "—" : KortVerdi(verdi), type " kopiert")
+            if (felt = "Kommentar" && this.Hent("ApneIM", "0") = "1" && RegExMatch(verdi, "i)\bIM\d{4,}\b"))
+                this.Etter := ObjBindMethod(this, "ApneIM", verdi)
         } else {
             TrioKopiMerke("")
             Logg("Trio Snarveier: FEIL " type " – ingenting ble kopiert (kopitast " TastTekst(tast) ")")
