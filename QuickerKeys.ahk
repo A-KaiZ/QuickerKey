@@ -3577,6 +3577,219 @@ class VT_TrioSnarveier extends VT_Base {
     }
 
     ; Trykker Trios kopitast og venter (maks 1 sekund) til utklippstavlen endres.
+
+    ; ---------------- Åpne IM i Service Manager (frivillig) ----------------
+    ImLart() => this.Hent("IMVindu", "") != "" && this.Hent("IMX", "") != ""
+
+    ImVisStatus() {
+        try this.ImSjekkK.Text := "Åpne IM-en i Service Manager" (this.ImLart() ? "" : "  (ikke lært)")
+    }
+
+    ImSlaPaAv(ktrl, *) {
+        if (ktrl.Value && !this.ImLart()) {
+            ktrl.Value := 0
+            return this.Melding("Trykk «Lær oppsett» og klikk i Search-feltet i Service Manager først", false)
+        }
+        this.Lagre("ApneIM", ktrl.Value ? "1" : "0")
+        this.Melding(ktrl.Value ? "IM-en åpnes i Service Manager etter kopiering" : "IM-en åpnes ikke lenger automatisk")
+    }
+
+    ; Egen ~*LButton-variant for ikke å overskrive SM Kontakts ~LButton-handler.
+    ImLaer(*) {
+        if this.ImLaerer
+            return
+        for vt in VERKTOY_LISTE
+            if (vt is VT_SMKontakt && vt.LaerSteg)
+                return this.Melding("Fullfør eller avbryt læringen av SM Kontakt først", false)
+        this.ImLaerer := true
+        try {
+            Hotkey "~*LButton", this.ImKlikkCb, "On"
+            Hotkey "Esc", this.ImEscCb, "On"
+            SetTimer this.ImEscCb, -60000
+            ToolTip "Lær Search-feltet:" Chr(10) "Åpne Search i Service Manager (ikonet ved Smart Search)" Chr(10)
+                . "og klikk i Search-feltet." Chr(10) "(Esc = avbryt)"
+            this.Melding("Klikk i Search-feltet i Service Manager (Esc = avbryt)")
+        } catch as feil {
+            this.ImLaerStopp()
+            this.Melding("Kunne ikke starte læringen: " feil.Message, false)
+        }
+    }
+
+    ImLaerStopp() {
+        try Hotkey "~*LButton", "Off"
+        try Hotkey "Esc", "Off"
+        SetTimer this.ImEscCb, 0
+        this.ImLaerer := false
+        ToolTip
+    }
+
+    ImLaerAvbryt(*) {
+        if !this.ImLaerer
+            return
+        this.ImLaerStopp()
+        this.Melding("Læring avbrutt – ingenting er endret", false)
+    }
+
+    ImLaerKlikk(*) {
+        if !this.ImLaerer
+            return
+        CoordMode "Mouse", "Screen"
+        MouseGetPos &sx, &sy, &win
+        if (!win || WinGetPID("ahk_id " win) = ProcessExist())
+            return
+        if (!ErNettleser(win) || !NettleserFaneBekreftet(win, "Service Manager")) {
+            ToolTip "Dette var ikke Service Manager." Chr(10)
+                . "Åpne Search i Service Manager og klikk i Search-feltet." Chr(10) "(Esc = avbryt)"
+            return
+        }
+        t := 0, n := ""
+        try {
+            el := UiaFraPunkt(sx, sy)
+            if IsObject(el) {
+                t := UiaTall(el, 30003)
+                n := UiaStreng(el, 30005)
+            }
+        }
+        if (t != 50004) {
+            ToolTip "Dette var ikke et tekstfelt." Chr(10)
+                . "Klikk i Search-feltet til venstre for Smart Search." Chr(10) "(Esc = avbryt)"
+            return
+        }
+        if InStr(n, "Smart") {
+            ToolTip "Du klikket i Smart Search." Chr(10)
+                . "Klikk i Search-feltet til venstre for ikonet." Chr(10) "(Esc = avbryt)"
+            return
+        }
+        WinGetClientPos &cx, &cy, &cw, , "ahk_id " win
+        this.Lagre("IMVindu", "Service Manager ahk_exe " WinGetProcessName("ahk_id " win))
+        this.Lagre("IMX", cw - (sx - cx))
+        this.Lagre("IMY", sy - cy)
+        this.Lagre("IMNavn", n)
+        this.Lagre("ApneIM", "1")
+        this.ImLaerStopp()
+        try this.ImSjekkK.Value := 1
+        this.ImVisStatus()
+        this.Melding("Search-feltet er lært. IM-en åpnes etter kopiering.")
+        Logg("Trio Snarveier: Search-feltet i Service Manager lært (navn " n ")")
+    }
+
+    ; Lagre avstand fra høyre klientkant for bedre toleranse ved vindusendring.
+    ImPunkt(h) {
+        WinGetClientPos &cx, &cy, &cw, , "ahk_id " h
+        return {x: cx + cw - this.Hent("IMX", 0), y: cy + this.Hent("IMY", 0)}
+    }
+
+    ; Bare les målpunktet. Klikk aldri hvis en annen fane eller kontroll er der.
+    ImSearchApent(h) {
+        if (!h || !WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
+            return false
+        p := this.ImPunkt(h)
+        under := DllCall("WindowFromPoint", "Int64", (p.y << 32) | (p.x & 0xFFFFFFFF), "Ptr")
+        if (!under || DllCall("GetAncestor", "Ptr", under, "UInt", 2, "Ptr") != h)
+            return false
+        try {
+            el := UiaFraPunkt(p.x, p.y)
+            if !IsObject(el)
+                return false
+            navn := this.Hent("IMNavn", "")
+            return UiaTall(el, 30003) = 50004 && (navn = "" || UiaStreng(el, 30005) = navn)
+        }
+        return false
+    }
+
+    ImTest(*) {
+        if !this.ImLart()
+            return this.Melding("Lær Search-feltet i Service Manager først", false)
+        svar := InputBox("Skriv et IM-nummer som skal åpnes i Service Manager:", "Test – åpne IM", "w340 h130", this.SistIM)
+        if (svar.Result != "OK" || Trim(svar.Value) = "")
+            return this.Melding("Test avbrutt", false)
+        this.Melding("Tester: åpner " Trim(svar.Value) " i Service Manager …")
+        Logg("Trio Snarveier: test av IM-åpning med " Trim(svar.Value))
+        this.ApneIM(Trim(svar.Value))
+    }
+
+    ApneIM(tekst) {
+        if !RegExMatch(tekst, "i)\bIM\d{4,}\b", &m) {
+            this.Melding("Fant ikke IM-nummer i «" KortVerdi(tekst, 40) "»", false)
+            Logg("Trio Snarveier: fant ikke IM-nummer i «" KortVerdi(tekst, 60) "» – ingenting åpnet")
+            return Varsel("Service Manager", "—", "Fant ikke IM-nummer – ingenting ble åpnet", false)
+        }
+        im := StrUpper(m[0])
+        this.SistIM := im
+        SetTimer this.ImPollCb, 0
+        this.ImVenter := ""
+        VentTasterSluppet(1500)
+        h := AktiverFane(this.Hent("IMVindu", ""), false)
+        if !h {
+            this.Melding("Fant ikke Service Manager – " im " ble ikke åpnet", false)
+            Logg("Trio Snarveier: fant ikke Service Manager – " im " ble ikke åpnet")
+            return Varsel("Service Manager", im, "Fant ikke Service Manager – IM-en ble ikke åpnet", false)
+        }
+        Sleep 150
+        if this.ImSearchApent(h)
+            return this.ImSkriv(h, im)
+        this.ImVenter := {im: im, slutt: A_TickCount + 30000}
+        this.Melding("Search er lukket i Service Manager – åpne det, så åpnes " im, false)
+        Logg("Trio Snarveier: Search er lukket – venter på åpning (" im ")")
+        Varsel("Service Manager", im, "Åpne Search ved Smart Search – så åpnes IM-en", false)
+        SetTimer this.ImPollCb, 500
+    }
+
+    ImSjekk() {
+        v := this.ImVenter
+        if !IsObject(v) {
+            SetTimer this.ImPollCb, 0
+            return
+        }
+        if (A_TickCount > v.slutt) {
+            SetTimer this.ImPollCb, 0
+            this.ImVenter := ""
+            this.Melding("Search ble ikke åpnet innen 30 sekunder – " v.im " ble ikke åpnet", false)
+            Logg("Trio Snarveier: Search ble ikke åpnet innen 30 sekunder – " v.im " ble ikke åpnet")
+            return Varsel("Service Manager", v.im, "Search ble ikke åpnet – IM-en ble ikke åpnet", false)
+        }
+        h := WinExist("A")
+        if (!h || !ErNettleser(h) || !this.ImSearchApent(h))
+            return
+        SetTimer this.ImPollCb, 0
+        this.ImVenter := ""
+        this.ImSkriv(h, v.im)
+    }
+
+    ; Klikker i verifisert Search, skriver IM og Enter. Bevarer museposisjon.
+    ImSkriv(h, im) {
+        if !this.ImSearchApent(h) {
+            this.Melding("Search-feltet er ikke tilgjengelig – " im " ble ikke skrevet", false)
+            return false
+        }
+        CoordMode "Mouse", "Screen"
+        MouseGetPos &mx, &my
+        p := this.ImPunkt(h)
+        try {
+            Click p.x, p.y
+            Sleep 80
+            if !this.ImSearchApent(h) {
+                this.Melding("Service Manager/Search mistet fokus – " im " ble ikke åpnet", false)
+                Logg("Trio Snarveier: Search var ikke lenger verifisert etter klikk")
+                return false
+            }
+            Send "^a"
+            SendText im
+            Sleep 30
+            if (!WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager")) {
+                this.Melding("Service Manager mistet fokus – Enter ble ikke sendt", false)
+                return false
+            }
+            Send "{Enter}"
+            this.Melding(im " ble skrevet i Search og Enter trykket")
+            Logg("Trio Snarveier: søkte etter " im " i Service Manager")
+            Varsel("Service Manager", im, "IM-søk startet i Service Manager")
+            return true
+        } finally {
+            MouseMove mx, my, 0
+        }
+    }
+
     TrykkKopi(kopitast, type) {
         TrioKopiMerke(type)
         SetTimer () => TrioKopiMerke(""), -1500
