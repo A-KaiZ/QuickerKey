@@ -28,7 +28,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.1"
+global APP_VERSJON := "3.4"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -1444,7 +1444,6 @@ class VT_SMKontakt extends VT_Base {
         this.ManuellCb := ObjBindMethod(this, "ManuellFyll")
         this.KlikkCb := ObjBindMethod(this, "MusKlikk")
         this.KopiCb := ObjBindMethod(this, "KopiFerdig")
-        this.SnarveiCb := ObjBindMethod(this, "SnarveiKopiFerdig")
         this.Ventende := ""
         this.KlippTid := 0
         OnClipboardChange(ObjBindMethod(this, "KlippEndret"))
@@ -1663,12 +1662,10 @@ class VT_SMKontakt extends VT_Base {
             return
         if (this.LaerSteg = 1)
             return this.LaerKopi(pid)
-        ; Separat merking for IM/telefon kopiert via Trio Snarveier.
-        ; Disse skal aldri trigge SM Kontakt automatisk.
-        if (TrioKopiMerke() != "") {
-            SetTimer this.SnarveiCb, -250
+        ; IM / telefonnummer fra Trio Snarveier skal ikke tolkes som brukernavn.
+        ; v3.4 viser varselet direkte fra KopierMedFelt().
+        if (TrioKopiMerke() != "")
             return
-        }
         if (!this.Aktiv || this.Cfg["TrioKilde"] = "web" || this.LaerSteg)
             return
         if !this.ErFraTrio(pid)
@@ -1743,16 +1740,6 @@ class VT_SMKontakt extends VT_Base {
 
 
     ; IM og telefonnummer hører til Trio Snarveier, ikke SM Kontakt.
-    SnarveiKopiFerdig() {
-        type := TrioKopiMerke()
-        if (type = "")
-            return
-        TrioKopiMerke("")
-        verdi := Trim(A_Clipboard, " `t`r`n")
-        Varsel("Trio Attendant · " type, verdi = "" ? "—" : KortVerdi(verdi), type " kopiert")
-        Logg("Trio Snarveier: " type " kopiert")
-    }
-
     ; Trio Attendant: sist kopierte brukernavn vises til et nytt kopieres, eller i maks 10 minutter 
 
     LesAttendantKopi() {
@@ -3143,6 +3130,7 @@ class VT_TrioSnarveier extends VT_Base {
     Felt := ""
     Registrerte := ""
     Opptak := false
+    KopiModus := ""                    ; "lukket" = Trio kopierer bare fra hovedvinduet (oppdages automatisk)
 
     __New() {
         this.Felt := Map()
@@ -3333,6 +3321,8 @@ class VT_TrioSnarveier extends VT_Base {
     }
 
     Kjor(nokkel, *) {
+        SetWinDelay -1
+        SetControlDelay -1
         forrige := WinExist("A")
         try {
             hwnd := this.AktiverTrio()
@@ -3363,107 +3353,135 @@ class VT_TrioSnarveier extends VT_Base {
     }
 
 
-    ; Magnus sin skjulte Trio-variant: endre kopifelt midlertidig via
-    ; usynlig Innstillinger-vindu, kopier, og sett Parameter tilbake.
-    ; Innstillinger skal aldri bli stående åpent (heller ikke ved feil).
+    ; v3.4: behold den skjulte Innstillinger-dialogen fra Magnus. Prøv først
+    ; kopiering med dialogen åpen (som eldre QuickKey), og fall tilbake til
+    ; Trio-hovedvinduet hvis kopitasten ikke virker i dialogen.
+    ; Parameteren forsøkes alltid gjenopprettet og dialogen lukket.
     KopierMedFelt(felt, trioId) {
+        SetWinDelay -1
+        SetControlDelay -1
         type := felt = "A-nr" ? "Telefonnummer" : "IM / Kommentar"
         kopitast := SendTast(this.Hent("HKCopy", "^d"))
         if (kopitast = "")
             throw Error("Kopitasten i Trio (HKCopy) er ikke satt.")
-
-        ; Bind dialogen til Trio sin PID, ikke et tilfeldig Innstillinger-vindu.
         dlg := "Innstillinger ahk_pid " WinGetPID(trioId)
         this.LukkInnstillinger(dlg)
         original := ""
         kopiert := false
-
         try {
-            original := this.SettParameter(trioId, dlg, felt)
-            WinActivate trioId
-            if !WinWaitActive(trioId, , 2)
-                throw Error("Fikk ikke fokus tilbake til Trio.")
+            this.ApneInnstillinger(trioId, dlg)
+            original := this.VelgParameter(dlg, felt)
+            ControlClick "Button3", dlg
 
-            ; Marker kopien så SM Kontakt ikke tolker IM/telefon som brukernavn.
-            TrioKopiMerke(type)
-            sekvens := DllCall("GetClipboardSequenceNumber", "UInt")
-            SendInput kopitast
-            slutt := A_TickCount + 1500
-            while (A_TickCount < slutt) {
-                if (DllCall("GetClipboardSequenceNumber", "UInt") != sekvens) {
-                    kopiert := true
-                    break
+            ; Kopier mens Innstillinger står åpent. Hvis Button3 allerede
+            ; lukket dialogen eller Trio krever hovedvinduet, kopier der.
+            if (this.KopiModus = "lukket" || WinWaitClose(dlg, , 0.1)) {
+                this.LukkMedOk(dlg)
+                this.TilTrio(trioId)
+            }
+            kopiert := this.TrykkKopi(kopitast, type)
+            if (!kopiert && WinExist(dlg)) {
+                this.LukkMedOk(dlg)
+                this.TilTrio(trioId)
+                if (kopiert := this.TrykkKopi(kopitast, type)) {
+                    this.KopiModus := "lukket"
+                    Logg("Trio Snarveier: kopierer fra Trio-vinduet (ikke mens Innstillinger er åpent)")
                 }
-                Sleep 30
             }
         } finally {
-            ; Hvis et mellomliggende steg feilet, lukk først eventuelt
-            ; halvåpent dialogvindu, så gjenopprett Parameter.
-            this.LukkInnstillinger(dlg)
-
-            ; Som Magnus sin variant: bruk IDM Username hvis opprinnelig felt
-            ; er ukjent eller var et midlertidig Kommentar/A-nr-felt.
-            tilbake := (original = "" || RegExMatch(original, "i)^(Kommentar|A-nr)$")) ? "IDM Username" : original
+            ; Samme gjenopprettingsregel som Magnus: midlertidige felt går
+            ; tilbake til IDM Username, ellers behold tidligere Parameter.
+            tilbake := (original = "" || RegExMatch(original, "i)^(Kommentar|A-nr)")) ? "IDM Username" : original
             try {
-                this.SettParameter(trioId, dlg, tilbake)
+                if !WinExist(dlg)
+                    this.ApneInnstillinger(trioId, dlg)
+                this.VelgParameter(dlg, tilbake)
+                ControlClick "Button3", dlg
+                this.LukkMedOk(dlg)
             } catch as feil {
-                Logg("Trio Snarveier: FEIL – kunne ikke gjenopprette Parameter til "
-                    . tilbake ": " feil.Message)
+                Logg("Trio Snarveier: klarte ikke å sette Parameter tilbake til " tilbake ": " feil.Message)
                 Tip("Trio: kontroller Hurtigkopiering → Parameter manuelt", 5000)
-            } finally {
-                this.LukkInnstillinger(dlg)
             }
+            this.LukkInnstillinger(dlg)
         }
-
-        if !kopiert {
+        if kopiert {
+            verdi := ""
+            try verdi := Trim(A_Clipboard, " " Chr(9) Chr(13) Chr(10))
+            Logg("Trio Snarveier: " type " kopiert – " KortVerdi(verdi, 60))
+            Varsel("Trio Attendant · " type, verdi = "" ? "—" : KortVerdi(verdi), type " kopiert")
+        } else {
             TrioKopiMerke("")
-            Logg("Trio Snarveier: FEIL – ingen utklippstavleendring ved kopiering av " type)
-            Varsel("Trio Attendant · " type, "—", "Ingenting ble kopiert – kontroller kopitasten", false)
+            Logg("Trio Snarveier: FEIL " type " – ingenting ble kopiert (kopitast " kopitast ")")
+            Varsel("Trio Attendant · " type, "—", "Ingenting ble kopiert – sjekk kopitasten", false)
         }
     }
 
-    ; Åpner Innstillinger, gjør vinduet transparent, og bruker kontroll-API
-    ; fremfor museklikk i skjermkoordinater. Returnerer tidligere Parameter.
-    SettParameter(trioId, dlg, verdi) {
+    ; Trykker Trios kopitast og venter (maks 1 sekund) til utklippstavlen endres.
+    TrykkKopi(kopitast, type) {
+        TrioKopiMerke(type)
+        SetTimer () => TrioKopiMerke(""), -1500
+        seq := DllCall("GetClipboardSequenceNumber", "UInt")
+        SendInput kopitast
+        slutt := A_TickCount + 1000
+        while (A_TickCount < slutt) {
+            if (DllCall("GetClipboardSequenceNumber", "UInt") != seq) {
+                Sleep 20
+                return true
+            }
+            Sleep 10
+        }
+        return false
+    }
+
+    TilTrio(trioId) {
+        if WinActive(trioId)
+            return
         WinActivate trioId
-        if !WinWaitActive(trioId, , 2)
-            throw Error("Trio Attendant var ikke aktivt.")
+        WinWaitActive trioId, , 1
+    }
+
+    ; Åpner innstillingene transparent, og velger Hurtigkopiering-fanen.
+    ApneInnstillinger(trioId, dlg) {
+        this.TilTrio(trioId)
         MenuSelect trioId,, "Fil", "Innstillinger..."
         if !WinWait(dlg, , 2)
             throw Error("Trio-innstillingene ble ikke åpnet.")
-
         try WinSetTransparent 0, dlg
         ControlChooseIndex 3, "SysTabControl321", dlg
-        Sleep 50
+    }
 
+    ; Leser tidligere valgt Parameter og velger en midlertidig verdi.
+    VelgParameter(dlg, verdi) {
+        loop 25 {
+            try {
+                ControlGetHwnd "ComboBox1", dlg
+                break
+            }
+            Sleep 10
+        }
         forrige := ""
         try forrige := ControlGetChoice("ComboBox1", dlg)
         ControlChooseString verdi, "ComboBox1", dlg
-
-        ; NA = No Activate. Kontrollklikk skal ikke flytte musepekeren.
-        ControlClick "Button3", dlg, , "Left", 1, "NA"
-        Sleep 150
-
-        if WinExist(dlg) {
-            try ControlClick "OK", dlg, , "Left", 1, "NA"
-            WinWaitClose dlg, , 2
-        }
-        if WinExist(dlg)
-            throw Error("Trio-innstillingene lot seg ikke lukke etter lagring.")
         return forrige
     }
 
-    ; Lukker eventuelt gjenglemt dialog med Avbryt, også ved feil.
+    LukkMedOk(dlg) {
+        if !WinExist(dlg)
+            return
+        try ControlClick "OK", dlg
+        WinWaitClose dlg, , 1
+    }
+
     LukkInnstillinger(dlg) {
         if !WinExist(dlg)
             return
-        try ControlClick "Avbryt", dlg, , "Left", 1, "NA"
+        try ControlClick "Avbryt", dlg
         if !WinWaitClose(dlg, , 1) {
             try WinClose dlg
             WinWaitClose dlg, , 1
         }
         if WinExist(dlg)
-            Logg("Trio Snarveier: ADVARSEL – Innstillinger i Trio lot seg ikke lukke")
+            Logg("Trio Snarveier: Innstillinger-vinduet i Trio lot seg ikke lukke")
     }
 }
 ; F12 -> {F12}, ^d -> ^{d}; fungerer også for navngitte numpad-taster.
