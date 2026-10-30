@@ -28,7 +28,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.0"
+global APP_VERSJON := "3.6"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -37,6 +37,7 @@ global LOGG_MAPPE  := DATA_MAPPE "\Logg"
 global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
 global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
+global VIS_VILKAR := Map()                   ; controls shown only when context needs them
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
 
 ; ---------------- Oppstart ----------------
@@ -474,7 +475,7 @@ OppdaterToggle(ktrl, paa) {
 VisPanel(navn, *) {
     for panelNavn, liste in PANELER
         for ktrl in liste
-            ktrl.Visible := (panelNavn = navn)
+            ktrl.Visible := (panelNavn = navn) && (!VIS_VILKAR.Has(ktrl) || VIS_VILKAR[ktrl]())
     for knappNavn, knapp in NAVKNAPPER {
         knapp.Opt("Background" (knappNavn = navn ? TEMA.aksent : TEMA.nav))
         knapp.Redraw()
@@ -741,7 +742,7 @@ ImporterGammelQuickKey(fil) {
     }
 
     kopitast := Trim(StrReplace(IniRead(fil, "Shortcuts", "HKCopy", ""), '"', ""), " `t`r`n")
-    if (kopitast != "" && !RegExMatch(kopitast, "^[!^+#]*[A-Za-z0-9]+$")) {
+    if (kopitast != "" && !RegExMatch(kopitast, "^[!^+#]*\S+$")) {
         ignorert.Push("HKCopy: ugyldig kopitast " kopitast)
         kopitast := ""
     }
@@ -909,6 +910,8 @@ class VT_Tekstflyt extends VT_Base {
     SistEndret := ""
     SisteFeil := ""
     Editor := ""
+    EkVindu := ""
+    EkValgt := ""
 
     __New() {
         VT_Tekstflyt.Instans := this
@@ -937,7 +940,8 @@ class VT_Tekstflyt extends VT_Base {
             . "•  Ny kode: «Teksteditor» → skriv kode og tekst → «Lagre i Excel».`n"
             . "•  «Importer / velg Excel»: Ja = lag en lokal kopi, Nei = bruk filen der den ligger.`n"
             . "•  Valgt fil beholdes ved omstart. Mangler den, får du feilmelding i stedet for at en annen fil lastes.`n"
-            . "•  Endre eller slette koder: «Åpne Excel». Endringer hentes automatisk."
+            . "•  Rediger koder: «Teksteditor» → «Eksisterende tekster…».`n"
+            . "•  Slett koder: «Åpne Excel». Endringer hentes automatisk."
     }
 
     Start() {
@@ -1096,10 +1100,16 @@ class VT_Tekstflyt extends VT_Base {
     }
 
     ; Legger til / oppdaterer en kode i Excel-filen. Returnerer true hvis ny.
-    LeggTil(kode, tekst) {
-        this.SikreFil()
+    LeggTil(kode, tekst) => this.Endre(kode, kode, tekst)
+
+    ; Støtter redigering og omdøping av eksisterende koder.
+    Endre(gammel, kode, tekst) {
+        if !this.SikreFil()
+            throw Error("Excel-filen finnes ikke eller kunne ikke åpnes.")
+        if (gammel != kode && this.Koder.Has(kode))
+            throw Error("Koden finnes allerede: " kode)
         try {
-            return LeggTilViaExcel(this.ExcelFil, kode, tekst)   ; bevarer formatering når Excel finnes
+            return LeggTilViaExcel(this.ExcelFil, kode, tekst, gammel)
         } catch as feil {
             if (feil.Message != "INGEN_EXCEL")
                 throw feil
@@ -1109,7 +1119,8 @@ class VT_Tekstflyt extends VT_Base {
         for par in XlsxLesRader(this.ExcelFil) {
             if (Trim(par[1]) = "" || Trim(par[1]) = "Kode")
                 continue
-            if (Trim(par[1]) = kode) {
+            if (ny && Trim(par[1]) = gammel) {
+                par[1] := kode
                 par[2] := tekst
                 ny := false
             }
@@ -1117,6 +1128,13 @@ class VT_Tekstflyt extends VT_Base {
         }
         if ny
             rader.Push([kode, tekst])
+        ; Makrobaserte filer må redigeres via Excel COM; den interne skriveren
+        ; ville erstattet .xlsm med en vanlig .xlsx og fjernet makroene.
+        if RegExMatch(this.ExcelFil, "i)\.xlsm$")
+            throw Error("En .xlsm-fil krever Excel for sikker redigering.")
+        ; Den interne XLSX-skriveren gjenskaper ark 1. Behold alltid originalen.
+        backup := this.ExcelFil ".backup-" FormatTime(, "yyyyMMdd-HHmmss") "-" A_TickCount ".xlsx"
+        FileCopy this.ExcelFil, backup
         XlsxSkriv(this.ExcelFil, rader)
         return ny
     }
@@ -1142,6 +1160,7 @@ class VT_Tekstflyt extends VT_Base {
         this.EdLagreK := Knapp(eg, "x16 y428 w220 h42", "Lagre i Excel", ObjBindMethod(this, "EdLagre"))
         Skrift(eg, "s10 c" TEMA.tekst)
         Knapp(eg, "x248 y428 w120 h42", "Tøm", ObjBindMethod(this, "EdTom"), TEMA.aksent2)
+        Knapp(eg, "x380 y428 w244 h42", "Eksisterende tekster…", ObjBindMethod(this, "VisEksisterende"), TEMA.aksent2)
         Skrift(eg, "s10 bold c" TEMA.tekst)
         this.EdStatus := eg.AddText("x16 y482 w608 h22 Background" TEMA.bg, "")
         eg.Show("w640 h516")
@@ -1183,6 +1202,104 @@ class VT_Tekstflyt extends VT_Base {
         this.EdMelding("")
         this.EdKode.Focus()
     }
+    ; Velg en eksisterende kode, søk i kode/tekst, rediger og lagre.
+    VisEksisterende(*) {
+        if !this.Sync(false)
+            return MsgBox("Kunne ikke lese Excel-filen. Se Logg.", APP_NAVN, "Icon!")
+        if IsObject(this.EkVindu) {
+            this.EkFyllListe()
+            this.EkVindu.Show()
+            return
+        }
+        ev := Gui("+Owner" this.Editor.Hwnd, "Eksisterende tekster – " APP_NAVN)
+        this.EkVindu := ev
+        ev.BackColor := TEMA.bg
+        Skrift(ev, "s9 c" TEMA.dempet)
+        ev.AddText("x16 y14 w400 Background" TEMA.bg, "Søk i kode eller tekst")
+        Skrift(ev, "s11 c" TEMA.tekst)
+        this.EkSok := ev.AddEdit("x16 y34 w688 h28 Background" TEMA.kort)
+        this.EkSok.OnEvent("Change", (*) => this.EkFyllListe())
+        Skrift(ev, "s10 c" TEMA.tekst)
+        this.EkLV := ev.AddListView("x16 y72 w688 h200 -Multi Background" TEMA.kort, ["Kode", "Tekst"])
+        this.EkLV.OnEvent("ItemSelect", ObjBindMethod(this, "EkVelg"))
+        Skrift(ev, "s9 c" TEMA.dempet)
+        ev.AddText("x16 y286 w220 Background" TEMA.bg, "Kode")
+        Skrift(ev, "s11 c" TEMA.tekst)
+        this.EkKode := ev.AddEdit("x16 y306 w220 h28 Background" TEMA.kort)
+        Skrift(ev, "s9 c" TEMA.dempet)
+        ev.AddText("x16 y344 w400 Background" TEMA.bg, "Tekst")
+        Skrift(ev, "s10 c" TEMA.tekst)
+        this.EkTekst := ev.AddEdit("x16 y364 w688 h220 Multi WantTab Background" TEMA.kort)
+        Skrift(ev, "s11 bold c" TEMA.tekst)
+        this.EkLagreK := Knapp(ev, "x16 y598 w220 h42", "Lagre endring", ObjBindMethod(this, "EkLagre"))
+        Skrift(ev, "s10 bold c" TEMA.tekst)
+        this.EkStatus := ev.AddText("x16 y652 w688 h22 Background" TEMA.bg, "")
+        this.EkFyllListe()
+        ev.Show("w720 h686")
+        this.EkSok.Focus()
+    }
+
+    EkMelding(tekst, ok := true) {
+        this.EkStatus.SetFont("c" (ok ? TEMA.paa : "FF6B6B"))
+        this.EkStatus.Text := tekst
+    }
+
+    EkFyllListe(velg := "") {
+        sok := Trim(this.EkSok.Value)
+        lv := this.EkLV
+        lv.Opt("-Redraw")
+        lv.Delete()
+        valgtRad := 0
+        for kode, tekst in this.Koder {
+            if (sok != "" && !InStr(kode, sok) && !InStr(tekst, sok))
+                continue
+            rad := lv.Add(, kode, KortVerdi(tekst, 110))
+            if (kode = velg)
+                valgtRad := rad
+        }
+        lv.ModifyCol(1, 170)
+        lv.ModifyCol(2, 500)
+        lv.Opt("+Redraw")
+        if valgtRad
+            lv.Modify(valgtRad, "Select Focus Vis")
+        else
+            this.EkMelding(lv.GetCount() " av " this.Koder.Count " tekster")
+    }
+
+    EkVelg(lv, rad, valgt) {
+        if (!valgt || !rad)
+            return
+        kode := lv.GetText(rad, 1)
+        if !this.Koder.Has(kode)
+            return
+        this.EkValgt := kode
+        this.EkKode.Value := kode
+        this.EkTekst.Value := StrReplace(this.Koder[kode], "`n", "`r`n")
+    }
+
+    EkLagre(*) {
+        gammel := this.EkValgt
+        kode := Trim(this.EkKode.Value)
+        tekst := StrReplace(this.EkTekst.Value, "`r`n", "`n")
+        if (gammel = "")
+            return this.EkMelding("Velg en eksisterende kode først.", false)
+        if (kode = "" || Trim(tekst) = "" || RegExMatch(kode, "\s"))
+            return this.EkMelding("Koden/teksten er tom eller koden har mellomrom.", false)
+        if (kode != gammel && this.Koder.Has(kode))
+            return this.EkMelding("Koden eksisterer allerede: " kode, false)
+        try {
+            this.Endre(gammel, kode, tekst)
+            if !this.Sync(false)
+                throw Error("Lagret, men synkronisering feilet.")
+            this.EkValgt := kode
+            this.EkFyllListe(kode)
+            this.EkMelding("Lagret og synkronisert: " kode)
+            Logg("Tekstflyt: redigerte kode " gammel (kode != gammel ? " til " kode : ""))
+        } catch as feil {
+            this.EkMelding("Feil ved lagring: " feil.Message, false)
+        }
+    }
+
 }
 
 ; Kalles når en kode er skrevet. Koden + Mellomrom/Enter er allerede fjernet.
@@ -1235,7 +1352,9 @@ LesKoder(fil) {
 }
 
 ; Skriver direkte i Excel hvis Excel finnes (og helst i en allerede åpen bok). Ellers kastes INGEN_EXCEL.
-LeggTilViaExcel(fil, kode, tekst) {
+LeggTilViaExcel(fil, kode, tekst, gammel := "") {
+    if (gammel = "")
+        gammel := kode
     bok := "", xl := "", egen := false
     try {
         for b in ComObjActive("Excel.Application").Workbooks
@@ -1264,7 +1383,7 @@ LeggTilViaExcel(fil, kode, tekst) {
         sist := ark.Cells(ark.Rows.Count, 1).End(-4162).Row     ; -4162 = xlUp
         rad := 0
         loop sist
-            if (Trim(ark.Cells(A_Index, 1).Text) = kode) {
+            if (Trim(ark.Cells(A_Index, 1).Text) = gammel) {
                 rad := A_Index
                 break
             }
@@ -1544,6 +1663,10 @@ class VT_SMKontakt extends VT_Base {
             return
         if (this.LaerSteg = 1)
             return this.LaerKopi(pid)
+        ; IM / telefonnummer fra Trio Snarveier skal ikke tolkes som brukernavn.
+        ; v3.4 viser varselet direkte fra KopierMedFelt().
+        if (TrioKopiMerke() != "")
+            return
         if (!this.Aktiv || this.Cfg["TrioKilde"] = "web" || this.LaerSteg)
             return
         if !this.ErFraTrio(pid)
@@ -1586,6 +1709,11 @@ class VT_SMKontakt extends VT_Base {
         st.TekstTid := A_TickCount                     ; meldingen blir stående en stund på siden
         verdi := ""
         try verdi := Trim(A_Clipboard, " `t`r`n")
+        if ErTelefonnummer(verdi) {
+            st.Tekst := "telefonnummer kopiert – ikke fylt inn", st.KopiertTid := 0
+            Varsel("Trio Attendant · Telefonnummer", KortVerdi(verdi), "Telefonnummer kopiert – ikke fylt inn", false)
+            return this.Sjekk()
+        }
         if !ErBrukernavn(verdi) {
             st.Tekst := "kopiert verdi er ikke et brukernavn – ikke fylt inn", st.KopiertTid := 0
             Varsel("Trio Attendant", "—", "Det som ble kopiert er ikke et brukernavn", false)
@@ -1611,7 +1739,10 @@ class VT_SMKontakt extends VT_Base {
         this.Sjekk()
     }
 
-    ; Trio Attendant: sist kopierte brukernavn vises til et nytt kopieres, eller i maks 10 minutter
+
+    ; IM og telefonnummer hører til Trio Snarveier, ikke SM Kontakt.
+    ; Trio Attendant: sist kopierte brukernavn vises til et nytt kopieres, eller i maks 10 minutter 
+
     LesAttendantKopi() {
         st := this.Tilst["attendant"]
         vis := st.SistKopiert != "" && A_TickCount - st.KopiertTid < 600000
@@ -2445,6 +2576,23 @@ KlippEierPid() {
 ; Ser verdien ut som et brukernavn/kundenummer? (2–60 tegn, ingen mellomrom)
 ErBrukernavn(verdi) => RegExMatch(verdi, "^[\p{L}\d._@\\-]{2,60}$")
 
+; Merket gjelder kun neste kopiering. Merket utløper automatisk.
+TrioKopiMerke(type?) {
+    static merke := "", tid := 0
+    if IsSet(type) {
+        merke := type, tid := A_TickCount
+        return type
+    }
+    return (merke != "" && A_TickCount - tid < 3000) ? merke : ""
+}
+
+ErTelefonnummer(verdi) => RegExMatch(verdi, "^\+?[\d \-()]{5,25}$") && RegExMatch(verdi, "(\d\D*){5}")
+
+KortVerdi(verdi, maks := 22) {
+    verdi := Trim(RegExReplace(verdi, "\s+", " "))
+    return StrLen(verdi) > maks ? SubStr(verdi, 1, maks - 1) "…" : verdi
+}
+
 FinnTlf(tekst) {
     if RegExMatch(tekst, "i)Tlf\.?\s*nr\.?\s*:?\s*(\+?\d[\d ]{4,})", &t)
         return StrReplace(Trim(t[1]), " ")
@@ -2945,11 +3093,72 @@ TrioOppgaver() => [
     {key:"HKcopyTLF", navn:"Kopier telefonnummer", beskrivelse:"Bytt kopifelt midlertidig til A-nr"}
 ]
 
+; Registrer ingen hotkey for å validere: 'Hotkey ... Off' kan deaktivere
+; allerede registrerte snarveier på brukerens maskin.
+GyldigHurtigtast(tast) {
+    if (tast = "")
+        return false
+    return RegExMatch(tast, "i)^[!^+#]{0,4}(?:[\p{L}\d_]+|[-=.,;/]|LButton|RButton|MButton|XButton1|XButton2)$") != 0
+}
+
+; Ta opp tastatur og mus. Musknapp-hook fjernes alltid etter opptak.
+TaOppEnTast(sekunder := 8) {
+    ih := InputHook("L0 T" sekunder)
+    ih.KeyOpt("{All}", "E")
+    ih.KeyOpt("{LCtrl}{RCtrl}{LAlt}{RAlt}{LShift}{RShift}{LWin}{RWin}", "-E")
+    mus := ""
+    MusTrykk(knapp, *) {
+        mods := (GetKeyState("Ctrl") ? "^" : "") (GetKeyState("Alt") ? "!" : "") (GetKeyState("Shift") ? "+" : "")
+            . (GetKeyState("LWin") || GetKeyState("RWin") ? "#" : "")
+        ; LButton/RButton uten Ctrl/Alt skal ikke kunne overstyre vanlige museklikk.
+        mus := (InStr(knapp, "LButton") || InStr(knapp, "RButton")) && !RegExMatch(mods, "[\^!]") ? "-" : mods knapp
+        ih.Stop()
+    }
+    knapper := ["LButton", "RButton", "MButton", "XButton1", "XButton2"]
+    try {
+        for k in knapper
+            Hotkey "*" k, MusTrykk.Bind(k), "On"
+        ih.Start()
+        ih.Wait()
+    } finally {
+        for k in knapper
+            try Hotkey "*" k, "Off"
+    }
+    if (mus != "")
+        return mus = "-" ? "" : mus
+    if (ih.EndReason != "EndKey" || ih.EndKey = "Escape")
+        return ""
+    em := ih.EndMods
+    return (InStr(em, "^") ? "^" : "") (InStr(em, "!") ? "!" : "") (InStr(em, "+") ? "+" : "") (InStr(em, "#") ? "#" : "") ih.EndKey
+}
+
+ErMusTast(tast) => RegExMatch(tast, "i)^[\^!+#]*(LButton|RButton|MButton|XButton1|XButton2)$") != 0
+
+ErTegnTast(tast) {
+    mods := "", tasten := tast
+    while (StrLen(tasten) > 1 && InStr("^!+#", SubStr(tasten, 1, 1))) {
+        mods .= SubStr(tasten, 1, 1)
+        tasten := SubStr(tasten, 2)
+    }
+    if (InStr(mods, "^") || InStr(mods, "!") || InStr(mods, "#"))
+        return false
+    return StrLen(tasten) = 1 || RegExMatch(tasten, "i)^(Numpad(\d|Add|Sub|Mult|Div|Dot|Enter)|Space|Tab|Enter|Backspace|MButton|XButton1|XButton2)$")
+}
+
+TrioSnarveiKrit(*) {
+    hwnd := FinnVindu(Innst("SMKontakt", "TrioVindu", "Trio Attendant"))
+    if !hwnd
+        hwnd := FinnVindu("Trio Attendant")
+    return hwnd && !ErNettleser(hwnd) && WinActive("ahk_id " hwnd)
+}
+
 class VT_TrioSnarveier extends VT_Base {
     Navn := "Trio Snarveier"
     Beskrivelse := "QuickKey-funksjoner direkte i Trio Attendant, ikke bare vindusbytte."
     Felt := ""
     Registrerte := ""
+    Opptak := false
+    KopiModus := ""                    ; "lukket" = Trio kopierer bare fra hovedvinduet (oppdages automatisk)
 
     __New() {
         this.Felt := Map()
@@ -2959,31 +3168,92 @@ class VT_TrioSnarveier extends VT_Base {
     Hjelp() {
         return "•  Agentvindu og Tjenestevindu åpnes gjennom Vis-menyen i Trio Attendant.`n"
             . "•  Etterarbeid bruker den gamle Trio-menysekvensen.`n"
-            . "•  IM og telefonnummer bytter kopifelt i Trio midlertidig; kopitast kommer fra HKCopy.`n"
-            . "•  Velg hurtigtast og aktiver den på raden, deretter trykk «Lagre snarveier».`n"
-            . "•  Test med syntetiske data før du bruker funksjonene i produksjon."
+            . "•  IM og telefonnummer bytter Parameter midlertidig, kopierer og gjenoppretter innstillingene.`n"
+            . "•  Kopitasten leses automatisk fra Hurtigkopiering i Trio (f.eks. Ctrl + |).`n"
+            . "•  «Velg tast…» for kopitasten vises hvis automatisk lesing feiler.`n"
+            . "•  Hurtigtaster kan være tastaturkombinasjoner, enkelttegn eller musknapper.`n"
+            . "•  Enkelttegn og midtre/sideknapper uten Ctrl/Alt fungerer bare når Trio er aktivt.`n"
+            . "•  Kryss av «På» og trykk «Lagre snarveier».`n"
+            . "•  Test først med syntetiske data."
     }
 
     ByggPanel(gui, x, y, b) {
         Skrift(gui, "s9 bold c" TEMA.dempet)
         this.Leg(gui.AddText("x" x " y" y " w230 h22 Background" TEMA.bg, "TRIO-HANDLING"))
         this.Leg(gui.AddText("x" (x+236) " y" y " w145 h22 Background" TEMA.bg, "HURTIGTAST"))
-        this.Leg(gui.AddText("x" (x+386) " y" y " w90 h22 Background" TEMA.bg, "AKTIV"))
+        this.Leg(gui.AddText("x" (x+422) " y" y " w60 h22 Background" TEMA.bg, "AKTIV"))
         for i, op in TrioOppgaver() {
             ry := y + 28 + (i-1)*47
             Skrift(gui, "s9 c" TEMA.tekst)
             this.Leg(gui.AddText("x" x " y" (ry+3) " w225 h28 +0x200 Background" TEMA.bg, op.navn))
-            edit := this.Leg(gui.AddEdit("x" (x+236) " y" ry " w145 h29 Background" TEMA.kort, this.Hent(op.key, "")))
+            tastKnapp := this.Leg(Knapp(gui, "x" (x+236) " y" ry " w145 h29", "", ObjBindMethod(this, "TaOppTast", op.key), TEMA.aksent2))
+            this.Leg(Knapp(gui, "x" (x+386) " y" ry " w28 h29", "✕", ObjBindMethod(this, "FjernTast", op.key), TEMA.av))
             paa := (StrLower(this.Hent("Enabled" op.key, "off")) = "on")
-            sjekk := this.Leg(gui.AddCheckBox("x" (x+402) " y" (ry+4) " w55 h23" (paa ? " Checked" : ""), "På"))
-            this.Felt[op.key] := {edit:edit, sjekk:sjekk}
+            sjekk := this.Leg(gui.AddCheckBox("x" (x+424) " y" (ry+4) " w60 h23" (paa ? " Checked" : ""), "På"))
+            this.Felt[op.key] := {knapp:tastKnapp, sjekk:sjekk, tast:this.Hent(op.key, ""), navn:op.navn}
+            this.VisTast(op.key)
         }
         yKnapp := y + 28 + TrioOppgaver().Length * 47 + 6
         Skrift(gui, "s10 bold c" TEMA.tekst)
         this.Leg(Knapp(gui, "x" x " y" yKnapp " w175 h34", "Lagre snarveier", ObjBindMethod(this, "LagreSnarveier")))
         Skrift(gui, "s9 c" TEMA.dempet)
         this.Leg(gui.AddText("x" (x+190) " y" (yKnapp+2) " w" (b-190) " h42 Background" TEMA.bg
-            , "Kopitast i Trio (HKCopy) kan importeres fra gamle QuickKey."))
+            , "Tast, kombinasjon eller musknapp. Enkelttegn eller musknapp alene bare når Trio er aktivt."))
+        Skrift(gui, "s9 bold c" TEMA.paa)
+        this.MeldingK := this.Leg(gui.AddText("x" x " y" (yKnapp+44) " w" b " h20 Background" TEMA.bg, ""))
+        Skrift(gui, "s9 c" TEMA.tekst)
+        this.KopiK := this.Leg(gui.AddText("x" x " y" (yKnapp+74) " w" (b-130) " h28 +0x200 Background" TEMA.bg, ""))
+        this.KopiKnapp := this.Leg(Knapp(gui, "x" (x+b-120) " y" (yKnapp+74) " w120 h28", "Velg tast…", ObjBindMethod(this, "TaOppKopitast"), TEMA.aksent2))
+        VIS_VILKAR[this.KopiKnapp] := () => this.TrengerKopiKnapp()
+        this.VisKopitast()
+    }
+
+    VisTast(nokkel) {
+        felt := this.Felt[nokkel]
+        felt.knapp.Text := felt.tast = "" ? "Velg tast…" : TastTekst(felt.tast)
+        felt.knapp.Opt("Background" (felt.tast = "" ? TEMA.aksent2 : TEMA.aksent))
+        felt.knapp.Redraw()
+    }
+
+    Melding(tekst, ok := true) {
+        try {
+            this.MeldingK.SetFont("c" (ok ? TEMA.paa : "FF6B6B"))
+            this.MeldingK.Text := tekst
+        }
+    }
+
+    TaOppTast(nokkel, *) {
+        if this.Opptak
+            return
+        this.Opptak := true
+        felt := this.Felt[nokkel]
+        this.Stopp()
+        felt.knapp.Text := "Trykk tast…"
+        felt.knapp.Opt("Background" TEMA.aksent), felt.knapp.Redraw()
+        this.Melding("Trykk tast, kombinasjon eller musknapp for «" felt.navn "» (Esc = avbryt)")
+        tast := TaOppEnTast()
+        this.Opptak := false
+        if (tast = "") {
+            this.Melding("Avbrutt – hurtigtasten er ikke endret", false)
+        } else if !GyldigHurtigtast(tast) {
+            this.Melding(TastTekst(tast) " kan ikke brukes som hurtigtast – prøv en annen", false)
+        } else {
+            felt.tast := tast
+            felt.sjekk.Value := 1
+            this.Melding(TastTekst(tast) " valgt for «" felt.navn "»" (ErTegnTast(tast) ? " (bare når Trio er fremst)" : "")
+                . " – trykk «Lagre snarveier»")
+        }
+        this.VisTast(nokkel)
+        if this.Aktiv
+            this.Start()
+    }
+
+    FjernTast(nokkel, *) {
+        felt := this.Felt[nokkel]
+        felt.tast := ""
+        felt.sjekk.Value := 0
+        this.VisTast(nokkel)
+        this.Melding("Tast fjernet – trykk Lagre snarveier")
     }
 
     Konflikt(tast, egen) {
@@ -3006,33 +3276,29 @@ class VT_TrioSnarveier extends VT_Base {
         sett := Map()
         for op in TrioOppgaver() {
             felt := this.Felt[op.key]
-            tast := Trim(felt.edit.Value)
+            tast := felt.tast
             paa := felt.sjekk.Value = 1
-            if (paa && (tast = "" || !RegExMatch(tast, "^[!^+#]*[A-Za-z0-9]+$"))) {
-                MsgBox "Ugyldig hurtigtast for " op.navn ": " tast, APP_NAVN, "Icon!"
-                return
-            }
-            if (paa) {
-                for bruktTast, navn in sett
-                    if (bruktTast = tast) {
-                        MsgBox "Hurtigtasten " tast " er også brukt av " navn, APP_NAVN, "Icon!"
-                        return
-                    }
+            if (paa && !GyldigHurtigtast(tast))
+                return MsgBox("Ugyldig/manglende hurtigtast for " op.navn, APP_NAVN, "Icon!")
+            if paa {
+                if sett.Has(tast)
+                    return MsgBox("Tasten brukes også av " sett[tast], APP_NAVN, "Icon!")
                 sett[tast] := op.navn
                 konflikt := this.Konflikt(tast, op.key)
                 if (konflikt != "")
-                    return MsgBox("Hurtigtasten " tast " er allerede i bruk av " konflikt, APP_NAVN, "Icon!")
+                    return MsgBox("Tasten brukes av " konflikt, APP_NAVN, "Icon!")
             }
         }
         try {
             for op in TrioOppgaver() {
                 felt := this.Felt[op.key]
-                this.Lagre(op.key, Trim(felt.edit.Value))
+                this.Lagre(op.key, felt.tast)
                 this.Lagre("Enabled" op.key, felt.sjekk.Value = 1 ? "on" : "off")
             }
             this.Stopp()
             if this.Aktiv
                 this.Start()
+            this.Melding("Snarveiene er lagret ✓")
             Tip("Trio-snarveiene er lagret", 2000)
         } catch as feil {
             MsgBox "Kunne ikke lagre snarveiene:`n" feil.Message, APP_NAVN, "Icon!"
@@ -3051,20 +3317,29 @@ class VT_TrioSnarveier extends VT_Base {
                 Logg("Trio Snarveier: " op.navn " har konflikt med " konflikt)
                 continue
             }
+            kunTrio := ErTegnTast(tast)
             try {
+                if kunTrio
+                    HotIf TrioSnarveiKrit
                 Hotkey tast, ObjBindMethod(this, "Kjor", op.key), "On"
-                this.Registrerte[op.key] := tast
+                this.Registrerte[op.key] := {tast:tast, kunTrio:kunTrio}
                 antall++
             } catch as feil {
-                Logg("Trio Snarveier: " op.navn " kunne ikke registreres: " feil.Message)
+                Logg("Trio Snarveier: kunne ikke registrere " op.navn ": " feil.Message)
+            } finally {
+                HotIf
             }
         }
         this.SettStatus(antall " av " TrioOppgaver().Length " Trio-snarveier aktive")
     }
 
     Stopp() {
-        for key, tast in this.Registrerte
-            try Hotkey tast, "Off"
+        for key, reg in this.Registrerte {
+            if reg.kunTrio
+                HotIf TrioSnarveiKrit
+            try Hotkey reg.tast, "Off"
+            HotIf
+        }
         this.Registrerte := Map()
     }
 
@@ -3083,6 +3358,8 @@ class VT_TrioSnarveier extends VT_Base {
     }
 
     Kjor(nokkel, *) {
+        SetWinDelay -1
+        SetControlDelay -1
         forrige := WinExist("A")
         try {
             hwnd := this.AktiverTrio()
@@ -3112,35 +3389,254 @@ class VT_TrioSnarveier extends VT_Base {
         }
     }
 
+
+    ; v3.6: les kopitasten fra Trios Hurtigkopiering-fane før Parameter endres.
+    ; Behold v3.4-fallbacken: åpent dialogvindu -> Trio-hovedvindu.
     KopierMedFelt(felt, trioId) {
-        ; Bevar gammel funksjon fra QuickKey, men gjenopprett IDM Username også ved feil.
-        kopitast := this.Hent("HKCopy", "^d")
-        if (kopitast = "")
-            throw Error("HKCopy er ikke konfigurert.")
+        SetWinDelay -1
+        SetControlDelay -1
+        type := felt = "A-nr" ? "Telefonnummer" : "IM / Kommentar"
+        dlg := "Innstillinger ahk_pid " WinGetPID(trioId)
+        this.LukkInnstillinger(dlg)
         try {
-            MenuSelect trioId,, "Fil", "Innstillinger..."
-            if !WinWaitActive("Innstillinger", , 2)
-                throw Error("Trio-innstillingene ble ikke åpnet.")
-            ControlChooseIndex 3, "SysTabControl321", "Innstillinger"
-            ControlChooseString felt, "ComboBox1", "Innstillinger"
-            ControlClick "Button3", "Innstillinger"
-            if !WinWaitActive(trioId, , 2)
-                throw Error("Fikk ikke fokus tilbake til Trio.")
-            Send kopitast
-        } finally {
-            try {
-                WinActivate trioId
-                MenuSelect trioId,, "Fil", "Innstillinger..."
-                if WinWaitActive("Innstillinger", , 2) {
-                    ControlChooseIndex 3, "SysTabControl321", "Innstillinger"
-                    ControlChooseString "IDM Username", "ComboBox1", "Innstillinger"
-                    ControlClick "Button3", "Innstillinger"
-                }
-            } catch as feil {
-                Logg("Trio Snarveier: klarte ikke å gjenopprette IDM Username: " feil.Message)
+            this.ApneInnstillinger(trioId, dlg)
+            les := this.LesTrioKopitast(dlg)
+        } catch as feil {
+            this.LukkInnstillinger(dlg)
+            throw feil
+        }
+        if les.ok {
+            if (les.tast = "") {
+                this.LukkInnstillinger(dlg)
+                Logg("Trio Snarveier: Tastekombinasjon under Hurtigkopiering i Trio er tom – ingenting trykket")
+                return Varsel("Trio Attendant · " type, "—", "Sett en tastekombinasjon under Hurtigkopiering i Trio", false)
+            }
+            tast := les.tast
+            if (tast != this.Hent("HKCopy", "") || this.Hent("HKCopyKilde", "") != "Trio") {
+                this.Lagre("HKCopy", tast), this.Lagre("HKCopyKilde", "Trio")
+                Logg("Trio Snarveier: kopitast lest fra Trio: " TastTekst(tast))
+                this.VisKopitast()
+            }
+        } else {
+            if (this.Hent("HKCopyKilde", "") != "manuell") {
+                this.Lagre("HKCopyKilde", "feilet")
+                this.VisKopitast()
+            }
+            tast := this.Hent("HKCopy", "")
+            if (tast = "") {
+                this.LukkInnstillinger(dlg)
+                Logg("Trio Snarveier: fant ikke kopitasten i Trio, og ingen er valgt manuelt")
+                return Varsel("Trio Attendant · " type, "—", "Velg kopitasten på Trio Snarveier-siden", false)
             }
         }
+        kopitast := SendTast(tast)
+        original := ""
+        kopiert := false
+        try {
+            original := this.VelgParameter(dlg, felt)
+            ControlClick "Button3", dlg
+            if (this.KopiModus = "lukket" || WinWaitClose(dlg, , 0.1)) {
+                this.LukkMedOk(dlg)
+                this.TilTrio(trioId)
+            }
+            kopiert := this.TrykkKopi(kopitast, type)
+            if (!kopiert && WinExist(dlg)) {
+                this.LukkMedOk(dlg)
+                this.TilTrio(trioId)
+                if (kopiert := this.TrykkKopi(kopitast, type)) {
+                    this.KopiModus := "lukket"
+                    Logg("Trio Snarveier: kopierer fra Trio-vinduet (ikke mens Innstillinger er åpent)")
+                }
+            }
+        } finally {
+            tilbake := (original = "" || RegExMatch(original, "i)^(Kommentar|A-nr)")) ? "IDM Username" : original
+            try {
+                if !WinExist(dlg)
+                    this.ApneInnstillinger(trioId, dlg)
+                this.VelgParameter(dlg, tilbake)
+                ControlClick "Button3", dlg
+                this.LukkMedOk(dlg)
+            } catch as feil {
+                Logg("Trio Snarveier: klarte ikke å sette Parameter tilbake til " tilbake ": " feil.Message)
+                Tip("Trio: kontroller Hurtigkopiering → Parameter manuelt", 5000)
+            }
+            this.LukkInnstillinger(dlg)
+        }
+        if kopiert {
+            verdi := ""
+            try verdi := Trim(A_Clipboard, " " Chr(9) Chr(13) Chr(10))
+            Logg("Trio Snarveier: " type " kopiert – " KortVerdi(verdi, 60))
+            Varsel("Trio Attendant · " type, verdi = "" ? "—" : KortVerdi(verdi), type " kopiert")
+        } else {
+            TrioKopiMerke("")
+            Logg("Trio Snarveier: FEIL " type " – ingenting ble kopiert (kopitast " TastTekst(tast) ")")
+            Varsel("Trio Attendant · " type, "—", "Ingenting ble kopiert – sjekk kopitasten", false)
+        }
     }
+
+    ; Windows standard Hotkey-kontroll: HKM_GETHOTKEY (0x402).
+    ; Mangler feltet, prøv tekst av typen "Ctrl + |".
+    LesTrioKopitast(dlg) {
+        kontroller := []
+        try kontroller := WinGetControls(dlg)
+        for ktrl in kontroller {
+            if !InStr(ktrl, "msctls_hotkey32")
+                continue
+            try {
+                v := SendMessage(0x402, 0, 0, ktrl, dlg)
+                vk := v & 0xFF, mods := (v >> 8) & 0xFF
+                if !vk
+                    return {ok: true, tast: ""}
+                return {ok: true, tast: (mods & 2 ? "^" : "") (mods & 4 ? "!" : "") (mods & 1 ? "+" : "")
+                    . "vk" Format("{:02X}", vk)}
+            }
+        }
+        for ktrl in kontroller {
+            if !InStr(ktrl, "Edit")
+                continue
+            try {
+                if !ControlGetVisible(ktrl, dlg)
+                    continue
+                tast := TrioTastFraTekst(ControlGetText(ktrl, dlg))
+                if (tast != "")
+                    return {ok: true, tast: tast}
+            }
+        }
+        return {ok: false, tast: ""}
+    }
+
+    VisKopitast() {
+        tast := this.Hent("HKCopy", "")
+        kilde := this.Hent("HKCopyKilde", "")
+        try this.KopiK.Text := "Kopitast i Trio:  " (tast = "" ? "ikke kjent ennå" : TastTekst(tast))
+            . (kilde = "feilet" ? " – fant den ikke i Trio, velg den her"
+            : tast = "" ? " – leses fra Trio første gang du kopierer IM/telefon"
+            : kilde = "Trio" ? " (lest fra Trio)" : " (valgt her)")
+        try this.KopiKnapp.Visible := this.KopiK.Visible && this.TrengerKopiKnapp()
+    }
+
+    TrengerKopiKnapp() => InStr("|feilet|manuell|", "|" this.Hent("HKCopyKilde", "") "|") > 0
+
+    TaOppKopitast(*) {
+        if this.Opptak
+            return
+        this.Opptak := true
+        this.Stopp()
+        this.KopiKnapp.Text := "Trykk tast…", this.KopiKnapp.Redraw()
+        this.Melding("Trykk samme tast som under Hurtigkopiering i Trio (Esc = avbryt)")
+        tast := TaOppEnTast()
+        this.Opptak := false
+        this.KopiKnapp.Text := "Velg tast…", this.KopiKnapp.Redraw()
+        if (tast = "") {
+            this.Melding("Avbrutt – kopitasten er ikke endret", false)
+        } else if ErMusTast(tast) {
+            this.Melding("Kopitasten må være en tast fra tastaturet, ikke en musknapp", false)
+        } else if !GyldigHurtigtast(tast) {
+            this.Melding("Ugyldig kopitast", false)
+        } else {
+            this.Lagre("HKCopy", tast), this.Lagre("HKCopyKilde", "manuell")
+            this.VisKopitast()
+            this.Melding("Kopitast satt til " TastTekst(tast) " (leses fra Trio når det er mulig)")
+            Logg("Trio Snarveier: kopitast valgt manuelt: " TastTekst(tast))
+        }
+        if this.Aktiv
+            this.Start()
+    }
+
+    ; Trykker Trios kopitast og venter (maks 1 sekund) til utklippstavlen endres.
+    TrykkKopi(kopitast, type) {
+        TrioKopiMerke(type)
+        SetTimer () => TrioKopiMerke(""), -1500
+        seq := DllCall("GetClipboardSequenceNumber", "UInt")
+        SendInput kopitast
+        slutt := A_TickCount + 1000
+        while (A_TickCount < slutt) {
+            if (DllCall("GetClipboardSequenceNumber", "UInt") != seq) {
+                Sleep 20
+                return true
+            }
+            Sleep 10
+        }
+        return false
+    }
+
+    TilTrio(trioId) {
+        if WinActive(trioId)
+            return
+        WinActivate trioId
+        WinWaitActive trioId, , 1
+    }
+
+    ; Åpner innstillingene transparent, og velger Hurtigkopiering-fanen.
+    ApneInnstillinger(trioId, dlg) {
+        this.TilTrio(trioId)
+        MenuSelect trioId,, "Fil", "Innstillinger..."
+        if !WinWait(dlg, , 2)
+            throw Error("Trio-innstillingene ble ikke åpnet.")
+        try WinSetTransparent 0, dlg
+        ControlChooseIndex 3, "SysTabControl321", dlg
+    }
+
+    ; Leser tidligere valgt Parameter og velger en midlertidig verdi.
+    VelgParameter(dlg, verdi) {
+        loop 25 {
+            try {
+                ControlGetHwnd "ComboBox1", dlg
+                break
+            }
+            Sleep 10
+        }
+        forrige := ""
+        try forrige := ControlGetChoice("ComboBox1", dlg)
+        ControlChooseString verdi, "ComboBox1", dlg
+        return forrige
+    }
+
+    LukkMedOk(dlg) {
+        if !WinExist(dlg)
+            return
+        try ControlClick "OK", dlg
+        WinWaitClose dlg, , 1
+    }
+
+    LukkInnstillinger(dlg) {
+        if !WinExist(dlg)
+            return
+        try ControlClick "Avbryt", dlg
+        if !WinWaitClose(dlg, , 1) {
+            try WinClose dlg
+            WinWaitClose dlg, , 1
+        }
+        if WinExist(dlg)
+            Logg("Trio Snarveier: Innstillinger-vinduet i Trio lot seg ikke lukke")
+    }
+}
+; F12 -> {F12}, ^d -> ^{d}; fungerer også for navngitte numpad-taster.
+SendTast(tast) {
+    tast := Trim(tast)
+    if (tast = "")
+        return ""
+    if (InStr(tast, "{") || !RegExMatch(tast, "^([\^!+#<>*~$]*)(.+)$", &m))
+        return tast
+    tegn := m[2]
+    if (StrLen(tegn) = 1 && (vk := GetKeyVK(tegn)))
+        tegn := "vk" Format("{:02X}", vk)
+    return RegExReplace(m[1], "[<>*~$]") "{" tegn "}"
+}
+
+; 'Ctrl + |', 'Ctrl+Shift+F12' til AHK-tast.
+TrioTastFraTekst(tekst) {
+    tekst := Trim(tekst)
+    if !RegExMatch(tekst, "i)^((?:(?:Ctrl|Control|Alt|Shift|Skift|Win)\s*\+\s*)*)(.+)$", &m)
+        return ""
+    mods := ""
+    for navn, tegn in Map("Ctrl", "^", "Control", "^", "Alt", "!", "Shift", "+", "Skift", "+", "Win", "#")
+        if RegExMatch(m[1], "i)\b" navn "\b") && !InStr(mods, tegn)
+            mods .= tegn
+    tast := Trim(m[2])
+    if (mods = "" || tast = "")
+        return ""
+    return GetKeyVK(tast) ? mods tast : ""
 }
 
 ; =====================================================================
@@ -3293,31 +3789,25 @@ class VT_Vindusbytter extends VT_Base {
             return
         this.Opptak := true
         r := this.Rader[i]
-        this.Avregistrer()                                   ; så tastene ikke bytter vindu mens vi tar opp
+        this.Avregistrer()
         r.tastK.Text := "Trykk tast…"
         r.tastK.Opt("Background" TEMA.aksent), r.tastK.Redraw()
-        this.Melding("Trykk tasten(e) du vil bruke for vindu " i "  (Esc = avbryt)")
-        ih := InputHook("L0 T8")
-        ih.KeyOpt("{All}", "E")
-        ih.KeyOpt("{LCtrl}{RCtrl}{LAlt}{RAlt}{LShift}{RShift}{LWin}{RWin}", "-E")
-        ih.Start()
-        ih.Wait()
-        tast := ""
-        if (ih.EndReason = "EndKey" && ih.EndKey != "Escape") {
-            em := ih.EndMods                                  ; modifikatorene som var nede da tasten ble trykket
-            mods := (InStr(em, "^") ? "^" : "") (InStr(em, "!") ? "!" : "") (InStr(em, "+") ? "+" : "") (InStr(em, "#") ? "#" : "")
-            tast := mods ih.EndKey
-        }
+        this.Melding("Trykk tast, kombinasjon eller Ctrl/Alt + musknapp for vindu " i " (Esc = avbryt)")
+        tast := TaOppEnTast()
         this.Opptak := false
         if (tast = "") {
             this.Melding("Avbrutt – hurtigtasten er ikke endret", false)
+        } else if (ErMusTast(tast) && !RegExMatch(tast, "[\^!]")) {
+            this.Melding("Bruk Ctrl/Alt + musknapp i Vindusbytter – musknapp alene ville virket overalt", false)
+        } else if !GyldigHurtigtast(tast) {
+            this.Melding("Ugyldig hurtigtast", false)
         } else if (konflikt := this.Konflikt(tast, i)) {
             this.Melding(TastTekst(tast) " brukes allerede av " konflikt, false)
         } else {
             r.tast := tast
             this.Lagre("Tast" i, tast)
             Logg("Vindusbytter: hurtigtast for vindu " i " = " TastTekst(tast))
-            this.Melding("Hurtigtast " TastTekst(tast) " lagret ✓" (r.id = "" ? " – velg et vindu" : ""))
+            this.Melding("Hurtigtast " TastTekst(tast) " lagret" (r.id = "" ? " – velg et vindu" : ""))
         }
         this.OppdaterTastKnapper()
         this.Registrer()
@@ -3434,14 +3924,19 @@ TastTekst(tast) {
         tast := SubStr(tast, 2)
     }
     navn := Map("NumpadAdd", "Numpad +", "NumpadSub", "Numpad −", "NumpadMult", "Numpad *", "NumpadDiv", "Numpad /"
-        , "NumpadEnter", "Numpad Enter", "NumpadDot", "Numpad ,", "Space", "Mellomrom", "Enter", "Enter")
+        , "NumpadEnter", "Numpad Enter", "NumpadDot", "Numpad ,", "Space", "Mellomrom", "Enter", "Enter"
+        , "LButton", "Venstreklikk", "RButton", "Høyreklikk", "MButton", "Midtre musknapp"
+        , "XButton1", "Sideknapp 1", "XButton2", "Sideknapp 2")
     if navn.Has(tast)
         return tekst navn[tast]
     if RegExMatch(tast, "^Numpad(\d)$", &m)
         return tekst "Numpad " m[1]
+    if RegExMatch(tast, "i)^vk[0-9A-F]{2}$") {
+        n := GetKeyName(tast)
+        tast := n != "" ? n : tast
+    }
     return tekst (StrLen(tast) = 1 ? StrUpper(tast) : tast)
 }
-
 
 ; =====================================================================
 ;  XLSX UTEN AVHENGIGHETER – leser og skriver Excel-filer selv
