@@ -3390,28 +3390,51 @@ class VT_TrioSnarveier extends VT_Base {
     }
 
 
-    ; v3.4: behold den skjulte Innstillinger-dialogen fra Magnus. Prøv først
-    ; kopiering med dialogen åpen (som eldre QuickKey), og fall tilbake til
-    ; Trio-hovedvinduet hvis kopitasten ikke virker i dialogen.
-    ; Parameteren forsøkes alltid gjenopprettet og dialogen lukket.
+    ; v3.6: les kopitasten fra Trios Hurtigkopiering-fane før Parameter endres.
+    ; Behold v3.4-fallbacken: åpent dialogvindu -> Trio-hovedvindu.
     KopierMedFelt(felt, trioId) {
         SetWinDelay -1
         SetControlDelay -1
         type := felt = "A-nr" ? "Telefonnummer" : "IM / Kommentar"
-        kopitast := SendTast(this.Hent("HKCopy", "^d"))
-        if (kopitast = "")
-            throw Error("Kopitasten i Trio (HKCopy) er ikke satt.")
         dlg := "Innstillinger ahk_pid " WinGetPID(trioId)
         this.LukkInnstillinger(dlg)
+        try {
+            this.ApneInnstillinger(trioId, dlg)
+            les := this.LesTrioKopitast(dlg)
+        } catch as feil {
+            this.LukkInnstillinger(dlg)
+            throw feil
+        }
+        if les.ok {
+            if (les.tast = "") {
+                this.LukkInnstillinger(dlg)
+                Logg("Trio Snarveier: Tastekombinasjon under Hurtigkopiering i Trio er tom – ingenting trykket")
+                return Varsel("Trio Attendant · " type, "—", "Sett en tastekombinasjon under Hurtigkopiering i Trio", false)
+            }
+            tast := les.tast
+            if (tast != this.Hent("HKCopy", "") || this.Hent("HKCopyKilde", "") != "Trio") {
+                this.Lagre("HKCopy", tast), this.Lagre("HKCopyKilde", "Trio")
+                Logg("Trio Snarveier: kopitast lest fra Trio: " TastTekst(tast))
+                this.VisKopitast()
+            }
+        } else {
+            if (this.Hent("HKCopyKilde", "") != "manuell") {
+                this.Lagre("HKCopyKilde", "feilet")
+                this.VisKopitast()
+            }
+            tast := this.Hent("HKCopy", "")
+            if (tast = "") {
+                this.LukkInnstillinger(dlg)
+                Logg("Trio Snarveier: fant ikke kopitasten i Trio, og ingen er valgt manuelt")
+                return Varsel("Trio Attendant · " type, "—", "Velg kopitasten på Trio Snarveier-siden", false)
+            }
+        }
+        kopitast := SendTast(tast)
         original := ""
         kopiert := false
         try {
-            this.ApneInnstillinger(trioId, dlg)
             original := this.VelgParameter(dlg, felt)
             ControlClick "Button3", dlg
-
-            ; Kopier mens Innstillinger står åpent. Hvis Button3 allerede
-            ; lukket dialogen eller Trio krever hovedvinduet, kopier der.
             if (this.KopiModus = "lukket" || WinWaitClose(dlg, , 0.1)) {
                 this.LukkMedOk(dlg)
                 this.TilTrio(trioId)
@@ -3426,8 +3449,6 @@ class VT_TrioSnarveier extends VT_Base {
                 }
             }
         } finally {
-            ; Samme gjenopprettingsregel som Magnus: midlertidige felt går
-            ; tilbake til IDM Username, ellers behold tidligere Parameter.
             tilbake := (original = "" || RegExMatch(original, "i)^(Kommentar|A-nr)")) ? "IDM Username" : original
             try {
                 if !WinExist(dlg)
@@ -3448,9 +3469,78 @@ class VT_TrioSnarveier extends VT_Base {
             Varsel("Trio Attendant · " type, verdi = "" ? "—" : KortVerdi(verdi), type " kopiert")
         } else {
             TrioKopiMerke("")
-            Logg("Trio Snarveier: FEIL " type " – ingenting ble kopiert (kopitast " kopitast ")")
+            Logg("Trio Snarveier: FEIL " type " – ingenting ble kopiert (kopitast " TastTekst(tast) ")")
             Varsel("Trio Attendant · " type, "—", "Ingenting ble kopiert – sjekk kopitasten", false)
         }
+    }
+
+    ; Windows standard Hotkey-kontroll: HKM_GETHOTKEY (0x402).
+    ; Mangler feltet, prøv tekst av typen "Ctrl + |".
+    LesTrioKopitast(dlg) {
+        kontroller := []
+        try kontroller := WinGetControls(dlg)
+        for ktrl in kontroller {
+            if !InStr(ktrl, "msctls_hotkey32")
+                continue
+            try {
+                v := SendMessage(0x402, 0, 0, ktrl, dlg)
+                vk := v & 0xFF, mods := (v >> 8) & 0xFF
+                if !vk
+                    return {ok: true, tast: ""}
+                return {ok: true, tast: (mods & 2 ? "^" : "") (mods & 4 ? "!" : "") (mods & 1 ? "+" : "")
+                    . "vk" Format("{:02X}", vk)}
+            }
+        }
+        for ktrl in kontroller {
+            if !InStr(ktrl, "Edit")
+                continue
+            try {
+                if !ControlGetVisible(ktrl, dlg)
+                    continue
+                tast := TrioTastFraTekst(ControlGetText(ktrl, dlg))
+                if (tast != "")
+                    return {ok: true, tast: tast}
+            }
+        }
+        return {ok: false, tast: ""}
+    }
+
+    VisKopitast() {
+        tast := this.Hent("HKCopy", "")
+        kilde := this.Hent("HKCopyKilde", "")
+        try this.KopiK.Text := "Kopitast i Trio:  " (tast = "" ? "ikke kjent ennå" : TastTekst(tast))
+            . (kilde = "feilet" ? " – fant den ikke i Trio, velg den her"
+            : tast = "" ? " – leses fra Trio første gang du kopierer IM/telefon"
+            : kilde = "Trio" ? " (lest fra Trio)" : " (valgt her)")
+        try this.KopiKnapp.Visible := this.KopiK.Visible && this.TrengerKopiKnapp()
+    }
+
+    TrengerKopiKnapp() => InStr("|feilet|manuell|", "|" this.Hent("HKCopyKilde", "") "|") > 0
+
+    TaOppKopitast(*) {
+        if this.Opptak
+            return
+        this.Opptak := true
+        this.Stopp()
+        this.KopiKnapp.Text := "Trykk tast…", this.KopiKnapp.Redraw()
+        this.Melding("Trykk samme tast som under Hurtigkopiering i Trio (Esc = avbryt)")
+        tast := TaOppEnTast()
+        this.Opptak := false
+        this.KopiKnapp.Text := "Velg tast…", this.KopiKnapp.Redraw()
+        if (tast = "") {
+            this.Melding("Avbrutt – kopitasten er ikke endret", false)
+        } else if ErMusTast(tast) {
+            this.Melding("Kopitasten må være en tast fra tastaturet, ikke en musknapp", false)
+        } else if !GyldigHurtigtast(tast) {
+            this.Melding("Ugyldig kopitast", false)
+        } else {
+            this.Lagre("HKCopy", tast), this.Lagre("HKCopyKilde", "manuell")
+            this.VisKopitast()
+            this.Melding("Kopitast satt til " TastTekst(tast) " (leses fra Trio når det er mulig)")
+            Logg("Trio Snarveier: kopitast valgt manuelt: " TastTekst(tast))
+        }
+        if this.Aktiv
+            this.Start()
     }
 
     ; Trykker Trios kopitast og venter (maks 1 sekund) til utklippstavlen endres.
