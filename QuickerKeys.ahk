@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc6"
+global APP_VERSJON := "3.12-rc7"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4742,6 +4742,78 @@ class TrioOppgaveloggDiagnose {
             return {ok:true, status:"Oppgavelogg ligger bak andre vinduer, uten minimering."}
         } catch as feil {
             return {ok:false, status:"Bakgrunnsplassering feilet: " SubStr(feil.Message, 1, 130)}
+        }
+    }
+
+    ; RC7 read-only layout probe: raw UIA Name values are never returned or
+    ; written to files. ListItem count is NOT assumed to be call count.
+    TestRadstruktur(loggHwnd) {
+        if !loggHwnd
+            return {ok:false, status:"Oppgavelogg er ikke funnet.", detaljer:"Ingen rader undersøkt."}
+        try {
+            if (WinGetMinMax("ahk_id " loggHwnd) = -1)
+                return {ok:false, status:"Oppgavelogg er minimert.", detaljer:"Gjenopprett loggen eller la QuickerKeys legge den bakerst."}
+            rot := UiaFraVindu(loggHwnd)
+            if !IsObject(rot)
+                return {ok:false, status:"UIA kunne ikke lese loggen.", detaljer:"Ingen UIA-rot."}
+            lister := UiaFinnAlle(rot, 50008)
+            if (lister.Length != 1)
+                return {ok:false, status:"Fant " lister.Length " lister, forventet én.", detaljer:"Ingen celler undersøkt."}
+            elementer := UiaFinnAlle(lister[1], 50007)
+            if !elementer.Length
+                return {ok:false, status:"Fant ingen ListItem-rader.", detaljer:"Ingen oppgaver undersøkt."}
+            testet := Min(elementer.Length, 12)
+            minFelt := 999, maxFelt := 0, tretten := 0, validerte := 0
+            dato := 0, id := 0, tid := 0, ko := 0, idag := 0
+            dagensDato := FormatTime(, "dd.MM.yyyy")
+            loop testet {
+                tekster := UiaFinnAlle(elementer[A_Index], 50020)
+                ant := Min(tekster.Length, 24)
+                minFelt := Min(minFelt, ant), maxFelt := Max(maxFelt, ant)
+                if (ant != 13)
+                    continue
+                tretten++
+                felt := []
+                loop 13 {
+                    v := ""
+                    try v := Trim(UiaStreng(tekster[A_Index], 30005))
+                    felt.Push(v)
+                }
+                if !RegExMatch(felt[1], "^\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2}$")
+                    continue
+                dato++
+                idOK := RegExMatch(felt[2], "^\d{6,15}$")
+                behandlingOK := RegExMatch(felt[9], "^\d{1,3}:[0-5]\d$")
+                koOK := RegExMatch(felt[10], "^\d{1,3}:[0-5]\d$")
+                if idOK
+                    id++
+                if behandlingOK
+                    tid++
+                if koOK
+                    ko++
+                if (SubStr(felt[1], 1, 10) = dagensDato)
+                    idag++
+                if (idOK && behandlingOK && koOK)
+                    validerte++
+            }
+            detaljer := "Kilde: Trio UIA – test uten lagring"
+                . "`nListItem tilgjengelig: " elementer.Length
+                . "`nUtvalg kontrollert: " testet " (maks 12)"
+                . "`nText-kontroller per rad: " minFelt "–" maxFelt
+                . "`nRader med 13 Text-felter: " tretten
+                . "`nDato/tid i kolonne 1: " dato
+                . "`nOppgave-ID-format i kolonne 2: " id
+                . "`nBehandlingstid i kolonne 9: " tid
+                . "`nKøtid i kolonne 10: " ko
+                . "`nDagens dato i utvalget: " idag
+                . "`nKomplett validerte rader i utvalget: " validerte
+                . "`nIngen telefonnumre, kundenummer, IM- eller oppgave-ID-verdier kopiert."
+                . "`nIKKE tolket som totalt antall samtaler (virtualisering kan forekomme)."
+            return {ok:validerte > 0, status:validerte > 0
+                ? "Trio radformat delvis verifisert i utvalget."
+                : "Trio radformat er ennå ikke verifisert.", detaljer:detaljer}
+        } catch as feil {
+            return {ok:false, status:"Trio-radtesten feilet.", detaljer:this.KortTekniskFeil("TestRadstruktur", feil)}
         }
     }
 
