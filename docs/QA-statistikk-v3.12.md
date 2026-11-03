@@ -1,6 +1,23 @@
 # QuickerKeys Statistikk v3.12 — QA og avgrensninger
 
 
+## RC12 – prøv faktiske tekstkilder når Name/Value er tomme
+
+**Ny brukertest:** 200 kandidater med 13 bladkontroller. 52 hadde plassering for Tidspunkt, men både Name og Value var tomme; dermed ingen gyldige tidsverdier, ingen strukturelle kart og 0 dagens oppgaver. Resten manglet tidsfelt. Dette dokumenterer manglende tekst fra de prøvde egenskapene og avgjør ikke om tomheten skyldes kontrollvalg eller providerens teksteksponering.
+
+- Cellelesing prøver LegacyIAccessible Name (30092), Value (30093) og TextPattern (10014) DocumentRange/GetText etter Name/Value. COM-metoder og egenskaps-ID-er er kontrollert mot Microsofts Windows SDK-header. Kun lesing, maks 512 tegn per TextPattern-cellekall, ingen Select/Scroll/Realize.
+- Ved tom/ugyldig celleverdi prøves maksimalt tre foreldre med samme entydige kolonneplassering. List, ListItem, DataItem, Table og DataGrid er grenser og leses aldri som celleinnhold.
+- Et radnavn kan bare brukes som tid hvis første kjente kolonne er Tidspunkt og hele radnavnet parses som én gyldig dato/tid. Motstridende gyldige tidsegenskaper avvises og overstyres ikke av radnavnet.
+- Diagnose skiller VARIANT-type fra tom BSTR, teller tekstkilder og viser tids-/radnavn bare som maskerte formater. Status sier direkte fra når ingen tidstekst kan leses gjennom de prøvde kildene. Det hentes ikke flere data fra historiske rader enn nødvendig for datofilteret.
+
+### Tester
+
+Tomme Name/Value med gyldig LegacyName, alternativ TextPattern, motstridende Legacy-datoer, wrapper i samme kolonne, avvisning av annen kolonne/hel rad, streng første-kolonne-tid og maskering. Windows-integrasjon prøver standard ListView med Name/Value undertrykt i celleleseren for å teste faktisk Legacy-tilgang, samt faktisk TextPattern COM-lesing fra et separat Windows-tekstfelt. Tidligere langlogg-, dagsfilter-, varighets-, fokus- og dedupliseringstester videreføres.
+
+### Faktisk Trio-QA
+
+Start **3.12-rc12**, vent én syklus og kopier diagnosen dersom ingen dagens oppgaver leses. Se særlig «Tidstekstkilde», «Tid valgt fra» og maskert radnavn. Testene dekker valgte feilsituasjoner og standard Windows-kontroller, men beviser ikke at Trio eksponerer disse tekstkildene. **Draft / ikke merge før fungerende faktisk Trio-test.**
+
 ## RC11 – dagens dato først, tidskilde og rader uten plassering
 
 Brukeren bekreftet at Oppgavelogg har historikk tilbake til 12.10.2026 og ba om fokus på kun dagens dato, 03.11.2026. RC10-rapporten viste 52 kandidater med tidsfelt som alle ble avvist på dato/tid; 116 manglet felter. Dermed var historikk alene ikke en forklaring: «Andre dager» var fortsatt 0. Den nøyaktige UIA-tidsverdien er ikke gitt i rapporten.

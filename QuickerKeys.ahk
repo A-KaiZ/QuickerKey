@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc11"
+global APP_VERSJON := "3.12-rc12"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4757,6 +4757,7 @@ class TrioOppgaveloggDiagnose {
             , andreDager:0, begrenset:false, detaljer:"", noder:0, lesefeil:0
             , behandlingMangler:0, behandlingUgyldig:0
             , tidsformer:Map(), tidFraName:0, tidFraValue:0, tidskonflikt:0
+            , teksttilstand:Map(), valgteTidskilder:Map(), tommeTidsceller:0, radnavnFormer:Map()
             , utenPlassering:0, bekreftedeKart:0, datoIDag:FormatTime(,"yyyyMMdd")
             , grunner:Map("felt",0,"dato",0,"id",0,"konflikt",0)
             , former:Map(), funnfelt:Map(), kolonner:[], kart:Map(), metoder:Map()}
@@ -4999,6 +5000,11 @@ class TrioOppgaveloggDiagnose {
     LesUiaRad(el, schema, out, slutt) {
         rad := {felt:Map(), konflikt:false, blader:[], feltindeks:Map(), form:""}
         navn := UiaStreng(el, 30005)
+        if (schema.kolonner.Length && schema.kolonner[1].key = "tidspunkt") {
+            this.Tell(out.radnavnFormer,"Name=" this.MaskertFormat(navn))
+            if this.Tidsstempel(navn)
+                rad.radTid := navn
+        }
         if InStr(navn, A_Tab) {
             felt := StrSplit(navn, A_Tab)
             if (felt.Length = schema.kolonner.Length) {
@@ -5013,6 +5019,11 @@ class TrioOppgaveloggDiagnose {
         celler := this.Barn(el, out, slutt)
         strukturRad := this.LesRadceller(celler, schema, out)
         if IsObject(strukturRad) {
+            if (rad.HasOwnProp("radTid") && (!strukturRad.felt.Has("tidspunkt")
+                || !this.Tidsstempel(strukturRad.felt["tidspunkt"]))) {
+                strukturRad.radTid := rad.radTid
+                this.LesKartlagteFelt(strukturRad,strukturRad.feltindeks,out)
+            }
             this.Tell(out.former, "celler=" celler.Length)
             this.Tell(out.metoder, "kolonnejusterte radceller")
             return strukturRad
@@ -5184,9 +5195,18 @@ class TrioOppgaveloggDiagnose {
             return
         }
         ; Read the timestamp FIRST, irrespective of visual column order.
+        konflikter := out.tidskonflikt
         for indeks, key in kart {
             if (key = "tidspunkt" && !rad.felt.Has(key))
                 this.SettFelt(rad,key,this.LesCelleVerdi(rad.blader[indeks],key,out))
+        }
+        if (out.tidskonflikt > konflikter) {
+            rad.konflikt := true
+            return
+        }
+        if (rad.HasOwnProp("radTid") && (!rad.felt.Has("tidspunkt") || !this.Tidsstempel(rad.felt["tidspunkt"]))) {
+            rad.felt["tidspunkt"] := rad.radTid
+            this.Tell(out.valgteTidskilder,"rad Name (første kolonne)")
         }
         if (!rad.felt.Has("tidspunkt") || !this.ErDagensTid(rad.felt["tidspunkt"],out))
             return
@@ -5269,6 +5289,8 @@ class TrioOppgaveloggDiagnose {
                 out.status .= " Behandlingstid er delvis eller helt ukjent."
         } else if (out.andreDager > 0 && out.avvist = 0)
             out.status := "Lesbare historiske oppgaver funnet, men ingen fra dagens dato i utvalget."
+        else if out.tommeTidsceller
+            out.status := "Ingen lesbar tidstekst i prøvde cellekilder. Se tekstkildediagnosen."
         else
             out.status := "Ingen dagens oppgaver kunne leses. Se feltdiagnosen nedenfor."
     }
@@ -5324,11 +5346,147 @@ class TrioOppgaveloggDiagnose {
         return verdi != "" ? verdi : navn
     }
 
-    LesCelleVerdi(el, key, out) {
-        verdi := UiaStreng(el, 30045)
+    CelleEgenskap(el, egenskap) {
+        variant := Buffer(24,0)
+        try {
+            ComCall(10,el,"Int",egenskap,"Ptr",variant)
+            vt := NumGet(variant,0,"UShort"), tekst := ""
+            if (vt = 8) {
+                ptr := NumGet(variant,8,"Ptr")
+                tekst := ptr ? StrGet(ptr,"UTF-16") : ""
+            }
+            return {tekst:tekst,vt:vt}
+        } catch {
+            return {tekst:"",vt:-1}
+        } finally {
+            DllCall("oleaut32\VariantClear","Ptr",variant)
+        }
+    }
+
+    CelleTextPattern(el, maks := 512) {
+        p := 0, rangePtr := 0, bstr := 0
+        try {
+            ComCall(16,el,"Int",10014,"Ptr*",&p) ; GetCurrentPattern(Text)
+            if !p
+                return {tekst:"",stottet:false}
+            pattern := ComValue(13,p)
+            ComCall(7,pattern,"Ptr*",&rangePtr) ; get_DocumentRange
+            if !rangePtr
+                return {tekst:"",stottet:true}
+            textRange := ComValue(13,rangePtr)
+            ComCall(12,textRange,"Int",maks,"Ptr*",&bstr) ; GetText, read-only
+            return {tekst:bstr ? StrGet(bstr,"UTF-16") : "",stottet:true}
+        } catch {
+            return {tekst:"",stottet:false}
+        } finally {
+            if bstr
+                DllCall("oleaut32\SysFreeString","Ptr",bstr)
+        }
+    }
+
+    FeltTekstGyldig(key, tekst) {
         if (key = "tidspunkt")
-            return this.VelgTidsverdi(UiaStreng(el,30005),verdi,out)
-        return Trim(verdi != "" ? verdi : UiaStreng(el,30005))
+            return this.Tidsstempel(tekst) != ""
+        if (key = "oppgave")
+            return RegExMatch(Trim(tekst),"^\d{1,15}$") > 0
+        if (key = "behandling" || key = "ko")
+            return this.VarighetSekunder(tekst) >= 0
+        return Trim(tekst) != ""
+    }
+
+    RegistrerCelleKilde(out, key, kontekst, navn, info) {
+        if (key != "tidspunkt")
+            return
+        tilstand := info.HasOwnProp("vt") ? "VT=" info.vt : (info.stottet ? "støttet" : "ikke støttet")
+        this.Tell(out.teksttilstand,kontekst " " navn " " tilstand " " (info.tekst = "" ? "tom" : "tekst"))
+        if (info.tekst != "")
+            this.Tell(out.tidsformer,kontekst " " navn "=" this.MaskertFormat(info.tekst))
+    }
+
+    VelgFeltkilde(key, kandidater, out) {
+        valgt := "", kilde := "", forste := ""
+        for kandidat in kandidater {
+            tekst := Trim(kandidat.tekst)
+            if (forste = "" && tekst != "")
+                forste := tekst
+            if !this.FeltTekstGyldig(key,tekst)
+                continue
+            if (key = "tidspunkt" && valgt != "" && this.Tidsstempel(valgt) != this.Tidsstempel(tekst)) {
+                out.tidskonflikt++
+                return {tekst:"",gyldig:false,tvetydig:true,kilde:""}
+            }
+            if (valgt = "")
+                valgt := tekst, kilde := kandidat.kilde
+        }
+        return {tekst:valgt != "" ? valgt : forste, gyldig:valgt != "",tvetydig:false,kilde:kilde}
+    }
+
+    CelleTekstkilder(el, key, out, kontekst := "celle") {
+        navn := this.CelleEgenskap(el,30005), verdi := this.CelleEgenskap(el,30045)
+        this.RegistrerCelleKilde(out,key,kontekst,"Name",navn)
+        this.RegistrerCelleKilde(out,key,kontekst,"Value",verdi)
+        if (key = "tidspunkt")
+            this.Tell(out.tidsformer,"Name=" this.MaskertFormat(navn.tekst) " | Value=" this.MaskertFormat(verdi.tekst))
+        valgt := this.VelgFeltkilde(key,[{tekst:verdi.tekst,kilde:kontekst " Value"}
+            ,{tekst:navn.tekst,kilde:kontekst " Name"}],out)
+        if (valgt.gyldig || valgt.tvetydig) {
+            if (key = "tidspunkt" && valgt.gyldig) {
+                if (valgt.kilde = kontekst " Value")
+                    out.tidFraValue++
+                else
+                    out.tidFraName++
+            }
+            return valgt
+        }
+        legacyNavn := this.CelleEgenskap(el,30092), legacyVerdi := this.CelleEgenskap(el,30093)
+        this.RegistrerCelleKilde(out,key,kontekst,"LegacyName",legacyNavn)
+        this.RegistrerCelleKilde(out,key,kontekst,"LegacyValue",legacyVerdi)
+        legacy := this.VelgFeltkilde(key,[{tekst:legacyVerdi.tekst,kilde:kontekst " LegacyValue"}
+            ,{tekst:legacyNavn.tekst,kilde:kontekst " LegacyName"}],out)
+        if (legacy.gyldig || legacy.tvetydig)
+            return legacy
+        text := this.CelleTextPattern(el)
+        this.RegistrerCelleKilde(out,key,kontekst,"TextPattern",text)
+        if this.FeltTekstGyldig(key,text.tekst)
+            return {tekst:Trim(text.tekst),gyldig:true,tvetydig:false,kilde:kontekst " TextPattern"}
+        if (valgt.tekst = "")
+            valgt.tekst := legacy.tekst != "" ? legacy.tekst : Trim(text.tekst)
+        return valgt
+    }
+
+    CelleForelder(el) => UiaForelder(el)
+    CelleKontrolltype(el) => UiaTall(el,30003)
+
+    LesCelleVerdi(el, key, out) {
+        valgt := this.CelleTekstkilder(el,key,out)
+        if valgt.tvetydig
+            return ""
+        if !valgt.gyldig {
+            forelder := el
+            loop 3 {
+                forelder := this.CelleForelder(forelder)
+                if !IsObject(forelder)
+                    break
+                type := this.CelleKontrolltype(forelder)
+                if (type = 50007 || type = 50029 || type = 50008 || type = 50028 || type = 50036)
+                    break ; Never read a whole row/list as a cell.
+                rekt := this.Rektangel(forelder)
+                if (!IsObject(rekt) || this.CelleKolonne(rekt,{kolonner:out.kolonner,kart:out.kart}) != key)
+                    break
+                alternativ := this.CelleTekstkilder(forelder,key,out,"celleforelder")
+                if alternativ.tvetydig
+                    return ""
+                if alternativ.gyldig {
+                    valgt := alternativ
+                    break
+                }
+            }
+        }
+        if (key = "tidspunkt" && valgt.gyldig)
+            this.Tell(out.valgteTidskilder,valgt.kilde)
+        if (key = "tidspunkt" && valgt.tekst = "")
+            out.tommeTidsceller++
+        return valgt.tekst
     }
 
     OverskriftTilDiagnose(navn) {
@@ -5364,6 +5522,12 @@ class TrioOppgaveloggDiagnose {
         for i, kol in out.kolonner
             tekst .= "`nOverskrift " i ": " kol.navn " -> " (kol.key != "" && out.kart.Has(kol.key)
                 ? kol.key : kol.key != "" ? "tvetydig " kol.key : "ikke koblet")
+        for tilstand, ant in out.teksttilstand
+            tekst .= "`nTidstekstkilde " tilstand " | lest " ant " ganger"
+        for kilde, ant in out.valgteTidskilder
+            tekst .= "`nTid valgt fra " kilde ": " ant
+        for form, ant in out.radnavnFormer
+            tekst .= "`nMaskert radnavn (første tidskolonne) " form " | lest " ant " ganger"
         for form, ant in out.tidsformer
             tekst .= "`nMaskert tidscelle " form " | lest " ant " ganger"
         for key, ant in out.former

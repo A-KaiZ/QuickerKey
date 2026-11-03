@@ -24,10 +24,61 @@ class TrioOffscreenTestLeser extends TrioOppgaveloggDiagnose {
     }
 }
 
+class TrioSourceTestLeser extends TrioOppgaveloggDiagnose {
+    CelleEgenskap(el, id) => el.HasOwnProp("props") && el.props.Has(id)
+        ? {tekst:el.props[id],vt:8} : {tekst:"",vt:13}
+    CelleTextPattern(el, maks := 512) => el.HasOwnProp("text")
+        ? {tekst:el.text,stottet:true} : {tekst:"",stottet:false}
+    CelleForelder(el) => el.HasOwnProp("parent") ? el.parent : ""
+    CelleKontrolltype(el) => el.HasOwnProp("type") ? el.type : 50020
+    Rektangel(el) => el.HasOwnProp("rect") ? el.rect : ""
+}
+
+; Exercise the real Windows LegacyIAccessible backend with primary cell
+; Name/Value deliberately suppressed, without changing HeaderItem reads.
+class TrioLegacyOnlyLeser extends TrioOppgaveloggDiagnose {
+    CelleEgenskap(el,id) {
+        if (id = 30005 || id = 30045)
+            return {tekst:"",vt:8}
+        return super.CelleEgenskap(el,id)
+    }
+}
+
 RunTrioTests() {
     fixturePid := 0, exitCode := 0
     try {
         r := TrioOppgaveloggDiagnose()
+        sourceReader := TrioSourceTestLeser()
+        sourceOut := sourceReader.NyLesing()
+        datum := FormatTime(,"dd.MM.yyyy") " 09:40:38"
+        legacyCell := {props:Map(30005,"",30045,"",30092,datum)}
+        TrioAssert(sourceReader.LesCelleVerdi(legacyCell,"tidspunkt",sourceOut) = datum
+            && sourceOut.valgteTidskilder.Has("celle LegacyName"), "empty Name/Value recovered from LegacyName")
+        textCell := {props:Map(),text:datum}
+        TrioAssert(sourceReader.LesCelleVerdi(textCell,"tidspunkt",sourceOut) = datum
+            && sourceOut.valgteTidskilder.Has("celle TextPattern"), "empty properties recovered from TextPattern")
+        conflictCell := {props:Map(30092,"03.11.2026 09:00:00",30093,"02.11.2026 09:00:00")}
+        TrioAssert(sourceReader.LesCelleVerdi(conflictCell,"tidspunkt",sourceOut) = "", "conflicting Legacy timestamps rejected")
+        sourceOut.kolonner := [{key:"tidspunkt",l:0,r:100}]
+        sourceOut.kart := Map("tidspunkt",true)
+        wrapper := {props:Map(30005,datum),type:50033,rect:{l:0,r:100,t:0,b:20}}
+        nested := {props:Map(),parent:wrapper}
+        TrioAssert(sourceReader.LesCelleVerdi(nested,"tidspunkt",sourceOut) = datum
+            && sourceOut.valgteTidskilder.Has("celleforelder Name"), "same-column parent text recovered")
+        otherColumn := {props:Map(30005,datum),type:50033,rect:{l:100,r:200,t:0,b:20}}
+        TrioAssert(sourceReader.LesCelleVerdi({props:Map(),parent:otherColumn},"tidspunkt",sourceOut) = "",
+            "parent from another column is not read")
+        wholeRow := {props:Map(30005,datum),type:50007,rect:{l:0,r:100,t:0,b:20}}
+        TrioAssert(sourceReader.LesCelleVerdi({props:Map(),parent:wholeRow},"tidspunkt",sourceOut) = "",
+            "whole-row parent is not interpreted as cell text")
+        sourceReader.AvsluttLesing(sourceOut)
+        TrioAssert(!InStr(sourceOut.detaljer,"09:40:38") && InStr(sourceOut.detaljer,"TextPattern"),
+            "text-source diagnostic masks timestamps")
+        rowHint := {felt:Map(),konflikt:false,blader:[{props:Map()},{props:Map(30092,"9876543210")}]
+            ,radTid:datum}
+        sourceReader.LesKartlagteFelt(rowHint,Map(1,"tidspunkt",2,"oppgave"),sourceOut)
+        TrioAssert(rowHint.felt["tidspunkt"] = datum && rowHint.felt["oppgave"] = "9876543210",
+            "strict first-column row timestamp hint supports empty leaf")
         TrioAssert(r.KolonneKey("Oppgave-ID") = "oppgave", "header alias")
         TrioAssert(r.KolonneKey("Behand" Chr(0xAD) "lingstid") = "behandling", "soft hyphen in duration header")
         TrioAssert(r.KolonneKey("Behandlings" Chr(0x200B) "tid") = "behandling", "zero-width duration header")
@@ -127,6 +178,15 @@ RunTrioTests() {
         FileAppend(uia.status "`n" uia.detaljer "`n", "*", "UTF-8")
         TrioAssert(uia.ok && uia.sett.Count = 2 && InStr(uia.kilde,"UIA"), "real UIA ListItem cell mapping")
         TrioAssert(WinExist("A") = before,"background read preserves focus")
+        legacyOnly := TrioLegacyOnlyLeser().HentDagensData(hwnd,true)
+        FileAppend(legacyOnly.status "`n" legacyOnly.detaljer "`n","*","UTF-8")
+        TrioAssert(legacyOnly.ok && legacyOnly.sett.Count = 2 && legacyOnly.andreDager = 1,
+            "real UIA Legacy fallback with empty primary Name/Value")
+        editEl := UiaFraVindu(ControlGetHwnd("Edit1","ahk_id " hwnd))
+        patternText := r.CelleTextPattern(editEl)
+        TrioAssert(patternText.stottet && InStr(patternText.tekst,"09:40:38"),
+            "actual Windows TextPattern COM read")
+
         again := r.HentDagensData(hwnd,true)
         TrioAssert(again.sett.Count = uia.sett.Count,"repeated UIA scan is stable")
         for key, post in native.sett {

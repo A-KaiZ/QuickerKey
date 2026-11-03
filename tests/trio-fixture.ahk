@@ -20,6 +20,8 @@ if (A_Args.Length && A_Args[1] = "long-history") {
 }
 for i, width in [120,30,130,190,220,70,90]
     lv.ModifyCol(i,width)
+; Standard Windows text control exercises DocumentRange/GetText via COM.
+v.AddEdit("w950 h40 Multi",FormatTime(,"dd.MM.yyyy") " 09:40:38")
 v.OnEvent("Close", (*) => ExitApp())
 v.Show()
 
