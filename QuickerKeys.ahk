@@ -5096,7 +5096,7 @@ class StatistikkModul {
         Skrift(v, "s11 bold c" TEMA.tekst)
         v.AddText("x22 y538 w730 h26 Background" TEMA.bg, "Trio Oppgavelogg – kontrollert lesetest")
         Skrift(v, "s9 norm c" TEMA.tekst)
-        this.VisualTrioTekst := v.AddEdit("x22 y570 w730 h106 ReadOnly -TabStop Multi VScroll",
+        this.VisualTrioTekst := v.AddEdit("x22 y570 w730 h106 ReadOnly -TabStop Multi VScroll Background" TEMA.kort,
             "Ingen Trio-radtest kjørt. Testen undersøker høyst 12 UIA-rader uten å lagre rådata.")
         Skrift(v, "s10 bold c" TEMA.tekst)
         Knapp(v, "x22 y691 w218 h34", "Test Trio-rader (uten lagring)",
@@ -5106,7 +5106,7 @@ class StatistikkModul {
         Knapp(v, "x616 y691 w136 h34", "Lukk", (*) => v.Hide(), TEMA.av)
         v.OnEvent("Close", (*) => v.Hide())
         v.OnEvent("Escape", (*) => v.Hide())
-        v.Show("w780 h740")
+        v.Show("w810 h740")
     }
 
     VisualKort(gui, x, y, tittel, verdi, farge) {
