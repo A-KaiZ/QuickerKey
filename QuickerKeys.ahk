@@ -4781,10 +4781,30 @@ class StatistikkModul {
     TilstandK := ""
     SkriftKnapp := ""
     Liste := ""
+    TrioStatusK := ""
+    TrioStatusTekst := "Venter på første UIA-diagnose."
+    TrioDetaljer := "Ingen undersøkelse kjørt."
+    TrioFeil := false
+    TrioOpptatt := false
+    TrioForrigeLogg := ""
+    TrioGui := ""
+    TrioInfoK := ""
+    TrioAutoK := ""
+    TrioMinK := ""
+    TrioIntervallK := ""
+    TrioFeilK := ""
 
     __New() {
         this.StateFil := STATS_MAPPE "\Aktiv.ini"
         this.TickCb := ObjBindMethod(this, "Tick")
+        this.TrioCb := ObjBindMethod(this, "TrioSjekk")
+        this.TrioLeser := TrioOppgaveloggDiagnose()
+        this.TrioAutoApne := Innst("Statistikk", "TrioAutoApne", "1") = "1"
+        this.TrioAutoMinimer := Innst("Statistikk", "TrioAutoMinimer", "1") = "1"
+        this.TrioIntervall := Integer(Innst("Statistikk", "TrioIntervallSek", "30"))
+        if !InStr("|15|30|60|", "|" this.TrioIntervall "|")
+            this.TrioIntervall := 30
+        this.TrioVisFeil := Innst("Statistikk", "TrioVisFeil", "1") = "1"
         this.HentTilstand()
     }
 
@@ -4810,6 +4830,7 @@ class StatistikkModul {
 
     Start() {
         SetTimer this.TickCb, 1000
+        SetTimer this.TrioCb, this.TrioIntervall * 1000
         this.Oppdater()
     }
 
@@ -4841,10 +4862,12 @@ class StatistikkModul {
         Reg(pn, Knapp(HOVED, "x" (x + 252) " y391 w240 h36", "Forkast pågående økter",
             ObjBindMethod(this, "Forkast"), TEMA.av))
         Skrift(HOVED, "s9 norm c" TEMA.dempet)
-        Reg(pn, HOVED.AddText("x" x " y437 w" b " h19 Background" TEMA.bg,
+        this.TrioStatusK := Reg(pn, HOVED.AddText("x" x " y434 w" b " h20 Background" TEMA.bg,
+            "Trio: Venter på første UIA-diagnose."))
+        Reg(pn, HOVED.AddText("x" x " y454 w" b " h15 Background" TEMA.bg,
             "SISTE REGISTRERINGER I DAG (uten kundeinformasjon)"))
         Skrift(HOVED, "s9 norm c" TEMA.tekst)
-        this.Liste := Reg(pn, HOVED.AddListView("x" x " y457 w" b " h92 -Multi -Sort Background" TEMA.kort,
+        this.Liste := Reg(pn, HOVED.AddListView("x" x " y472 w" b " h76 -Multi -Sort Background" TEMA.kort,
             ["Tid", "Type", "Varighet", "Videre"]))
         this.Liste.ModifyCol(1, 100), this.Liste.ModifyCol(2, 153)
         this.Liste.ModifyCol(3, 122), this.Liste.ModifyCol(4, 92)
@@ -4852,9 +4875,10 @@ class StatistikkModul {
         Reg(pn, Knapp(HOVED, "x" x " y556 w240 h30", "Åpne statistikk / CSV",
             (*) => Run('"' STATS_MAPPE '"'), TEMA.aksent2))
         Skrift(HOVED, "s8 norm c" TEMA.dempet)
-        Reg(pn, HOVED.AddText("x" (x + 252) " y555 w240 h34 Background" TEMA.bg,
-            "Kun økter du starter og avslutter registreres."))
+        Reg(pn, Knapp(HOVED, "x" (x + 252) " y556 w240 h30", "Trio Oppgavelogg / UIA…",
+            ObjBindMethod(this, "VisTrioInnstillinger"), TEMA.aksent2))
         this.Oppdater()
+        this.OppdaterTrioStatus()
     }
 
     Melding(tekst) {
@@ -5002,6 +5026,146 @@ class StatistikkModul {
             result.rader.Push({tid: c[2], type: c[3], sek: sek, videre: c[5] = "1"})
         }
         return result
+    }
+
+
+    ; UIA-undersøkelse hvert 30. sekund (eller annen valgt frekvens).
+    ; Ingen dataimport, GUI-aktivering eller tastetrykk i bakgrunnsleseren.
+    TrioSjekk(*) {
+        if this.TrioOpptatt
+            return
+        this.TrioOpptatt := true
+        try {
+            trio := this.TrioLeser.FinnTrio()
+            logg := this.TrioLeser.FinnLoggvindu(trio)
+            forlop := ""
+            kode := ""
+            if (!logg && this.TrioAutoApne) {
+                a := this.TrioLeser.ApneVedBehov(this.TrioAutoMinimer)
+                logg := a.logg
+                forlop := a.status
+                kode := a.kode
+            }
+            if logg {
+                r := this.TrioLeser.Kartlegg(logg)
+                this.TrioStatusTekst := r.status
+                this.TrioDetaljer := (forlop != "" ? "Vindushåndtering: " forlop "`n" : "") r.detaljer
+                this.TrioFeil := !r.ok
+                if (kode = "minimer-feil")
+                    this.TrioFeil := true
+            } else {
+                this.TrioStatusTekst := forlop != "" ? forlop
+                    : trio ? "Oppgavelogg er ikke åpen. Autoåpning er slått av." : "Trio Attendant er ikke startet."
+                this.TrioDetaljer := "Ingen UIA-celler ble lest. " (forlop != "" ? forlop : "")
+                this.TrioFeil := (kode = "menyfeil" || kode = "ikke-funnet")
+            }
+            if (this.TrioStatusTekst != this.TrioForrigeLogg) {
+                this.TrioForrigeLogg := this.TrioStatusTekst
+                Logg("Statistikk / Trio: " this.TrioStatusTekst)
+            }
+        } catch {
+            this.TrioStatusTekst := "Feil under UIA-diagnose (ingen data importert)."
+            this.TrioDetaljer := "Sjekk at Trio Attendant og Oppgavelogg er tilgjengelige."
+            this.TrioFeil := true
+            if (this.TrioForrigeLogg != this.TrioStatusTekst) {
+                this.TrioForrigeLogg := this.TrioStatusTekst
+                Logg("Statistikk / Trio: " this.TrioStatusTekst)
+            }
+        } finally {
+            this.TrioOpptatt := false
+            this.OppdaterTrioStatus()
+        }
+    }
+
+    OppdaterTrioStatus() {
+        if IsObject(this.TrioStatusK) {
+            vis := "Trio: " this.TrioStatusTekst
+            if (this.TrioFeil && !this.TrioVisFeil)
+                vis := "Trio: Feildetaljer er skjult – se diagnostikkvinduet."
+            this.TrioStatusK.Text := KortVerdi(vis, 91)
+            this.TrioStatusK.SetFont("c" (this.TrioFeil && this.TrioVisFeil ? NettFarge("feil") : TEMA.dempet))
+        }
+        this.OppdaterTrioDetaljer()
+    }
+
+    OppdaterTrioDetaljer() {
+        if !IsObject(this.TrioInfoK)
+            return
+        this.TrioInfoK.Value := "Sist undersøkt: " FormatTime(, "dd.MM.yyyy HH:mm:ss")
+            . "`r`n" this.TrioStatusTekst
+            . "`r`n`r`n" StrReplace(this.TrioDetaljer, "`n", "`r`n")
+            . "`r`n`r`nDette er kun en kontrollundersøkelse – ingen samtaler registreres automatisk."
+    }
+
+    VisTrioInnstillinger(*) {
+        if IsObject(this.TrioGui) {
+            this.OppdaterTrioDetaljer()
+            this.TrioGui.Show()
+            return
+        }
+        v := Gui("+Owner" HOVED.Hwnd " -MinimizeBox", "Trio Oppgavelogg – UIA-diagnose")
+        this.TrioGui := v
+        v.BackColor := TEMA.bg
+        Skrift(v, "s13 bold c" TEMA.tekst)
+        v.AddText("x20 y14 w520 h28 Background" TEMA.bg, "Oppgavelogg – bakgrunn og diagnostikk")
+        Skrift(v, "s9 norm c" TEMA.dempet)
+        v.AddText("x20 y42 w520 h36 Background" TEMA.bg,
+            "Les kun UIA-struktur. Ingen oppgaver, telefonnumre, kundenumre eller IM-verdier importeres.")
+        Skrift(v, "s10 norm c" TEMA.tekst)
+        this.TrioAutoK := v.AddCheckBox("x20 y86 w520 h25"
+            . (this.TrioAutoApne ? " Checked" : ""), "Åpne Oppgavelogg automatisk når Trio er i ro")
+        this.TrioMinK := v.AddCheckBox("x20 y114 w520 h25"
+            . (this.TrioAutoMinimer ? " Checked" : ""), "Minimer Oppgavelogg etter automatisk åpning")
+        this.TrioFeilK := v.AddCheckBox("x20 y142 w520 h25"
+            . (this.TrioVisFeil ? " Checked" : ""), "Vis feilstatus i Statistikk")
+        Skrift(v, "s10 norm c" TEMA.tekst)
+        v.AddText("x20 y180 w205 h26 +0x200 Background" TEMA.bg, "Oppdateringsintervall:")
+        Skrift(v, "s10 norm c000000")
+        this.TrioIntervallK := v.AddDropDownList("x230 y180 w150 R3", ["15 sekunder","30 sekunder","60 sekunder"])
+        this.TrioIntervallK.Choose(this.TrioIntervall = 15 ? 1 : this.TrioIntervall = 60 ? 3 : 2)
+        Skrift(v, "s9 norm c" TEMA.tekst)
+        this.TrioInfoK := v.AddEdit("x20 y217 w520 h156 ReadOnly Multi VScroll -E0x200 Background" TEMA.kort, "")
+        this.OppdaterTrioDetaljer()
+        Skrift(v, "s10 bold c" TEMA.tekst)
+        Knapp(v, "x20 y386 w155 h35", "Lagre innstillinger", ObjBindMethod(this, "LagreTrioInnstillinger"))
+        Knapp(v, "x185 y386 w160 h35", "Kjør UIA-test nå", ObjBindMethod(this, "TrioSjekk"), TEMA.aksent2)
+        Knapp(v, "x355 y386 w185 h35", "Kopier diagnose", ObjBindMethod(this, "KopierTrioDiagnose"), TEMA.aksent2)
+        Skrift(v, "s9 norm c" TEMA.dempet)
+        v.AddText("x20 y429 w520 h36 Background" TEMA.bg,
+            "Automatisk åpning gjøres bare når Trio er aktivt og tastatur/mus har vært i ro i minst 4 sekunder.")
+        v.OnEvent("Close", (*) => v.Hide())
+        v.OnEvent("Escape", (*) => v.Hide())
+        v.Show("w560 h475")
+    }
+
+    LagreTrioInnstillinger(*) {
+        intervall := Integer(RegExReplace(this.TrioIntervallK.Text, "\D"))
+        if !InStr("|15|30|60|", "|" intervall "|")
+            return MsgBox("Velg 15, 30 eller 60 sekunder.", APP_NAVN, "Icon!")
+        this.TrioAutoApne := this.TrioAutoK.Value = 1
+        this.TrioAutoMinimer := this.TrioMinK.Value = 1
+        this.TrioVisFeil := this.TrioFeilK.Value = 1
+        this.TrioIntervall := intervall
+        try {
+            SettInnst("Statistikk", "TrioAutoApne", this.TrioAutoApne ? "1" : "0")
+            SettInnst("Statistikk", "TrioAutoMinimer", this.TrioAutoMinimer ? "1" : "0")
+            SettInnst("Statistikk", "TrioIntervallSek", this.TrioIntervall)
+            SettInnst("Statistikk", "TrioVisFeil", this.TrioVisFeil ? "1" : "0")
+            SetTimer this.TrioCb, 0
+            SetTimer this.TrioCb, this.TrioIntervall * 1000
+            this.OppdaterTrioStatus()
+            Tip("Trio Oppgavelogg-innstillinger lagret", 2200)
+        } catch {
+            MsgBox("Kunne ikke lagre Trio-innstillingene. Se Logg.", APP_NAVN, "Icon!")
+        }
+    }
+
+    KopierTrioDiagnose(*) {
+        A_Clipboard := "QuickerKeys " APP_VERSJON " – anonym Trio UIA-diagnose"
+            . "`r`n" this.TrioStatusTekst
+            . "`r`n" StrReplace(this.TrioDetaljer, "`n", "`r`n")
+            . "`r`nIngen rå kundedata eller oppgavetekster er inkludert."
+        Tip("Anonym UIA-diagnose kopiert", 2400)
     }
 
     Tick(*) {
