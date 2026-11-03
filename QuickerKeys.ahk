@@ -5214,75 +5214,69 @@ class StatistikkModul {
 
     ; Display charts only from real manual CSV entries.
     ; Trio remains an independent, privacy-safe schema test.
+    ; Dashboard: Trio is the data source; controls refresh after each
+    ; 30-second UIA scan. "Oppdater nå" is optional and uses same scan.
     VisVisualiseringer(*) {
         if IsObject(this.VisualGui) {
             try this.VisualGui.Destroy()
             this.VisualGui := ""
         }
-        dag := this.LesDagen()
         v := Gui("+Owner" HOVED.Hwnd " -MaximizeBox", "QuickerKeys – Visualiseringer")
         this.VisualGui := v
+        this.VisualKortK := [], this.VisualBarK := [], this.VisualTimeTallK := []
         v.BackColor := TEMA.bg
         Skrift(v, "s17 bold c" TEMA.tekst)
         v.AddText("x22 y15 w710 h35 Background" TEMA.bg, "Statistikk og visualiseringer")
         Skrift(v, "s9 norm c" TEMA.dempet)
-        v.AddText("x22 y52 w720 h24 Background" TEMA.bg,
-            "Kilde: MANUELLE registreringer · " FormatTime(, "dd.MM.yyyy")
-            . " | Trio-data importeres ennå ikke")
-        this.VisualKort(v, 22, 85, "Samtaler", dag.inn + dag.ut, TEMA.aksent)
-        this.VisualKort(v, 216, 85, "Viderekoblet", dag.videre, TEMA.aksent2)
-        this.VisualKort(v, 410, 85, "Telefon (min)", Round((dag.sekInn + dag.sekUt) / 60, 1), TEMA.paa)
-        this.VisualKort(v, 604, 85, "Skriftlig (min)", Round(dag.skriftSek / 60, 1), TEMA.av)
+        this.VisualKildeK := v.AddText("x22 y52 w760 h24 Background" TEMA.bg,
+            "Trio · Leser automatisk hvert " this.TrioIntervall " sekund")
+
+        this.VisualKortK.Push(this.VisualKort(v, 22, 85, "Observerte oppgaver", TEMA.aksent))
+        this.VisualKortK.Push(this.VisualKort(v, 216, 85, "Satt videre", TEMA.aksent2))
+        this.VisualKortK.Push(this.VisualKort(v, 410, 85, "IM-referanser", TEMA.paa))
+        this.VisualKortK.Push(this.VisualKort(v, 604, 85, "Behandling (min)", TEMA.av))
+
         Skrift(v, "s11 bold c" TEMA.tekst)
-        v.AddText("x22 y176 w730 h26 Background" TEMA.bg, "Samtaler per time – manuelle registreringer")
-        timer := Map()
-        loop 24
-            timer[Format("{:02}", A_Index - 1)] := 0
-        for post in dag.rader {
-            if (post.type != "inn" && post.type != "ut")
-                continue
-            time := SubStr(post.tid, 1, 2)
-            if timer.Has(time)
-                timer[time] += 1
-        }
-        maks := 1
-        for time, ant in timer
-            maks := Max(maks, ant)
+        v.AddText("x22 y176 w730 h26 Background" TEMA.bg,
+            "Oppgaver per time · Trio (foreløpige observerte data)")
         loop 10 {
-            time := Format("{:02}", A_Index + 7)
-            ant := timer[time]
-            ypos := 211 + (A_Index - 1) * 28
+            klokke := Format("{:02}", A_Index + 7)
+            y := 211 + (A_Index - 1) * 28
             Skrift(v, "s9 norm c" TEMA.tekst)
-            v.AddText("x22 y" ypos " w60 h20 Background" TEMA.bg, time ":00")
-            bar := v.AddProgress("x88 y" (ypos + 2) " w518 h16 c" TEMA.aksent
+            v.AddText("x22 y" y " w60 h20 Background" TEMA.bg, klokke ":00")
+            b := v.AddProgress("x88 y" (y + 2) " w518 h16 c" TEMA.aksent
                 . " Background" TEMA.kort " Range0-100", 0)
-            bar.Value := Round(100 * ant / maks)
-            v.AddText("x622 y" ypos " w120 h20 Background" TEMA.bg, ant " samtaler")
+            this.VisualBarK.Push(b)
+            this.VisualTimeTallK.Push(v.AddText("x622 y" y " w120 h20 Background" TEMA.bg, "—"))
         }
         Skrift(v, "s9 norm c" TEMA.dempet)
         v.AddText("x22 y499 w730 h24 Background" TEMA.bg,
-            "Registreringer utenfor kl. 08–18 inngår i totaltallet, men vises ikke i timegrafen.")
+            "Hele dagen inngår i totalen. Grafen viser kl. 08–18 (10 timeintervaller).")
+
         Skrift(v, "s11 bold c" TEMA.tekst)
-        v.AddText("x22 y538 w730 h26 Background" TEMA.bg, "Trio Oppgavelogg – kontrollert lesetest")
+        v.AddText("x22 y538 w730 h26 Background" TEMA.bg, "Trio – innlesingsstatus")
         Skrift(v, "s9 norm c" TEMA.tekst)
         this.VisualTrioTekst := v.AddEdit("x22 y570 w730 h106 ReadOnly -TabStop Multi VScroll Background" TEMA.kort,
-            "Ingen Trio-radtest kjørt. Testen undersøker høyst 12 UIA-rader uten å lagre rådata.")
+            "Venter på automatisk innlesing…")
         Skrift(v, "s10 bold c" TEMA.tekst)
-        Knapp(v, "x22 y691 w218 h34", "Test Trio-rader (uten lagring)",
-            ObjBindMethod(this, "TestTrioRader"), TEMA.aksent)
-        Knapp(v, "x253 y691 w164 h34", "Kopier testresultat",
-            ObjBindMethod(this, "KopierTrioRadtest"), TEMA.aksent2)
+        Knapp(v, "x22 y691 w175 h34", "Oppdater nå",
+            ObjBindMethod(this, "TrioSjekk"), TEMA.aksent)
         Knapp(v, "x616 y691 w136 h34", "Lukk", (*) => v.Hide(), TEMA.av)
         v.OnEvent("Close", (*) => v.Hide())
         v.OnEvent("Escape", (*) => v.Hide())
+        this.OppdaterVisualiseringer()
         v.Show("w810 h740")
+        ; Immediate initial read when opened for the first time; subsequent
+        ; refreshes come from the existing 30-second timer.
+        if (this.TrioSistSynk = "")
+            this.TrioSjekk()
     }
 
-    VisualKort(gui, x, y, tittel, verdi, farge) {
+    VisualKort(gui, x, y, tittel, farge) {
         Skrift(gui, "s10 norm c" TEMA.dempet)
         gui.AddText("x" x " y" y " w180 h25 Background" TEMA.kort, " " tittel)
         Skrift(gui, "s19 bold c" farge)
-        gui.AddText("x" x " y" (y + 24) " w180 h44 Background" TEMA.kort, " " verdi)
+        return gui.AddText("x" x " y" (y + 24) " w180 h44 Background" TEMA.kort, " —")
     }
 
     TestTrioRader(*) {
