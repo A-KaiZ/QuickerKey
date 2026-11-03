@@ -5844,6 +5844,11 @@ class StatistikkModul {
         A_Clipboard := "QuickerKeys " APP_VERSJON " – anonym Trio UIA-diagnose"
             . "`r`n" this.TrioStatusTekst
             . "`r`n" StrReplace(this.TrioDetaljer, "`n", "`r`n")
+            . "`r`nInnlesingsstatus: " this.TrioSistStatus
+            . "`r`nKilde: " this.TrioSistKilde
+            . "`r`nRader undersøkt: " this.TrioSistKandidater
+            . "`r`nUnike oppgaver observert: " this.TrioOppgaver.Count
+            . "`r`nMerknad: Foreløpige tall basert på tilgjengelig historikk."
             . "`r`nIngen rå kundedata eller oppgavetekster er inkludert."
         Tip("Anonym UIA-diagnose kopiert", 2400)
     }
