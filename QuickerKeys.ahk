@@ -416,7 +416,7 @@ ByggInnstillingerPanel() {
     Skrift(HOVED, "s9 bold c" TEMA.dempet)
     Reg(pn, HOVED.AddText("x" x " y" (APP_H - 108) " w" b " h22 Background" TEMA.bg, "Developers"))
     Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 82) " w" b " h26 Background" TEMA.bg, "MAUUNI  ·  KAISAD"))
+    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 82) " w" b " h26 Background" TEMA.bg, "MAAUNI  ·  KAISAD"))
 }
 
 ; Sidetittel med «?»-knapp. medToggle = siden har PÅ/AV-knapp oppe til høyre.
