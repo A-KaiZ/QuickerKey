@@ -7,7 +7,7 @@
 - Egen start/stopp for **skriftlig tid**, også samtidig som man ringer ut.
 - Dagsoversikt: mottatte/utgående, overførte, total samtaletid, gjennomsnittlig mottatt samtaletid, skriftlig tid, siste 4 registreringer.
 - Fullførte økter til `%APPDATA%\QuickerKeys\Statistikk\YYYY-MM-DD.csv`; pågående økter i samme mappes `Aktiv.ini`.
-- Innholder **ikke** kundens navn, telefonnummer, brukernavn, IM-nummer eller saksbeskrivelse.
+- Innholder **ikke** kundens navn, telefonnummer, brukernavn, IM-nummer eller saksbeskrivelse. Dette er likevel personlige aktivitetsdata dersom de knyttes til en ansatt, og må behandles i tråd med interne retningslinjer.
 
 ## Viktige avgrensninger
 - Denne første versjonen teller **bare manuelle** registreringer. Verken SM Kontakt eller UIA gir foreløpig et verifisert signal for besvart/avsluttet/overført samtale.
@@ -34,3 +34,6 @@
 2. Bruk en eksplisitt tilstandsmaskin og stabil samtale-ID før auto-logging. Start ved bekreftet svar, avslutt ved bekreftet slutt.
 3. Koble manuell og automatisk hendelse med deduplisering; aldri anta at kontaktfelt-utfylling = besvart anrop.
 4. Test med syntetiske scenarier og velg opt-in for automatisk logging.
+
+## Avklaring med Trio-ansvarlig
+Enghouse Trio har egne statistikk-/rapporteringsfunksjoner. Produktdokumentasjon for Trio 9.3 beskriver også en valgfri, lisensiert modul **Enterprise Call Data Export** (P005110) som eksporterer Agent/Attendant-data med blant annet samtalestart, svar og viderekobling. Avklar først hvilken Trio-versjon og rapport-/eksporttilgang organisasjonen har. En godkjent eksport kan gi mer presise tall enn polling av UIA.
