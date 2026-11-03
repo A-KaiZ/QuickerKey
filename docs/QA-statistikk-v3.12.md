@@ -67,3 +67,21 @@ Enghouse Trio har egne statistikk-/rapporteringsfunksjoner. Produktdokumentasjon
 3. Bekreftet semantikk for telefonsymbol/retning og at `Koblet` betyr faktisk viderekobling.
 4. Deduplisering på oppgave-ID og oppdatering ved endret Koblet/Kommentar – **først da** automatisk beregning av statistikk.
 5. Godkjent lokal dataminimering og personvern – ikke logg rå telefonnumre eller IM-kommentarer i det offentlige repoet.
+
+## RC3 – feilretting etter test i Trio 10.1.35
+**Rapportert feil fra RC2:** `Feil under UIA-diagnose (ingen data importert).` Automatisk åpning skjedde ikke etter fire sekunders inaktivitet, og «Kjør UIA-test nå» ga ingen diagnostisk informasjon.
+
+**Rettet i RC3:**
+- Autoåpning er skilt fra strukturdiagnostikken: lett vindussjekk hvert **2,5 sekund** når Trio er aktivt, åpner først når fysisk inaktivitet har vart minst **4 sekunder**. UIA-kartlegging beholdes på 30-sekunders intervall. Det er ikke et løfte om åpning nøyaktig 4 sekunder etter oppstart.
+- Trio-hovedvinduet gjenkjennes via tidligere konfigurert vindu eller en entydig kandidat med Trio/Attendant i tittel/prosessnavn. Oppgavelogg kan være i samme PID eller en annen prosess med samme .exe-fil.
+- Manuell «Kjør UIA-test nå» leser **et allerede åpent** vindu uavhengig av om QuickerKeys eller Trio har fokus. Den åpner ikke Oppgavelogg.
+- Feilrapporten viser **feilsteg, AHK-feiltype, kort feilmelding og linjenummer** uten rå UIA-verdier, kundenummer, telefonnummer eller IM-tekst.
+- COM-failures fra `ElementFromHandle` og `ControlViewWalker` returnerer nå en lesbar teknisk feilmelding.
+
+**Retestprosedyre uten skjermbilder:**
+1. Start RC3 på Windows og åpne Trio Attendant 10.1.35.
+2. **Manuell kontroll først:** Velg Trio → Vis → Oppgavelogg. La vinduet være åpent. Gå tilbake til QuickerKeys → Statistikk → Trio Oppgavelogg / UIA → Kjør UIA-test nå → Kopier diagnose. Kontroller at resultatet nå sier hva som feiler (eventuelt viser DataGrid/Table/List-tall).
+3. Minimer Oppgavelogg manuelt og kjør samme UIA-test. Sammenlign resultater.
+4. **Autoåpning etterpå:** Lukk Oppgavelogg. Ha Trio-hovedvinduet i forgrunnen, la tastatur/mus være i ro minst 4 sekunder, og kontroller om loggen åpnes/minimeres innen neste 2,5-sekunders sjekk.
+5. Hvis autoåpning ikke fungerer, kopier diagnose og kontroller melding `menyfeil`, `ikke-funnet`, `Finn Trio` eller `Finn Oppgavelogg`; ikke slå på fokusbyttende tastetrykk som reserve.
+6. Verifiser at SM Kontakt ikke påvirkes når UIA-diagnosen kjører.
