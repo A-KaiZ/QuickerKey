@@ -4759,7 +4759,9 @@ class TrioOppgaveloggDiagnose {
             lister := UiaFinnAlle(rot, 50008)
             if (lister.Length != 1)
                 return {ok:false, status:"Fant " lister.Length " lister, forventet én.", detaljer:"Ingen celler undersøkt."}
-            elementer := UiaFinnAlle(lister[1], 50007)
+            elementer := UiaFinnAlle(lister[1], 50007) ; ListItem
+            if !elementer.Length
+                elementer := UiaFinnAlle(lister[1], 50029) ; DataItem fallback
             if !elementer.Length
                 return {ok:false, status:"Fant ingen ListItem-rader.", detaljer:"Ingen oppgaver undersøkt."}
             testet := Min(elementer.Length, 12)
