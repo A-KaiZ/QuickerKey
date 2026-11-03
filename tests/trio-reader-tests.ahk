@@ -182,8 +182,9 @@ RunTrioTests() {
         FileAppend(legacyOnly.status "`n" legacyOnly.detaljer "`n","*","UTF-8")
         TrioAssert(legacyOnly.ok && legacyOnly.sett.Count = 2 && legacyOnly.andreDager = 1,
             "real UIA Legacy fallback with empty primary Name/Value")
-        editEl := UiaFraVindu(ControlGetHwnd("Edit1","ahk_id " hwnd))
+        editEl := UiaFraVindu(ControlGetHwnd("RICHEDIT50W1","ahk_id " hwnd))
         patternText := r.CelleTextPattern(editEl)
+        FileAppend("SYNTH TextPattern: " patternText.stottet " step=" patternText.steg " HRESULT=" patternText.hr "`n","*","UTF-8")
         TrioAssert(patternText.stottet && InStr(patternText.tekst,"09:40:38"),
             "actual Windows TextPattern COM read")
 

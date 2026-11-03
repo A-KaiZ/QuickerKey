@@ -5364,20 +5364,22 @@ class TrioOppgaveloggDiagnose {
     }
 
     CelleTextPattern(el, maks := 512) {
-        p := 0, rangePtr := 0, bstr := 0
+        p := 0, rangePtr := 0, bstr := 0, steg := "GetCurrentPattern"
         try {
             ComCall(16,el,"Int",10014,"Ptr*",&p) ; GetCurrentPattern(Text)
             if !p
-                return {tekst:"",stottet:false}
+                return {tekst:"",stottet:false,steg:steg,hr:0}
             pattern := ComValue(13,p)
+            steg := "DocumentRange"
             ComCall(7,pattern,"Ptr*",&rangePtr) ; get_DocumentRange
             if !rangePtr
-                return {tekst:"",stottet:true}
+                return {tekst:"",stottet:true,steg:steg,hr:0}
             textRange := ComValue(13,rangePtr)
+            steg := "GetText"
             ComCall(12,textRange,"Int",maks,"Ptr*",&bstr) ; GetText, read-only
-            return {tekst:bstr ? StrGet(bstr,"UTF-16") : "",stottet:true}
-        } catch {
-            return {tekst:"",stottet:false}
+            return {tekst:bstr ? StrGet(bstr,"UTF-16") : "",stottet:true,steg:"OK",hr:0}
+        } catch as feil {
+            return {tekst:"",stottet:false,steg:steg,hr:feil.HasProp("Number") ? feil.Number : 0}
         } finally {
             if bstr
                 DllCall("oleaut32\SysFreeString","Ptr",bstr)
@@ -5397,7 +5399,9 @@ class TrioOppgaveloggDiagnose {
     RegistrerCelleKilde(out, key, kontekst, navn, info) {
         if (key != "tidspunkt")
             return
-        tilstand := info.HasOwnProp("vt") ? "VT=" info.vt : (info.stottet ? "støttet" : "ikke støttet")
+        tilstand := info.HasOwnProp("vt") ? "VT=" info.vt : (info.stottet ? "støttet" : "utilgjengelig")
+        if (info.HasOwnProp("steg") && !info.stottet)
+            tilstand .= " steg=" info.steg " HRESULT=" info.hr
         this.Tell(out.teksttilstand,kontekst " " navn " " tilstand " " (info.tekst = "" ? "tom" : "tekst"))
         if (info.tekst != "")
             this.Tell(out.tidsformer,kontekst " " navn "=" this.MaskertFormat(info.tekst))
@@ -5508,7 +5512,7 @@ class TrioOppgaveloggDiagnose {
             . "`nKolonner med lesbar plassering: " out.kolonner.Length
         for key, navn in feltNavn
             tekst .= "`n" navn ": " (out.kart.Has(key) ? "koblet" : "mangler eller tvetydig plassering")
-                . " | celler lest: " (out.funnfelt.Has(key) ? out.funnfelt[key] : 0)
+                . " | felt undersøkt: " (out.funnfelt.Has(key) ? out.funnfelt[key] : 0)
         tekst .= "`nKandidatrader: " out.kandidater " | Validerte i dag: " out.sett.Count
             . " | Andre dager: " out.andreDager
             . "`nAvvist – manglende felt: " out.grunner["felt"] ", dato/tid: " out.grunner["dato"]
