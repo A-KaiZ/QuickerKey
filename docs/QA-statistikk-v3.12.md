@@ -134,3 +134,22 @@ Brukertest av Trio Attendant 10.1.35:
 - [ ] Hvis `WinMoveBottom` ikke skjuler loggen slik vi ønsker, ikke bytt til `WinHide` eller `WinSetTransparent` uten egen UIA-kompatibilitetstest.
 
 **Neste fase:** Før automatisk telling må vi undersøke ListItem-innhold via godkjent, dataminimert parser (oppgave-ID, tidspunkt, behandlingstid, køtid, Koblet og tilstedeværelse av IM, uten å logge rå kundedata). Bekreft også listevirtualisering og duplikatkontroll.
+
+## RC6 – Automatisk vinduslivssyklus uten pause-/gjenoppta-knapper
+
+Brukeren ønsker at QuickerKeys alltid skal drifte Oppgavelogg i bakgrunnen, men uten å hindre manuell inspeksjon. RC6 legger ikke til noen GUI-knapper eller nye valg.
+
+**Logikk:** 2,5-sekunders lett kontroll av vindustilstand, 30-sekunders separat skrivebeskyttet UIA-diagnose. Når Oppgavelogg er aktiv og bruker beveger mus/skriver, røres ikke vinduet. Når brukeren går videre (Alt+Tab/klikk på SM), sendes loggvinduet bakerst etter ca. 15 sekunder. Dersom Oppgavelogg står aktivt med 60 sekunders fysisk inaktivitet, sendes det også bakerst. Minimering håndteres med `ShowWindowAsync(SW_SHOWNOACTIVATE=4)` etter 15 sekunder, med 4 sekunders fysisk inaktivitet som ekstra vilkår. Dersom kjent loggvindu lukkes, venter QuickerKeys 30 sekunder før neste forsiktige autoåpning. En ny Trio-oppstart nullstiller vindusstatus. Feil ved restore/plassering begrenses til ett forsøk pr. 60 sekunder; etter vellykket flytting nullstilles sperren.
+
+### RC6 QA i Windows/Trio 10.1.35
+- [ ] Start Trio og RC6, med Oppgavelogg lukket. Etter minst fire sekunder uten input åpnes loggen automatisk og legges bak andre vinduer.
+- [ ] Åpne Oppgavelogg manuelt og jobb aktivt i den i 2+ minutter. QuickerKeys må ikke flytte den mens mus/tastatur brukes.
+- [ ] Bytt via Alt+Tab til Service Manager, og jobb videre. Etter ca. 15 sekunder må Oppgavelogg ligge bakerst uten minimering, uten at fokus tas fra SM.
+- [ ] Ha Oppgavelogg aktiv uten fysisk input i minst 60 sekunder. Vurder om automatisk flytting er akseptabelt og ikke forstyrrer pågående lesing.
+- [ ] Minimer Oppgavelogg manuelt; etter minst 15 sekunder og fire sekunder uten input skal den gjenopprettes uten aktivering og legges bakerst. Bekreft at UIA finner `List >= 1` ved neste intervall.
+- [ ] Lukk Oppgavelogg manuelt. Ingen umiddelbar gjenåpning; etter minst 30 sekunder og fire sekunder uten input forsøkes ny åpning.
+- [ ] Under manuell bruk: kjør UIA-diagnose med vinduet synlig og etter at det er lagt bak. Kontroller at ingen kundenummer/IM-tekst leses i rapporten.
+- [ ] Valgfri nettverk/SM-regresjon: bruk SM Kontakt, Trio Snarveier, tekstflyt og rød søppelknapp; de skal fungere uendret.
+- [ ] Feiltest: hvis Trio-vinduet ikke kan gjenopprettes, ikke gjør gjentatte raske forsøk; vis anonymisert status.
+
+**Kjent risiko:** Det er ikke utført Windows-runtime-test av RC6. `SW_SHOWNOACTIVATE` er dokumentert for ikke å aktivere vinduet, men applikasjonen selv kan reagere på Windows-hendelsen. Kontrollér faktisk fokusoppførsel før merge.
