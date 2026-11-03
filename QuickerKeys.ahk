@@ -4923,6 +4923,32 @@ class TrioOppgaveloggDiagnose {
                             i++
                     }
                 }
+                ; Another provider layout: Text controls are direct descendants
+                ; of the List, rather than nested under ListItem.
+                if !kandidater.Length {
+                    direkteTekster := UiaFinnAlle(lister[1], 50020)
+                    kolonneVerdier := []
+                    for t in direkteTekster {
+                        if (kolonneVerdier.Length >= 1950) {
+                            out.begrenset := true
+                            break
+                        }
+                        verdi := ""
+                        try verdi := Trim(UiaStreng(t, 30005))
+                        if (verdi != "")
+                            kolonneVerdier.Push(verdi)
+                    }
+                    i := 1
+                    while (i + 12 <= kolonneVerdier.Length && kandidater.Length < 150) {
+                        felt := []
+                        loop 13
+                            felt.Push(kolonneVerdier[i + A_Index - 1])
+                        if this.GyldigOppgaveFormat(felt)
+                            kandidater.Push(felt), i += 13
+                        else
+                            i++
+                    }
+                }
             }
             out.kandidater := kandidater.Length
             datoIDag := FormatTime(, "dd.MM.yyyy")
