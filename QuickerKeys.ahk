@@ -4600,44 +4600,72 @@ class TrioOppgaveloggDiagnose {
     static MaksNoder := 140
     SperretPid := 0                   ; høyest ett mislykket automatisk åpningsforsøk per Trio-prosess
 
+    ; Try the learned Trio window first; also detect a single unambiguous
+    ; Trio Attendant top-level window if learning saved a different title.
+    ; No app activation, interaction, or raw window-title logging.
     FinnTrio() {
-        id := Innst("SMKontakt", "TrioVindu", "Trio Attendant")
-        h := FinnVindu(id)
-        if !h
-            h := FinnVindu("Trio Attendant")
-        if !h
-            return 0
-        try {
-            if ErNettleser(h)
-                return 0
-            if (WinGetPID("ahk_id " h) = ProcessExist())
-                return 0
-            if RegExMatch(WinGetTitle("ahk_id " h), "i)oppgavelogg")
-                return 0
-            return h
+        id := Innst("SMKontakt", "TrioVindu", "")
+        h := 0
+        if (id != "") {
+            try h := FinnVindu(id)
+            if (h && this.ErTrioHoved(h))
+                return h
         }
-        return 0
+        candidates := []
+        for h in WinGetList() {
+            if this.ErTrioHoved(h)
+                candidates.Push(h)
+        }
+        return candidates.Length = 1 ? candidates[1] : 0
+    }
+
+    ErTrioHoved(hwnd) {
+        if !hwnd
+            return false
+        try {
+            if (WinGetPID("ahk_id " hwnd) = ProcessExist())
+                return false
+            if ErNettleser(hwnd)
+                return false
+            tittel := WinGetTitle("ahk_id " hwnd)
+            exe := WinGetProcessName("ahk_id " hwnd)
+            if RegExMatch(tittel, "i)oppgavelogg")
+                return false
+            if !(WinGetStyle("ahk_id " hwnd) & 0x10000000)
+                return false
+            return RegExMatch(tittel, "i)trio\s*attendant|^trio\b")
+                || RegExMatch(exe, "i)trio|attendant")
+        }
+        return false
     }
 
     FinnLoggvindu(trioHwnd) {
         if !trioHwnd
             return 0
-        pid := 0
-        try pid := WinGetPID("ahk_id " trioHwnd)
+        pid := 0, exe := ""
+        try {
+            pid := WinGetPID("ahk_id " trioHwnd)
+            exe := StrLower(WinGetProcessName("ahk_id " trioHwnd))
+        }
         if !pid
             return 0
-        ; Bruk nøyaktig Trio-PID. Ikke bland inn en annen innlogget bruker
-        ; eller et vindu som tilfeldigvis heter Oppgavelogg.
+        candidates := []
         try {
-            for h in WinGetList("ahk_pid " pid) {
+            for h in WinGetList() {
                 if (h = trioHwnd)
                     continue
-                tittel := WinGetTitle("ahk_id " h)
-                if RegExMatch(tittel, "i)oppgavelogg")
-                    return h
+                title := WinGetTitle("ahk_id " h)
+                if !RegExMatch(title, "i)oppgavelogg")
+                    continue
+                cpid := WinGetPID("ahk_id " h)
+                cexe := StrLower(WinGetProcessName("ahk_id " h))
+                ; Allow a second Trio process with the same executable, but
+                ; never search for or interact with an unrelated application.
+                if (cpid = pid || (exe != "" && cexe = exe))
+                    candidates.Push(h)
             }
         }
-        return 0
+        return candidates.Length = 1 ? candidates[1] : 0
     }
 
     ; Ingen WinActivate, Send, klikk eller endring av aktiv fane.
