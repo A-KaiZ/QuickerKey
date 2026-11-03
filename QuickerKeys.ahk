@@ -2515,6 +2515,13 @@ class VT_SMKontakt extends VT_Base {
         sig := ""
         try sig := UiaSignatur(UiaFeltFraPunkt(sx, sy, typer))
         ok := UiaKanGjenkjennes(sig)
+        if ok {
+            gyldigType := false
+            for t in typer
+                if (sig.type = t)
+                    gyldigType := true
+            ok := gyldigType
+        }
         this.Ny[prefiks "Type"] := ok ? sig.type : ""
         this.Ny[prefiks "Navn"] := ok ? sig.navn : ""
         this.Ny[prefiks "Id"] := ok ? sig.id : ""
@@ -2584,7 +2591,7 @@ class VT_SMKontakt extends VT_Base {
         if (this.LaerSteg < 1 || this.LaerSteg > 4)
             return
         modus := this.Cfg["TrioKilde"]
-        antall := 3
+        antall := 2
         nr := this.LaerSteg >= 3 ? this.LaerSteg - 1 : this.LaerSteg
         steg1 := modus = "web" ? "Klikk på KUNDENUMMERET i Trio Web."
             : modus = "attendant" ? "Trykk HURTIGKOPIERING i Trio (IDM username)."
@@ -2593,7 +2600,7 @@ class VT_SMKontakt extends VT_Base {
             steg1,
             "",
             "Klikk i KONTAKT-feltet i Service Manager.",
-            "Klikk på KNAPPEN ved siden av Kontakt-feltet.`n(Esc = ingen knapp)"
+            "Kontakt-feltet læres i forrige steg."
         ]
         ToolTip "Lær oppsett – steg " nr (antall != "" ? " av " antall : "") "`n" tekster[this.LaerSteg]
             . (this.LaerInfo != "" ? "`n`n" this.LaerInfo : "") ((this.LaerSteg = 1 || this.LaerSteg = 3) ? "`n(Esc = avbryt)" : "")
