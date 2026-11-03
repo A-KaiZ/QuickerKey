@@ -9,8 +9,28 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Trio Snarveier:** Menykommandoer inne i **Trio Attendant** (ny i v3.0).
 - **Vindusbytter:** Opptil fire vanlige programmer/vinduer og nettleserfaner.
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
+- **Statistikk (PR #9):** Manuelle samtaletellere, skriftlig tid og skrivebeskyttet UIA-diagnose for Trio Oppgavelogg.
 
-## v3.11 – Nettverk og UIA-feltgjenkjenning (feature branch)
+## v3.12-rc2 – Statistikk + Trio Oppgavelogg (PR #9)
+
+En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
+
+| Innstilling | Standard |
+| --- | --- |
+| Åpne Oppgavelogg automatisk | På |
+| Minimer etter automatisk åpning | På |
+| Poll-/diagnoseintervall | 30 sekunder |
+| Vis feilstatus i Statistikk | På |
+
+**Oppførsel:** Når Trio er i forgrunnen og det har gått minst fire sekunder uten fysisk input, forsøker QuickerKeys `Vis → Oppgavelogg` via standard Win32-meny, **uten** `WinActivate`, `Click` eller `Send`. Hvis et nytt separat loggvindu gjenkjennes i **samme Trio-prosess**, minimeres det. Vinduer som brukeren selv allerede har åpnet, minimeres ikke av automatikken. Fokuset forsøkes ikke flyttet tilbake. En kort synlig åpning er fortsatt mulig når Trio selv oppretter vinduet.
+
+Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller vinduet ikke gjenkjennes, vises status. For å unngå gjentatte popup-vinduer blir et mislykket automatisk åpningsforsøk ikke gjentatt i samme Trio-prosess før omstart.
+
+**Diagnose:** UIA bruker `ElementFromHandle` og en begrenset `ControlViewWalker` (maks 140 registrerte noder og dybde 5). Den rapporterer bare kontrolltyper (DataGrid, Table, List, DataItem/ListItem), et antall gjenkjente standardoverskrifter, minimeringsstatus og tidsforbruk. Ingen celleverdier, kundenumre, telefonnumre, IM-referanser eller kommentarer eksporteres. Brukeren kan kopiere en anonym statusrapport.
+
+**Viktig:** Det finnes **ingen automatisk dataimport eller samtaletelling fra Trio** i denne PR-en. Det er ikke bekreftet at UIA faktisk kan lese loggstrukturen mens den er minimert. Kjør [QA-statistikk-v3.12](docs/QA-statistikk-v3.12.md) i faktisk Trio-miljø før merge. Innstillingene lagres under `[Statistikk]` i `Innstillinger\QuickerKeys.ini`.
+
+## v3.11 – Nettverk og UIA-feltgjenkjenning (nå i main)
 
 Denne oppdateringen bygger videre på v3.8 i `main`.
 
@@ -60,6 +80,6 @@ Gamle filer fra skriptmappen eller gammel MAAUNI-AppData kan kopieres ved først
 
 ## Utviklere
 
-MAUUNI og KAISAD.
+MAAUNI og KAISAD.
 
 > Dette er en uprøvd v3.0-utviklingsbranch. Test mot syntetiske data og se [QA-planen](docs/QA-v3.0.md) før merge. Ikke legg personlige konfigurasjoner, brukernavn, interne logger eller pasientopplysninger i det offentlige repoet.
