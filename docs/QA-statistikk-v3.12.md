@@ -85,3 +85,24 @@ Enghouse Trio har egne statistikk-/rapporteringsfunksjoner. Produktdokumentasjon
 4. **Autoåpning etterpå:** Lukk Oppgavelogg. Ha Trio-hovedvinduet i forgrunnen, la tastatur/mus være i ro minst 4 sekunder, og kontroller om loggen åpnes/minimeres innen neste 2,5-sekunders sjekk.
 5. Hvis autoåpning ikke fungerer, kopier diagnose og kontroller melding `menyfeil`, `ikke-funnet`, `Finn Trio` eller `Finn Oppgavelogg`; ikke slå på fokusbyttende tastetrykk som reserve.
 6. Verifiser at SM Kontakt ikke påvirkes når UIA-diagnosen kjører.
+
+## RC4 – Feilretting og trygg sletting (etter brukerens RC3-test)
+
+**Bekreftet i Trio 10.1.35:** Automatisk åpning og minimering fungerer når Trio er aktivt. UIA finner `List: 1`, `DataItem/ListItem: 68` og `8 av 12` gjenkjente kolonneoverskrifter. Dette er **kontroller/elementer**, ikke bekreftet antall samtaler.
+
+**Årsak til `MethodError: This value of type "Integer" has no method named "Call"`:** Lokal variabel `logg` i `TrioSjekk()` kolliderte med funksjonen `Logg()` (AHK-navn er ikke case-sensitive). Selv vellykket UIA-lesing kunne derfor gi feil etterpå ved statuslogging. RC4 kaller vindusvariabelen `loggHwnd` i stedet.
+
+**Fokusfri automatisk åpning:** Sjekk hvert 2,5. sekund når Trio finnes og fysisk inaktivitet har vart minst fire sekunder, *uten* krav om `WinActive(Trio)` eller musepeker over Trio. `MenuSelect` kan adressere et standard Win32-menylinje-vindu uten å aktivere det, men fungerer ikke for alle egendefinerte menyer og kan feile når hovedvinduet er minimert. Kun et nyopprettet Oppgavelogg-vindu minimeres. Et kort vindusglimt fra Trio selv kan fortsatt forekomme.
+
+**Søppelknapp:** Liten rød `🗑` til høyre for «Siste registreringer i dag». Klikk gir `YesNo Icon! Default2` med «Nei» som standard; «Ja» sletter kun `Statistikk/YYYY-MM-DD.csv` for dagens dato. Krever at ingen manuell samtale eller skriftlig tidsøkt pågår. Beholder tidligere datoer, `Aktiv.ini`, QuickerKeys-INI, logger og selve Trio Oppgavelogg.
+
+### RC4 retester
+- [ ] Åpne Trio, men arbeid i Service Manager eller et annet program. Hold mus/tastatur i ro minst 4 sekunder. Oppgavelogg åpnes/minimeres én gang, uten at du klikker på Trio.
+- [ ] Kontroller at muspekerens posisjon er irrelevant.
+- [ ] Test med Trio minimert: enten korrekt bakgrunnsåpning eller tydelig status, ingen uønsket fokusendring.
+- [ ] Kjør manuell UIA-test med Oppgavelogg synlig, så minimert. Det skal ikke komme `Integer has no method named Call`.
+- [ ] Åpne dagens Statistikk; klikk 🗑, velg **Nei**: CSV/tellere uendret.
+- [ ] Klikk 🗑, velg **Ja**: dagens CSV fjernes og dagsoversikt nullstilles. Historiske filer og Trio er uendret.
+- [ ] Start en manuell samtale eller skriftlig tid og klikk 🗑: sletting blir avvist til aktiv økt er avsluttet/forkastet.
+- [ ] Test 🗑 uten eksisterende CSV: vis kort status, ingen filendring.
+- [ ] Utfør regresjonstest på SM Kontakt, Trio Snarveier og Nettverk etter oppdateringen.
