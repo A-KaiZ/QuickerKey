@@ -5301,8 +5301,8 @@ class TrioOppgaveloggDiagnose {
             return "(tom)"
         ; All letters and numbers are masked BEFORE exporting any signature.
         ; Escaped Unicode format/space codes reveal representation, not data.
-        tekst := RegExReplace(SubStr(tekst, 1, 80), "\p{N}", "d")
-        tekst := RegExReplace(tekst, "\p{L}", "x")
+        tekst := RegExReplace(SubStr(tekst, 1, 80), "\p{L}", "x")
+        tekst := RegExReplace(tekst, "\p{N}", "d")
         return this.OverskriftTilDiagnose(tekst)
     }
 
