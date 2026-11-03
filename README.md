@@ -8,8 +8,21 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **SM Kontakt:** Overfører brukernavn/kundenummer fra Trio til Service Manager.
 - **Trio Snarveier:** Menykommandoer inne i **Trio Attendant** (ny i v3.0).
 - **Vindusbytter:** Opptil fire vanlige programmer/vinduer og nettleserfaner.
+- **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 
-## v3.0 – testversjon
+## v3.11 – Nettverk og UIA-feltgjenkjenning (feature branch)
+
+Denne oppdateringen bygger videre på v3.8 i `main`.
+
+- **Nettverk:** Valgfri side via Innstillinger → «Nettverksgeni?», av som standard.
+- **MAC Import:** Bygger CSV for Cisco ISE-endepunkter med 31 kolonner, MAC-parsing, duplikatfjerning, validering og eksplisitt bekreftelse. Skriver fil lokalt; gjør ingen endringer i ISE.
+- **SM Kontakt:** Lærer UIA-signaturer for Kontakt-feltet (ControlType, Name, AutomationId og ClassName). Finner feltet på nytt ved kjøring og bruker Tab + Enter. Eldre oppsett med trygge koordinater beholdes.
+- **Trio Snarveier:** IM Search kan identifiseres med UIA-signatur, med koordinatfallback for eldre konfig.
+- **Regresjonsvern:** Fane- og vindusverifisering før innskriving, og ikke-mutativ hurtigtastvalidering fra v3.8 beholdes.
+
+**Status:** Kun statisk integrert. Ingen Windows-/Trio-/Service Manager-/Cisco ISE-test er utført. Ikke merge før [QA-v3.11](docs/QA-v3.11.md) er godkjent. Bruk testdata, ikke personsensitive opplysninger.
+
+## Historisk: v3.0 – testversjon
 
 **QuickKey v1.05 og QuickerKeys er forskjellige programmer.** Gammel QuickKey `HKAgentvindu=!Numpad5` åpnet `Trio Attendant → Vis → Agentvinduet`. Det er **ikke** en snarvei til Edge-fanen «Trio Agent». Tilsvarende gjelder `HkTjenestevindu=!Numpad4` som åpner `Trio Attendant → Vis → Tjenestevindu`.
 
