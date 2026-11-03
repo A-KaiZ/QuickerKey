@@ -59,7 +59,7 @@ RunTrioTests() {
             && sourceOut.valgteTidskilder.Has("celle TextPattern"), "empty properties recovered from TextPattern")
         conflictCell := {props:Map(30092,"03.11.2026 09:00:00",30093,"02.11.2026 09:00:00")}
         TrioAssert(sourceReader.LesCelleVerdi(conflictCell,"tidspunkt",sourceOut) = "", "conflicting Legacy timestamps rejected")
-        sourceOut.kolonner := [{key:"tidspunkt",l:0,r:100}]
+        sourceOut.kolonner := [{key:"tidspunkt",navn:"Tidspunkt",l:0,r:100}]
         sourceOut.kart := Map("tidspunkt",true)
         wrapper := {props:Map(30005,datum),type:50033,rect:{l:0,r:100,t:0,b:20}}
         nested := {props:Map(),parent:wrapper}
