@@ -11,7 +11,7 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 - **Statistikk (PR #9):** Manuelle samtaletellere, skriftlig tid og skrivebeskyttet UIA-diagnose for Trio Oppgavelogg.
 
-## v3.12-rc2 – Statistikk + Trio Oppgavelogg (PR #9)
+## v3.12-rc3 – Statistikk + Trio Oppgavelogg (PR #9)
 
 En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
 
@@ -26,7 +26,7 @@ En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Den ny
 
 Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller vinduet ikke gjenkjennes, vises status. For å unngå gjentatte popup-vinduer blir et mislykket automatisk åpningsforsøk ikke gjentatt i samme Trio-prosess før omstart.
 
-**Diagnose:** UIA bruker `ElementFromHandle` og en begrenset `ControlViewWalker` (maks 140 registrerte noder og dybde 5). Den rapporterer bare kontrolltyper (DataGrid, Table, List, DataItem/ListItem), et antall gjenkjente standardoverskrifter, minimeringsstatus og tidsforbruk. Ingen celleverdier, kundenumre, telefonnumre, IM-referanser eller kommentarer eksporteres. Brukeren kan kopiere en anonym statusrapport.
+**Diagnose:** Automatisk åpningskontroll kjører hvert 2,5 sekund og UIA-diagnose hvert 30. sekund. Manuell «Kjør UIA-test nå» undersøker bare en allerede åpen Oppgavelogg, uavhengig av fokus. Ved feil vises stegnavn, kort AHK-feil og linjenummer. UIA bruker `ElementFromHandle` og en begrenset `ControlViewWalker` (maks 140 registrerte noder og dybde 5). Den rapporterer bare kontrolltyper (DataGrid, Table, List, DataItem/ListItem), et antall gjenkjente standardoverskrifter, minimeringsstatus og tidsforbruk. Ingen celleverdier, kundenumre, telefonnumre, IM-referanser eller kommentarer eksporteres. Brukeren kan kopiere en anonym statusrapport.
 
 **Viktig:** Det finnes **ingen automatisk dataimport eller samtaletelling fra Trio** i denne PR-en. Det er ikke bekreftet at UIA faktisk kan lese loggstrukturen mens den er minimert. Kjør [QA-statistikk-v3.12](docs/QA-statistikk-v3.12.md) i faktisk Trio-miljø før merge. Innstillingene lagres under `[Statistikk]` i `Innstillinger\QuickerKeys.ini`.
 
