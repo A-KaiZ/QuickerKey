@@ -4584,6 +4584,191 @@ TrioTastFraTekst(tekst) {
 ;  Fullførte økter lagres som CSV i AppData\QuickerKeys\Statistikk.
 ;  Pågående økter lagres i Aktiv.ini så Reload/omstart ikke mister dem.
 ; =====================================================================
+; =====================================================================
+;  TRIO OPPGAVELOGG – kun UIA-strukturdiagnose (v3.12-rc2).
+;  Henter ALDRI innhold fra kundeceller, importerer ingen oppgaver.
+;  Åpning prøves kun når Trio er aktivt og brukeren er inaktiv.
+; =====================================================================
+class TrioOppgaveloggDiagnose {
+    static MaksNoder := 140
+
+    FinnTrio() {
+        id := Innst("SMKontakt", "TrioVindu", "Trio Attendant")
+        h := FinnVindu(id)
+        if !h
+            h := FinnVindu("Trio Attendant")
+        if !h
+            return 0
+        try {
+            if ErNettleser(h)
+                return 0
+            if (WinGetPID("ahk_id " h) = ProcessExist())
+                return 0
+            if RegExMatch(WinGetTitle("ahk_id " h), "i)oppgavelogg")
+                return 0
+            return h
+        }
+        return 0
+    }
+
+    FinnLoggvindu(trioHwnd) {
+        if !trioHwnd
+            return 0
+        pid := 0
+        try pid := WinGetPID("ahk_id " trioHwnd)
+        if !pid
+            return 0
+        ; Bruk nøyaktig Trio-PID. Ikke bland inn en annen innlogget bruker
+        ; eller et vindu som tilfeldigvis heter Oppgavelogg.
+        try {
+            for h in WinGetList("ahk_pid " pid) {
+                if (h = trioHwnd)
+                    continue
+                tittel := WinGetTitle("ahk_id " h)
+                if RegExMatch(tittel, "i)oppgavelogg")
+                    return h
+            }
+        }
+        return 0
+    }
+
+    ; Ingen WinActivate, Send, klikk eller endring av aktiv fane.
+    ; MenuSelect virker mot standard Win32-meny uten aktivering.
+    ; Stopp når Trio ikke er aktivt; unngå at loggen dukker opp over SM.
+    ApneVedBehov(autoMinimer := true) {
+        trio := this.FinnTrio()
+        if !trio
+            return {kode:"trio-mangler", status:"Trio Attendant er ikke funnet.", logg:0}
+        logg := this.FinnLoggvindu(trio)
+        if logg
+            return {kode:"finnes", status:"Oppgavelogg er allerede åpen. Endrer ikke vinduet.", logg:logg}
+        if (WinGetMinMax("ahk_id " trio) = -1)
+            return {kode:"venter", status:"Trio er minimert – venter før åpning av Oppgavelogg.", logg:0}
+        if !WinActive("ahk_id " trio)
+            return {kode:"venter", status:"Venter til Trio er i forgrunnen før første åpning.", logg:0}
+        if (A_TimeIdlePhysical < 4000)
+            return {kode:"venter", status:"Venter til tastatur og mus har vært i ro i 4 sekunder.", logg:0}
+
+        ; Kan gi et kort vindusglimt ved første åpning, selv om hovedvinduet
+        ; ikke aktiveres eksplisitt. Ingen forsøk på å ta tilbake brukerfokus.
+        try MenuSelect "ahk_id " trio, , "Vis", "Oppgavelogg"
+        catch {
+            return {kode:"menyfeil", status:"Trio støttet ikke bakgrunnskommandoen Vis > Oppgavelogg. Åpne loggen manuelt.", logg:0}
+        }
+        funnet := 0
+        loop 12 {
+            Sleep 100
+            funnet := this.FinnLoggvindu(trio)
+            if funnet
+                break
+        }
+        if !funnet
+            return {kode:"ikke-funnet", status:"Vis-menyen ble brukt, men et separat Oppgavelogg-vindu ble ikke gjenkjent.", logg:0}
+
+        if autoMinimer {
+            try WinMinimize "ahk_id " funnet
+            catch {
+                return {kode:"minimer-feil", status:"Oppgavelogg ble åpnet, men kunne ikke minimeres.", logg:funnet}
+            }
+            try {
+                if (WinGetMinMax("ahk_id " funnet) != -1)
+                    return {kode:"minimer-feil", status:"Oppgavelogg ble åpnet, men minimert tilstand kunne ikke bekreftes.", logg:funnet}
+            }
+        }
+        return {kode:"opprettet", status:autoMinimer ? "Oppgavelogg åpnet og minimert automatisk." : "Oppgavelogg åpnet automatisk.", logg:funnet}
+    }
+
+    ; Tre-/kontrollkartlegging: leser kun TYPE og ET SNEVERT SETT
+    ; STATISKE KOLONNENAVN. Ingen UIA Value, cellenavn, telefonnumre,
+    ; kundenumre, IM-ID-er eller kommentarer samles/lagres.
+    Kartlegg(loggHwnd) {
+        if !loggHwnd
+            return {ok:false, status:"Oppgavelogg er ikke åpen.", detaljer:"Ingen UIA-diagnose kjørt."}
+        minimert := false
+        try minimert := WinGetMinMax("ahk_id " loggHwnd) = -1
+        t0 := A_TickCount
+        rot := ""
+        try rot := UiaFraVindu(loggHwnd)
+        catch {
+            return {ok:false, status:"UIA kunne ikke koble til Oppgavelogg.", detaljer:"UIA ElementFromHandle feilet."}
+        }
+        if !IsObject(rot)
+            return {ok:false, status:"UIA fant ikke vinduets rot-element.", detaljer:"Ingen lesbare kontroller."}
+
+        pw := 0
+        try ComCall(14, Uia().uia, "Ptr*", &pw) ; get_ControlViewWalker
+        catch {
+            return {ok:false, status:"Kunne ikke hente UIA ControlViewWalker.", detaljer:"UIA-walker feilet."}
+        }
+        if !pw
+            return {ok:false, status:"UIA returnerte ingen kontrollvandrer.", detaljer:"Ingen kontroller lest."}
+        walker := ComValue(13, pw)
+        koder := Map(50028,"DataGrid", 50036,"Table", 50008,"List", 50029,"DataItem"
+            , 50007,"ListItem", 50034,"Header", 50035,"HeaderItem")
+        antall := Map()
+        for navn in koder
+            antall[koder[navn]] := 0
+        overskrifter := Map()
+        trykket := Map()
+        ; Kun eksakte, kjente overskrifter kan brukes i diagnose:
+        for navn in ["Tidspunkt", "Oppgave", "Telefonnr", "Telefonnummer", "Kundenummer"
+            , "Tjeneste", "Behandlingstid", "Køtid", "Koblet", "Kategori", "Kommentar", "Kommentar (IM)"]
+            trykket[StrLower(navn)] := navn
+
+        ko := [{node:rot, d:0}], indeks := 1
+        while (indeks <= ko.Length && indeks <= TrioOppgaveloggDiagnose.MaksNoder) {
+            innslag := ko[indeks]
+            indeks++
+            if (innslag.d > 0) {
+                type := 0
+                try type := UiaTall(innslag.node, 30003)
+                if koder.Has(type)
+                    antall[koder[type]] += 1
+                if (type = 50035) {
+                    navn := ""
+                    try navn := StrLower(Trim(UiaStreng(innslag.node, 30005)))
+                    if trykket.Has(navn)
+                        overskrifter[navn] := true
+                }
+            }
+            if (innslag.d >= 5 || ko.Length >= TrioOppgaveloggDiagnose.MaksNoder)
+                continue
+            barnPtr := 0
+            try ComCall(4, walker, "Ptr", innslag.node, "Ptr*", &barnPtr) ; GetFirstChildElement
+            catch
+                continue
+            if !barnPtr
+                continue
+            barn := ComValue(13, barnPtr)
+            loop 70 {
+                ko.Push({node:barn, d:innslag.d + 1})
+                if (ko.Length >= TrioOppgaveloggDiagnose.MaksNoder)
+                    break
+                nestePtr := 0
+                try ComCall(6, walker, "Ptr", barn, "Ptr*", &nestePtr) ; GetNextSiblingElement
+                catch
+                    break
+                if !nestePtr
+                    break
+                barn := ComValue(13, nestePtr)
+            }
+        }
+        funn := antall["DataGrid"] + antall["Table"] + antall["List"]
+        rader := antall["DataItem"] + antall["ListItem"]
+        status := funn ? "UIA-struktur funnet i Oppgavelogg." : "UIA fant ikke en gjenkjennelig tabell/listestruktur."
+        if (minimert && !funn)
+            status := "Minimert Oppgavelogg: ingen tabell/listestruktur påvist."
+        detaljer := "Vindustilstand: " (minimert ? "minimert" : "åpen / ikke minimert")
+            . "`nKontroller undersøkt (maks): " Min(ko.Length, TrioOppgaveloggDiagnose.MaksNoder)
+            . "`nDataGrid: " antall["DataGrid"] " | Table: " antall["Table"] " | List: " antall["List"]
+            . "`nDataItem/ListItem funnet: " rader " (ikke nødvendigvis alle oppgaver)"
+            . "`nKjente kolonneoverskrifter: " overskrifter.Count " av 12"
+            . "`nTid: " (A_TickCount - t0) " ms"
+            . "`nIngen radinnhold, kunde- eller IM-data er lest eller lagret."
+        return {ok:funn > 0, status:status, detaljer:detaljer}
+    }
+}
+
 class StatistikkModul {
     SamtaleType := ""                 ; "inn" = mottatt, "ut" = utgående
     SamtaleStart := ""
