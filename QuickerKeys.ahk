@@ -5102,6 +5102,17 @@ class StatistikkModul {
     TrioBakgrunnK := ""
     TrioIntervallK := ""
     TrioFeilK := ""
+    TrioOppgaver := ""
+    TrioDato := ""
+    TrioSistStatus := "Venter på automatisk synkronisering."
+    TrioSistKilde := ""
+    TrioSistSynk := ""
+    TrioSistBegrenset := false
+    TrioSistKandidater := 0
+    VisualKortK := ""
+    VisualBarK := ""
+    VisualTimeTallK := ""
+    VisualKildeK := ""
     VisualGui := ""
     VisualTrioTekst := ""
 
@@ -5111,6 +5122,8 @@ class StatistikkModul {
         this.TrioCb := ObjBindMethod(this, "TrioSjekk")
         this.TrioOpenCb := ObjBindMethod(this, "TrioApneTimer")
         this.TrioLeser := TrioOppgaveloggDiagnose()
+        this.TrioOppgaver := Map()
+        this.TrioDato := FormatTime(, "yyyy-MM-dd")
         this.TrioAutoApne := Innst("Statistikk", "TrioAutoApne", "1") = "1"
         this.TrioBakgrunn := Innst("Statistikk", "TrioBakgrunn", "1") = "1"
         intervallVerdi := Innst("Statistikk", "TrioIntervallSek", "30")
@@ -5482,6 +5495,91 @@ class StatistikkModul {
     }
 
 
+    ; Gjentatt skanning av tilgjengelige Trio-rader. Dersom UIA bare
+    ; viser delmengder, samles nye oppgaver i RAM og dedupliseres på
+    ; oppgave-ID/tidspunkt. Ingen kunde-/telefon-/IM-verdier lagres.
+    OppdaterTrioData(loggHwnd) {
+        dag := FormatTime(, "yyyy-MM-dd")
+        if (this.TrioDato != dag) {
+            this.TrioOppgaver := Map()
+            this.TrioDato := dag
+        }
+        funn := this.TrioLeser.HentDagensData(loggHwnd)
+        this.TrioSistStatus := funn.status
+        this.TrioSistKilde := funn.kilde
+        this.TrioSistKandidater := funn.kandidater
+        this.TrioSistBegrenset := funn.begrenset || InStr(funn.kilde, "UIA") > 0
+        this.TrioSistSynk := FormatTime(, "HH:mm:ss")
+        if funn.ok {
+            for nokkel, oppgave in funn.sett
+                this.TrioOppgaver[nokkel] := oppgave
+        }
+        this.OppdaterVisualiseringer()
+    }
+
+    TrioSummering() {
+        sum := {antall:0, videre:0, im:0, sek:0, koSek:0, koN:0, timer:Map()}
+        loop 24
+            sum.timer[Format("{:02}", A_Index - 1)] := 0
+        for nokkel, post in this.TrioOppgaver {
+            sum.antall++
+            sum.videre += post.videre ? 1 : 0
+            sum.im += post.im ? 1 : 0
+            sum.sek += post.sek
+            if post.koHarVerdi
+                sum.koSek += post.koSek, sum.koN++
+            if sum.timer.Has(post.time)
+                sum.timer[post.time]++
+        }
+        return sum
+    }
+
+    OppdaterVisualiseringer() {
+        if !IsObject(this.VisualKortK) || this.VisualKortK.Length != 4
+            return
+        if (this.TrioDato != FormatTime(, "yyyy-MM-dd")) {
+            this.TrioOppgaver := Map()
+            this.TrioDato := FormatTime(, "yyyy-MM-dd")
+        }
+        sum := this.TrioSummering()
+        if sum.antall {
+            this.VisualKortK[1].Text := " " sum.antall
+            this.VisualKortK[2].Text := " " sum.videre
+            this.VisualKortK[3].Text := " " sum.im
+            this.VisualKortK[4].Text := " " Round(sum.sek / 60, 1)
+        } else {
+            for k in this.VisualKortK
+                k.Text := " —"
+        }
+        maks := 1
+        for t, ant in sum.timer
+            maks := Max(maks, ant)
+        for i, kontroll in this.VisualBarK {
+            klokke := Format("{:02}", i + 7)
+            ant := sum.timer[klokke]
+            kontroll.Value := Round(100 * ant / maks)
+            this.VisualTimeTallK[i].Text := sum.antall ? ant " oppgaver" : "—"
+        }
+        if IsObject(this.VisualKildeK) {
+            this.VisualKildeK.Text := "Trio · " FormatTime(, "dd.MM.yyyy")
+                . (this.TrioSistSynk != "" ? " · Sist lest " this.TrioSistSynk : "")
+                . " · FORELØPIGE/OBSERVERT, ikke fullstendig bekreftet"
+        }
+        if IsObject(this.VisualTrioTekst) {
+            tekst := "Automatisk innlesing hvert " this.TrioIntervall " sekund."
+                . "`r`n" this.TrioSistStatus
+                . "`r`nKilde: " (this.TrioSistKilde != "" ? this.TrioSistKilde : "ukjent")
+                . "`r`nRader vurdert ved siste lesing: " this.TrioSistKandidater
+                . "`r`nUnike oppgaver observert i RAM: " sum.antall
+                . "`r`nGjennomsnittlig køtid for validerte oppgaver: "
+                . (sum.koN ? Round(sum.koSek / sum.koN / 60, 1) " min" : "ukjent")
+                . "`r`nIngen rå kunde-, telefon- eller IM-verdier lagret."
+            if this.TrioSistBegrenset
+                tekst .= "`r`nMerk: UIA kan eksponere bare et utvalg av historikken."
+            this.VisualTrioTekst.Value := tekst
+        }
+    }
+
     ; Ingen ekstra knapper eller brukerinndata: håndter Oppgavelogg automatisk.
     ; Brukeren kan åpne/fokusere vinduet fritt. Etter at brukeren går
     ; videre, flyttes det bakerst igjen etter 15 sekunder.
@@ -5636,6 +5734,8 @@ class StatistikkModul {
                     this.TrioStatusTekst := r.status
                     this.TrioDetaljer := "Steg: " steg "`n" r.detaljer
                     this.TrioFeil := !r.ok
+                    if r.ok
+                        this.OppdaterTrioData(loggHwnd)
                 }
             }
             if (this.TrioStatusTekst != this.TrioForrigeLogg) {
