@@ -4944,6 +4944,8 @@ class StatistikkModul {
     TrioBakgrunnK := ""
     TrioIntervallK := ""
     TrioFeilK := ""
+    VisualGui := ""
+    VisualTrioTekst := ""
 
     __New() {
         this.StateFil := STATS_MAPPE "\Aktiv.ini"
@@ -5032,8 +5034,108 @@ class StatistikkModul {
         Skrift(HOVED, "s8 norm c" TEMA.dempet)
         Reg(pn, Knapp(HOVED, "x" (x + 252) " y556 w240 h30", "Trio Oppgavelogg / UIA…",
             ObjBindMethod(this, "VisTrioInnstillinger"), TEMA.aksent2))
+        Skrift(HOVED, "s10 bold c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" (x + b - 174) " y86 w130 h30", "Visualiseringer",
+            ObjBindMethod(this, "VisVisualiseringer"), TEMA.aksent))
         this.Oppdater()
         this.OppdaterTrioStatus()
+    }
+
+    ; Display charts only from real manual CSV entries.
+    ; Trio remains an independent, privacy-safe schema test.
+    VisVisualiseringer(*) {
+        if IsObject(this.VisualGui) {
+            try this.VisualGui.Destroy()
+            this.VisualGui := ""
+        }
+        dag := this.LesDagen()
+        v := Gui("+Owner" HOVED.Hwnd " -MaximizeBox", "QuickerKeys – Visualiseringer")
+        this.VisualGui := v
+        v.BackColor := TEMA.bg
+        Skrift(v, "s17 bold c" TEMA.tekst)
+        v.AddText("x22 y15 w710 h35 Background" TEMA.bg, "Statistikk og visualiseringer")
+        Skrift(v, "s9 norm c" TEMA.dempet)
+        v.AddText("x22 y52 w720 h24 Background" TEMA.bg,
+            "Kilde: MANUELLE registreringer · " FormatTime(, "dd.MM.yyyy")
+            . " | Trio-data importeres ennå ikke")
+        this.VisualKort(v, 22, 85, "Samtaler", dag.inn + dag.ut, TEMA.aksent)
+        this.VisualKort(v, 216, 85, "Viderekoblet", dag.videre, TEMA.aksent2)
+        this.VisualKort(v, 410, 85, "Telefon (min)", Round((dag.sekInn + dag.sekUt) / 60, 1), TEMA.paa)
+        this.VisualKort(v, 604, 85, "Skriftlig (min)", Round(dag.skriftSek / 60, 1), TEMA.av)
+        Skrift(v, "s11 bold c" TEMA.tekst)
+        v.AddText("x22 y176 w730 h26 Background" TEMA.bg, "Samtaler per time – manuelle registreringer")
+        timer := Map()
+        loop 24
+            timer[Format("{:02}", A_Index - 1)] := 0
+        for post in dag.rader {
+            if (post.type != "inn" && post.type != "ut")
+                continue
+            time := SubStr(post.tid, 1, 2)
+            if timer.Has(time)
+                timer[time] += 1
+        }
+        maks := 1
+        for time, ant in timer
+            maks := Max(maks, ant)
+        loop 10 {
+            time := Format("{:02}", A_Index + 7)
+            ant := timer[time]
+            ypos := 211 + (A_Index - 1) * 28
+            Skrift(v, "s9 norm c" TEMA.tekst)
+            v.AddText("x22 y" ypos " w60 h20 Background" TEMA.bg, time ":00")
+            bar := v.AddProgress("x88 y" (ypos + 2) " w518 h16 c" TEMA.aksent
+                . " Background" TEMA.kort " Range0-100", 0)
+            bar.Value := Round(100 * ant / maks)
+            v.AddText("x622 y" ypos " w120 h20 Background" TEMA.bg, ant " samtaler")
+        }
+        Skrift(v, "s9 norm c" TEMA.dempet)
+        v.AddText("x22 y499 w730 h24 Background" TEMA.bg,
+            "Registreringer utenfor kl. 08–18 inngår i totaltallet, men vises ikke i timegrafen.")
+        Skrift(v, "s11 bold c" TEMA.tekst)
+        v.AddText("x22 y538 w730 h26 Background" TEMA.bg, "Trio Oppgavelogg – kontrollert lesetest")
+        Skrift(v, "s9 norm c" TEMA.tekst)
+        this.VisualTrioTekst := v.AddEdit("x22 y570 w730 h106 ReadOnly -TabStop Multi VScroll",
+            "Ingen Trio-radtest kjørt. Testen undersøker høyst 12 UIA-rader uten å lagre rådata.")
+        Skrift(v, "s10 bold c" TEMA.tekst)
+        Knapp(v, "x22 y691 w218 h34", "Test Trio-rader (uten lagring)",
+            ObjBindMethod(this, "TestTrioRader"), TEMA.aksent)
+        Knapp(v, "x253 y691 w164 h34", "Kopier testresultat",
+            ObjBindMethod(this, "KopierTrioRadtest"), TEMA.aksent2)
+        Knapp(v, "x616 y691 w136 h34", "Lukk", (*) => v.Hide(), TEMA.av)
+        v.OnEvent("Close", (*) => v.Hide())
+        v.OnEvent("Escape", (*) => v.Hide())
+        v.Show("w780 h740")
+    }
+
+    VisualKort(gui, x, y, tittel, verdi, farge) {
+        Skrift(gui, "s10 norm c" TEMA.dempet)
+        gui.AddText("x" x " y" y " w180 h25 Background" TEMA.kort, " " tittel)
+        Skrift(gui, "s19 bold c" farge)
+        gui.AddText("x" x " y" (y + 24) " w180 h44 Background" TEMA.kort, " " verdi)
+    }
+
+    TestTrioRader(*) {
+        if !IsObject(this.VisualTrioTekst)
+            return
+        this.VisualTrioTekst.Value := "Leser UIA-kontrollstruktur…"
+        try {
+            trioHwnd := this.TrioLeser.FinnTrio()
+            loggHwnd := this.TrioLeser.FinnLoggvindu(trioHwnd)
+            resultat := this.TrioLeser.TestRadstruktur(loggHwnd)
+            this.VisualTrioTekst.Value := resultat.status "`r`n"
+                . StrReplace(resultat.detaljer, "`n", "`r`n")
+        } catch as feil {
+            this.VisualTrioTekst.Value := "Radtest feilet: " Type(feil)
+                . " (linje " feil.Line ")`r`nIngen kundedata ble kopiert."
+        }
+    }
+
+    KopierTrioRadtest(*) {
+        if !IsObject(this.VisualTrioTekst)
+            return
+        A_Clipboard := "QuickerKeys " APP_VERSJON " – anonym Trio-radtest`r`n"
+            . this.VisualTrioTekst.Value
+        Tip("Trio-radtest kopiert uten kundedata", 2100)
     }
 
     Melding(tekst) {
