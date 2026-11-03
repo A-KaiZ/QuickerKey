@@ -1819,7 +1819,8 @@ class VT_SMKontakt extends VT_Base {
         "AndreLinjeRegex", "i)(2\.?\s*linje|andrelinje|2nd\s*line)",
         "ManuellTast",     "^!k"
     )
-    static Lart := ["TrioKontroll", "SMVindu", "KontaktX", "KontaktY", "KnappX", "KnappY"]
+    static Lart := ["TrioKontroll", "SMVindu", "KontaktX", "KontaktY", "KnappX", "KnappY"
+        , "KontaktType", "KontaktNavn", "KontaktId", "KontaktKlasse"]
     static Moduser := [["auto", "Automatisk"], ["web", "Trio Web"], ["attendant", "Trio Attendant"]]
     static MetodeNavn := Map("kontroll", "feltet du klikket på", "html", "HTML-panelet", "vindu", "vindusteksten", "uia", "UI Automation")
 
@@ -1924,7 +1925,9 @@ class VT_SMKontakt extends VT_Base {
     ErLart() => this.Cfg["SMVindu"] != "" && InStr(this.Cfg["SMVindu"], "Service Manager") && this.Cfg["KontaktX"] != ""
 
     OppdaterTekster() {
-        sm := this.Cfg["KontaktX"] != "" ? VennligNavn(this.Cfg["SMVindu"]) (this.Cfg["KnappX"] != "" ? "  ·  knapp lært" : "  ·  ingen knapp") : "ikke lært ennå – trykk «Lær oppsett»"
+        sm := this.Cfg["KontaktX"] != "" ? VennligNavn(this.Cfg["SMVindu"])
+            . (this.Cfg["KontaktType"] != "" ? "  ·  felt gjenkjent" : "  ·  klikkposisjon") "  ·  Tab + Enter"
+            : "ikke lært ennå – trykk «Lær oppsett»"
         try this.OppsettK.Text := "Service Manager:  " sm
             . "`nTrio Web:  " VennligNavn(this.Cfg["WebVindu"]) "     ·     Trio Attendant:  hurtigkopiering"
     }
@@ -2401,19 +2404,16 @@ class VT_SMKontakt extends VT_Base {
     ; Aldri mens Trio er aktivt. Ellers avbrytes alt, uten at noe er klikket eller skrevet.
     Fyll(bruker, kilde := "") {
         bruker := Trim(bruker)
-        if (bruker = "")                               ; aldri fyll inn en tom verdi
-            return false
-        if (this.Cfg["KontaktX"] = "")
+        if (bruker = "" || this.Cfg["KontaktX"] = "")
             return false
         Critical
-        VentTasterSluppet(2000)                        ; tastene fra hurtigkopieringen må være sluppet
+        VentTasterSluppet(2000)
         trioHwnd := (kilde = "web") ? FinnVindu(this.Cfg["WebVindu"], false) : 0
         CoordMode "Mouse", "Screen"
         MouseGetPos &mx, &my
-
         smHwnd := 0
-        loop 3 {                                       ; Trio kan ta fokus – prøv opptil 3 ganger
-            h := AktiverFane(this.Cfg["SMVindu"], false)  ; SM Kontakt skal aldri bla gjennom urelaterte Edge-faner
+        loop 3 {
+            h := AktiverFane(this.Cfg["SMVindu"], false)
             if h {
                 Sleep 300
                 if this.ErTrygt(h) {
@@ -2421,20 +2421,26 @@ class VT_SMKontakt extends VT_Base {
                     break
                 }
             }
-            Logg("SM Kontakt: fyll – Service Manager ble ikke aktiv (forsøk " A_Index "), aktivt vindu: " AktivtVinduNavn())
+            Logg("SM Kontakt: Service Manager ikke aktiv (forsøk " A_Index "): " AktivtVinduNavn())
             Sleep 400
         }
         if !smHwnd
-            return this.FyllAvbrutt(bruker, "fant ikke Service Manager, eller et annet vindu tok fokus")
-        Logg("SM Kontakt: fyll – Service Manager er aktiv")
-        if (trioHwnd && smHwnd = trioHwnd) {
-            Logg("SM Kontakt: Trio Agent og Service Manager er i samme Edge-vindu – flytt Trio Agent til et eget vindu, ellers kan ikke Trio leses i bakgrunnen")
-            Tip("Tips: Dra Trio Agent-fanen ut i et eget Edge-vindu,`nså kan programmet lese den i bakgrunnen.", 5000)
+            return this.FyllAvbrutt(bruker, "fant ikke bekreftet Service Manager")
+        if (trioHwnd && smHwnd = trioHwnd)
+            Tip("Tips: Legg Trio Agent i eget Edge-vindu for lesing i bakgrunnen.", 5000)
+        if (this.Cfg["KontaktType"] != "") {
+            if !this.ErTrygt(smHwnd)
+                return this.FyllAvbrutt(bruker, "før Kontakt-feltet ble søkt opp")
+            felt := UiaFinnFelt(smHwnd, this.Signatur("Kontakt"), &grunn)
+            p := IsObject(felt) ? UiaSenter(felt) : ""
+            if !IsObject(p)
+                return this.FeltIkkeFunnet(bruker, "Kontakt-feltet", IsObject(felt) ? "ikke synlig" : grunn)
+            if !this.TryggKlikkSkjerm(smHwnd, p.x, p.y)
+                return this.FyllAvbrutt(bruker, "før UIA-klikk i Kontakt-feltet")
+        } else {
+            if !this.TryggKlikk(smHwnd, this.Cfg["KontaktX"], this.Cfg["KontaktY"])
+                return this.FyllAvbrutt(bruker, "før klikk i Kontakt-feltet")
         }
-
-        if !this.TryggKlikk(smHwnd, this.Cfg["KontaktX"], this.Cfg["KontaktY"])
-            return this.FyllAvbrutt(bruker, "før klikk i Kontakt-feltet")
-        Logg("SM Kontakt: fyll – klikket i Kontakt-feltet")
         Sleep 150
         if !this.ErTrygt(smHwnd)
             return this.FyllAvbrutt(bruker, "før Ctrl+A")
@@ -2443,16 +2449,18 @@ class VT_SMKontakt extends VT_Base {
         if !this.ErTrygt(smHwnd)
             return this.FyllAvbrutt(bruker, "før brukernavnet ble skrevet")
         SendText bruker
-        Logg("SM Kontakt: fyll – skrev " bruker)
-        if (this.Cfg["KnappX"] != "") {
-            Sleep 200
-            if !this.TryggKlikk(smHwnd, this.Cfg["KnappX"], this.Cfg["KnappY"])
-                return this.FyllAvbrutt(bruker, "før klikk på knappen ved siden av Kontakt")
-            Logg("SM Kontakt: fyll – klikket knappen ved siden av Kontakt")
-        }
+        Logg("SM Kontakt: skrev " bruker)
+        Sleep 150
+        if !this.ErTrygt(smHwnd)
+            return this.FyllAvbrutt(bruker, "før Tab")
+        Send "{Tab}"
+        Sleep 150
+        if !this.ErTrygt(smHwnd)
+            return this.FyllAvbrutt(bruker, "før Enter")
+        Send "{Enter}"
         CoordMode "Mouse", "Screen"
         MouseMove mx, my, 0
-        Logg("SM Kontakt: fylte inn " bruker)
+        Logg("SM Kontakt: fylte inn " bruker " (Tab + Enter)")
         return true
     }
 
