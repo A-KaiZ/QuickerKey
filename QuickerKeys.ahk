@@ -5041,7 +5041,7 @@ class TrioOppgaveloggDiagnose {
     LesRadceller(celler, schema) {
         if (celler.Length != schema.kolonner.Length || celler.Length < 3)
             return ""
-        koblinger := [], brukt := Map()
+        koblinger := [], brukt := Map(), helradCelle := ""
         for el in celler {
             type := UiaTall(el, 30003)
             if !(type = 50020 || type = 50007 || type = 50029)
@@ -5049,6 +5049,16 @@ class TrioOppgaveloggDiagnose {
             rekt := this.Rektangel(el)
             if !IsObject(rekt)
                 return ""
+            ; Full-row Text bounds do not follow the first logical column
+            ; after the user drags headers. Reserve this one cell, then map
+            ; it to the sole remaining header after all real bounds match.
+            if (Abs(rekt.l - schema.kolonner[1].l) <= 2
+                && Abs(rekt.r - schema.kolonner[-1].r) <= 2) {
+                if IsObject(helradCelle)
+                    return ""
+                helradCelle := el
+                continue
+            }
             matchIndex := 0
             for i, kol in schema.kolonner {
                 if (Abs(rekt.l - kol.l) <= 2) {
@@ -5063,6 +5073,21 @@ class TrioOppgaveloggDiagnose {
             brukt[matchIndex] := true
             koblinger.Push({el:el, kol:schema.kolonner[matchIndex]})
         }
+        if IsObject(helradCelle) {
+            mangler := 0
+            for i, kol in schema.kolonner {
+                if !brukt.Has(i) {
+                    if mangler
+                        return ""
+                    mangler := i
+                }
+            }
+            if !mangler
+                return ""
+            koblinger.Push({el:helradCelle,kol:schema.kolonner[mangler]})
+        }
+        if (koblinger.Length != schema.kolonner.Length)
+            return ""
         rad := {felt:Map(), konflikt:false}
         for kobling in koblinger {
             key := kobling.kol.key

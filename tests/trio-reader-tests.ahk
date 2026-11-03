@@ -85,6 +85,7 @@ RunTrioTests() {
         TrioAssert(hwnd != 0,"reordered fixture opened")
         Sleep 500
         native := r.HentDagensData(hwnd)
+        FileAppend(native.status "`n" native.detaljer "`n", "*", "UTF-8")
         uia := r.HentDagensData(hwnd,true)
         FileAppend(uia.status "`n" uia.detaljer "`n", "*", "UTF-8")
         TrioAssert(native.ok && uia.ok && native.sett.Count = 2 && uia.sett.Count = 2,
