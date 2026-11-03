@@ -11,9 +11,9 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 - **Statistikk (PR #9):** Manuelle samtaletellere, skriftlig tid og skrivebeskyttet UIA-diagnose for Trio Oppgavelogg.
 
-## v3.12-rc3 – Statistikk + Trio Oppgavelogg (PR #9)
+## v3.12-rc4 – Statistikk + Trio Oppgavelogg (PR #9)
 
-En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
+En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **Siste registreringer i dag** er det en liten rød **🗑**-knapp med bekreftelse. Den sletter kun dagens fullførte manuelle CSV-statistikk etter eksplisitt Ja, og blokkeres hvis en samtale eller skriftlig tid fortsatt pågår. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
 
 | Innstilling | Standard |
 | --- | --- |
@@ -22,11 +22,11 @@ En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Den ny
 | Poll-/diagnoseintervall | 30 sekunder |
 | Vis feilstatus i Statistikk | På |
 
-**Oppførsel:** Når Trio er i forgrunnen og det har gått minst fire sekunder uten fysisk input, forsøker QuickerKeys `Vis → Oppgavelogg` via standard Win32-meny, **uten** `WinActivate`, `Click` eller `Send`. Hvis et nytt separat loggvindu gjenkjennes i **samme Trio-prosess**, minimeres det. Vinduer som brukeren selv allerede har åpnet, minimeres ikke av automatikken. Fokuset forsøkes ikke flyttet tilbake. En kort synlig åpning er fortsatt mulig når Trio selv oppretter vinduet.
+**Oppførsel:** Når Trio er startet og det har gått minst fire sekunder uten fysisk input (uavhengig av hvilket vindu som er aktivt, og hvor musepekeren er), forsøker QuickerKeys `Vis → Oppgavelogg` via standard Win32-meny, **uten** `WinActivate`, `Click` eller `Send`. Hvis et nytt separat loggvindu gjenkjennes i **samme Trio-prosess**, minimeres det. Vinduer som brukeren selv allerede har åpnet, minimeres ikke av automatikken. Fokuset forsøkes ikke flyttet tilbake. En kort synlig åpning er fortsatt mulig når Trio selv oppretter vinduet.
 
 Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller vinduet ikke gjenkjennes, vises status. For å unngå gjentatte popup-vinduer blir et mislykket automatisk åpningsforsøk ikke gjentatt i samme Trio-prosess før omstart.
 
-**Diagnose:** Automatisk åpningskontroll kjører hvert 2,5 sekund og UIA-diagnose hvert 30. sekund. Manuell «Kjør UIA-test nå» undersøker bare en allerede åpen Oppgavelogg, uavhengig av fokus. Ved feil vises stegnavn, kort AHK-feil og linjenummer. UIA bruker `ElementFromHandle` og en begrenset `ControlViewWalker` (maks 140 registrerte noder og dybde 5). Den rapporterer bare kontrolltyper (DataGrid, Table, List, DataItem/ListItem), et antall gjenkjente standardoverskrifter, minimeringsstatus og tidsforbruk. Ingen celleverdier, kundenumre, telefonnumre, IM-referanser eller kommentarer eksporteres. Brukeren kan kopiere en anonym statusrapport.
+**Diagnose:** Automatisk åpningskontroll kjører hvert 2,5 sekund og UIA-diagnose hvert 30. sekund. Manuell «Kjør UIA-test nå» undersøker bare en allerede åpen Oppgavelogg, uavhengig av fokus. Ved feil vises stegnavn, kort AHK-feil og linjenummer. RC4 retter også navnekollisjonen mellom lokal `logg` (HWND) og funksjonen `Logg()`, som tidligere kunne gi `Integer has no method named Call` etter en vellykket UIA-lesing. UIA bruker `ElementFromHandle` og en begrenset `ControlViewWalker` (maks 140 registrerte noder og dybde 5). Den rapporterer bare kontrolltyper (DataGrid, Table, List, DataItem/ListItem), et antall gjenkjente standardoverskrifter, minimeringsstatus og tidsforbruk. Ingen celleverdier, kundenumre, telefonnumre, IM-referanser eller kommentarer eksporteres. Brukeren kan kopiere en anonym statusrapport.
 
 **Viktig:** Det finnes **ingen automatisk dataimport eller samtaletelling fra Trio** i denne PR-en. Det er ikke bekreftet at UIA faktisk kan lese loggstrukturen mens den er minimert. Kjør [QA-statistikk-v3.12](docs/QA-statistikk-v3.12.md) i faktisk Trio-miljø før merge. Innstillingene lagres under `[Statistikk]` i `Innstillinger\QuickerKeys.ini`.
 
