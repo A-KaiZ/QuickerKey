@@ -472,6 +472,7 @@ HjelpTekst(side) {
                 . "•  Rød søppelknapp tømmer kun dagens fullførte manuelle registreringer, etter bekreftelse.`n"
                 . "•  «Trio Oppgavelogg / UIA» styrer automatisk åpning, minimering og skrivebeskyttet diagnostikk.`n"
                 . "•  Automatisk åpning prøves uten fokusbytte når tastatur/mus er i ro.`n"
+                . "•  Legg loggvinduet bak andre vinduer, ikke minimer det – UIA forsvinner minimert.`n"
                 . "•  UIA-diagnosen leser bare struktur, ikke oppgave- eller kundeinnhold.`n"
                 . "•  Ingen samtaler importeres automatisk før UIA og samtaletolkning er testet."
         case "Logg":
@@ -712,7 +713,7 @@ ImporterKonfigurasjon(*) {
         "Vindusbytter", ["Aktiv"],
         "TrioSnarveier", ["Aktiv", "HKCopy", "HKCopyKilde", "ApneIM", "IMVindu", "IMX", "IMY", "IMNavn", "IMId", "IMKlasse", "IMModus"],
         "Nettverk", ["Skilletegn"],
-        "Statistikk", ["TrioAutoApne", "TrioAutoMinimer", "TrioIntervallSek", "TrioVisFeil"]
+        "Statistikk", ["TrioAutoApne", "TrioBakgrunn", "TrioIntervallSek", "TrioVisFeil"]
     )
     loop 4 {
         i := A_Index
@@ -5241,8 +5242,8 @@ class StatistikkModul {
         Skrift(v, "s10 norm c" TEMA.tekst)
         this.TrioAutoK := v.AddCheckBox("x20 y86 w520 h25"
             . (this.TrioAutoApne ? " Checked" : ""), "Åpne Oppgavelogg automatisk når Trio er i ro")
-        this.TrioMinK := v.AddCheckBox("x20 y114 w520 h25"
-            . (this.TrioAutoMinimer ? " Checked" : ""), "Minimer Oppgavelogg etter automatisk åpning")
+        this.TrioBakgrunnK := v.AddCheckBox("x20 y114 w520 h25"
+            . (this.TrioBakgrunn ? " Checked" : ""), "Legg Oppgavelogg bak andre vinduer (ikke minimer)")
         this.TrioFeilK := v.AddCheckBox("x20 y142 w520 h25"
             . (this.TrioVisFeil ? " Checked" : ""), "Vis feilstatus i Statistikk")
         Skrift(v, "s10 norm c" TEMA.tekst)
@@ -5259,7 +5260,7 @@ class StatistikkModul {
         Knapp(v, "x355 y386 w185 h35", "Kopier diagnose", ObjBindMethod(this, "KopierTrioDiagnose"), TEMA.aksent2)
         Skrift(v, "s9 norm c" TEMA.dempet)
         v.AddText("x20 y429 w520 h36 Background" TEMA.bg,
-            "Autoåpning krever ikke aktivt Trio-vindu. Mus og tastatur må ha vært i ro minst 4 sekunder.")
+            "UIA: Ikke minimer Oppgavelogg. Bakgrunnsmodus lar loggen forbli åpen, nederst i vindusrekkefølgen.")
         v.OnEvent("Close", (*) => v.Hide())
         v.OnEvent("Escape", (*) => v.Hide())
         v.Show("w560 h475")
@@ -5271,12 +5272,12 @@ class StatistikkModul {
             return MsgBox("Velg 15, 30 eller 60 sekunder.", APP_NAVN, "Icon!")
         intervall := Integer(intervallTekst)
         this.TrioAutoApne := this.TrioAutoK.Value = 1
-        this.TrioAutoMinimer := this.TrioMinK.Value = 1
+        this.TrioBakgrunn := this.TrioBakgrunnK.Value = 1
         this.TrioVisFeil := this.TrioFeilK.Value = 1
         this.TrioIntervall := intervall
         try {
             SettInnst("Statistikk", "TrioAutoApne", this.TrioAutoApne ? "1" : "0")
-            SettInnst("Statistikk", "TrioAutoMinimer", this.TrioAutoMinimer ? "1" : "0")
+            SettInnst("Statistikk", "TrioBakgrunn", this.TrioBakgrunn ? "1" : "0")
             SettInnst("Statistikk", "TrioIntervallSek", this.TrioIntervall)
             SettInnst("Statistikk", "TrioVisFeil", this.TrioVisFeil ? "1" : "0")
             SetTimer this.TrioCb, 0
