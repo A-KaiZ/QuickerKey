@@ -467,6 +467,12 @@ HjelpTekst(side) {
                 . "•  PÅ / AV slår et verktøy av eller på.`n"
                 . "•  «Åpne →» viser verktøyets side.`n"
                 . "•  Alt kjører i bakgrunnen. Åpne vinduet igjen fra ikonet ved klokka."
+        case "Statistikk":
+            return "•  Manuell statistikk for mottatte/utgående samtaler, viderekobling og skriftlig tid.`n"
+                . "•  «Trio Oppgavelogg / UIA» styrer automatisk åpning, minimering og skrivebeskyttet diagnostikk.`n"
+                . "•  Automatisk åpning prøves bare når Trio er i forgrunnen og tastatur/mus er i ro.`n"
+                . "•  UIA-diagnosen leser bare struktur, ikke oppgave- eller kundeinnhold.`n"
+                . "•  Ingen samtaler importeres automatisk før UIA og samtaletolkning er testet."
         case "Logg":
             return "•  Viser hva programmet har gjort i dag – nyeste øverst.`n"
                 . "•  Alt lagres også i mappen Logg, én fil per dag (30 dager tilbake).`n"
@@ -690,7 +696,7 @@ ImporterKonfigurasjon(*) {
         ImporterGammelQuickKey(fil)
         return
     }
-    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk)\]\s*$") {
+    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk|Statistikk)\]\s*$") {
         MsgBox "Ukjent konfigurasjonsformat. Forventet QuickerKeys/MAAUNI eller gamle QuickKey [Shortcuts].", APP_NAVN, "Icon!"
         return
     }
@@ -704,7 +710,8 @@ ImporterKonfigurasjon(*) {
             , "KontaktType", "KontaktNavn", "KontaktId", "KontaktKlasse"],
         "Vindusbytter", ["Aktiv"],
         "TrioSnarveier", ["Aktiv", "HKCopy", "HKCopyKilde", "ApneIM", "IMVindu", "IMX", "IMY", "IMNavn", "IMId", "IMKlasse", "IMModus"],
-        "Nettverk", ["Skilletegn"]
+        "Nettverk", ["Skilletegn"],
+        "Statistikk", ["TrioAutoApne", "TrioAutoMinimer", "TrioIntervallSek", "TrioVisFeil"]
     )
     loop 4 {
         i := A_Index
@@ -4591,6 +4598,7 @@ TrioTastFraTekst(tekst) {
 ; =====================================================================
 class TrioOppgaveloggDiagnose {
     static MaksNoder := 140
+    SperretPid := 0                   ; høyest ett mislykket automatisk åpningsforsøk per Trio-prosess
 
     FinnTrio() {
         id := Innst("SMKontakt", "TrioVindu", "Trio Attendant")
@@ -4640,8 +4648,13 @@ class TrioOppgaveloggDiagnose {
         if !trio
             return {kode:"trio-mangler", status:"Trio Attendant er ikke funnet.", logg:0}
         logg := this.FinnLoggvindu(trio)
-        if logg
+        if logg {
+            this.SperretPid := 0
             return {kode:"finnes", status:"Oppgavelogg er allerede åpen. Endrer ikke vinduet.", logg:logg}
+        }
+        pid := WinGetPID("ahk_id " trio)
+        if (this.SperretPid = pid)
+            return {kode:"sperret", status:"Automatisk åpning ble forsøkt uten bekreftet loggvindu. Åpne manuelt eller start QuickerKeys på nytt.", logg:0}
         if (WinGetMinMax("ahk_id " trio) = -1)
             return {kode:"venter", status:"Trio er minimert – venter før åpning av Oppgavelogg.", logg:0}
         if !WinActive("ahk_id " trio)
@@ -4653,6 +4666,7 @@ class TrioOppgaveloggDiagnose {
         ; ikke aktiveres eksplisitt. Ingen forsøk på å ta tilbake brukerfokus.
         try MenuSelect "ahk_id " trio, , "Vis", "Oppgavelogg"
         catch {
+            this.SperretPid := pid
             return {kode:"menyfeil", status:"Trio støttet ikke bakgrunnskommandoen Vis > Oppgavelogg. Åpne loggen manuelt.", logg:0}
         }
         funnet := 0
@@ -4662,8 +4676,10 @@ class TrioOppgaveloggDiagnose {
             if funnet
                 break
         }
-        if !funnet
-            return {kode:"ikke-funnet", status:"Vis-menyen ble brukt, men et separat Oppgavelogg-vindu ble ikke gjenkjent.", logg:0}
+        if !funnet {
+            this.SperretPid := pid
+            return {kode:"ikke-funnet", status:"Vis-menyen ble brukt, men Oppgavelogg ble ikke gjenkjent. Ingen flere automatiske forsøk i denne Trio-økten.", logg:0}
+        }
 
         if autoMinimer {
             try WinMinimize "ahk_id " funnet
@@ -4759,7 +4775,7 @@ class TrioOppgaveloggDiagnose {
         if (minimert && !funn)
             status := "Minimert Oppgavelogg: ingen tabell/listestruktur påvist."
         detaljer := "Vindustilstand: " (minimert ? "minimert" : "åpen / ikke minimert")
-            . "`nKontroller undersøkt (maks): " Min(ko.Length, TrioOppgaveloggDiagnose.MaksNoder)
+            . "`nKontrollnoder registrert (maks): " Min(ko.Length, TrioOppgaveloggDiagnose.MaksNoder)
             . "`nDataGrid: " antall["DataGrid"] " | Table: " antall["Table"] " | List: " antall["List"]
             . "`nDataItem/ListItem funnet: " rader " (ikke nødvendigvis alle oppgaver)"
             . "`nKjente kolonneoverskrifter: " overskrifter.Count " av 12"
@@ -4787,6 +4803,7 @@ class StatistikkModul {
     TrioFeil := false
     TrioOpptatt := false
     TrioForrigeLogg := ""
+    TrioSistSjekket := ""
     TrioGui := ""
     TrioInfoK := ""
     TrioAutoK := ""
@@ -4801,9 +4818,8 @@ class StatistikkModul {
         this.TrioLeser := TrioOppgaveloggDiagnose()
         this.TrioAutoApne := Innst("Statistikk", "TrioAutoApne", "1") = "1"
         this.TrioAutoMinimer := Innst("Statistikk", "TrioAutoMinimer", "1") = "1"
-        this.TrioIntervall := Integer(Innst("Statistikk", "TrioIntervallSek", "30"))
-        if !InStr("|15|30|60|", "|" this.TrioIntervall "|")
-            this.TrioIntervall := 30
+        intervallVerdi := Innst("Statistikk", "TrioIntervallSek", "30")
+        this.TrioIntervall := RegExMatch(intervallVerdi, "^(15|30|60)$") ? Integer(intervallVerdi) : 30
         this.TrioVisFeil := Innst("Statistikk", "TrioVisFeil", "1") = "1"
         this.HentTilstand()
     }
@@ -5035,6 +5051,7 @@ class StatistikkModul {
         if this.TrioOpptatt
             return
         this.TrioOpptatt := true
+        this.TrioSistSjekket := A_Now
         try {
             trio := this.TrioLeser.FinnTrio()
             logg := this.TrioLeser.FinnLoggvindu(trio)
@@ -5091,7 +5108,7 @@ class StatistikkModul {
     OppdaterTrioDetaljer() {
         if !IsObject(this.TrioInfoK)
             return
-        this.TrioInfoK.Value := "Sist undersøkt: " FormatTime(, "dd.MM.yyyy HH:mm:ss")
+        this.TrioInfoK.Value := "Sist undersøkt: " (this.TrioSistSjekket != "" ? FormatTime(this.TrioSistSjekket, "dd.MM.yyyy HH:mm:ss") : "ikke kjørt")
             . "`r`n" this.TrioStatusTekst
             . "`r`n`r`n" StrReplace(this.TrioDetaljer, "`n", "`r`n")
             . "`r`n`r`nDette er kun en kontrollundersøkelse – ingen samtaler registreres automatisk."
@@ -5139,9 +5156,10 @@ class StatistikkModul {
     }
 
     LagreTrioInnstillinger(*) {
-        intervall := Integer(RegExReplace(this.TrioIntervallK.Text, "\D"))
-        if !InStr("|15|30|60|", "|" intervall "|")
+        intervallTekst := RegExReplace(this.TrioIntervallK.Text, "\D")
+        if !InStr("|15|30|60|", "|" intervallTekst "|")
             return MsgBox("Velg 15, 30 eller 60 sekunder.", APP_NAVN, "Icon!")
+        intervall := Integer(intervallTekst)
         this.TrioAutoApne := this.TrioAutoK.Value = 1
         this.TrioAutoMinimer := this.TrioMinK.Value = 1
         this.TrioVisFeil := this.TrioFeilK.Value = 1
