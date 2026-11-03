@@ -1,4 +1,32 @@
-# QuickerKeys Statistikk v3.12-rc1 — QA og avgrensninger
+# QuickerKeys Statistikk v3.12 — QA og avgrensninger
+
+## RC9 – innlesing etter kolonnenavn og konkret feltdiagnose
+
+**Feilen rapportert fra RC8:** UIA fant List og listeelementer, men 150 kandidater ga 0 validerte oppgaver. RC8 krevde 13 felter og faste posisjoner. Rapporten skilte ikke felt-/formatfeil fra oppgaver fra andre dager. Dette dokumenterer at RC8 ikke kunne lese brukerens data; den eksakte klientstrukturen er fortsatt ubekreftet.
+
+**Endret:** Kolonneoverskrifter og celleplassering erstatter 13-feltsgjettingen. Tomme felt beholdes; ingen glidende gruppering av tekst på tvers av rader. Nøkkelfelt er tidspunkt, oppgave-ID og behandlingstid. Valgfrie felt kan mangle uten å stoppe tellingen. Gyldig faktisk kalenderdato og norsk/ISO-dato med minutter eller sekunder støttes. Rapporten gir bare feltnavn, formatutfall og antall. Status viser innlesingsresultat, ikke kun strukturfunn. «Satt videre» er endret til «Med Koblet-verdi» fordi tolkningen ikke er bekreftet.
+
+### Automatisert Windows-verifikasjon
+
+Kjør `./tests/run-trio-tests.ps1 -AutoHotkey <sti-til-AutoHotkey64.exe>`, eller se GitHub Actions → **Trio reader (Windows)**. AHK v2.0.19 er versjons- og SHA256-låst i workflowen. Testkopien kjører testene og avslutter **før** appens normale initialisering. Ingen ekte Trio-data eller produksjonsinnstillinger brukes.
+
+Testene undersøker den faktiske parseren, ikke en kopi på et annet språk: norske og ISO-tidspunkter, ugyldige kalenderdatoer, varigheter, semantiske kolonnenavn, geometri, manglende felt, separate avvisningsgrunner, duplikater, gårsdato, valgfrie felt, og fravær av rå verdier i diagnosen. En separat prosess lager en ekte syntetisk Win32 ListView med 7 kolonner, tom symbolkolonne og omordnet kolonnerekkefølge. Begge backender må gi samme oppgaver og varigheter. Testen kontrollerer også gjentatt skanning, fokus og minimering. Dette erstatter ikke QA i den faktiske Trio-klienten.
+
+### Kort test i Trio 10.1.35
+
+- [ ] Start **3.12-rc9**, behold Oppgavelogg åpen bakerst, vent én automatisk syklus (30 sekunder).
+- [ ] Åpne Statistikk → Visualiseringer. Sammenlign observerte oppgaver og behandlingstid med dagens synlige rader i Trio. Ingen manuell registrering er nødvendig.
+- [ ] Ved manglende tall: bruk eksisterende **Trio Oppgavelogg / UIA → Kopier diagnose**. Rapporten skal vise hvilke nøkkelfelt som kunne kobles, avvisningsgrunner, andre dager og radstruktur. Ingen skjermbilder eller rå kundedata trengs.
+- [ ] Kontroller at ukjente Koblet-/Kommentar-felt vises som «—», og at dekning oppgis. Manglende køtid må ikke bli 0 sekunder i gjennomsnittet.
+- [ ] Kontroller gjentatt synkronisering: samme oppgaver skal ikke øke totalen. Ny/endret oppgave skal oppdateres ved neste automatiske syklus.
+- [ ] Kontroller fokus i Service Manager under lesing, og tidligere vinduslivssyklus (åpning, bakgrunnsplassering, manuell bruk og minimering).
+- [ ] Verifiser SM Kontakt, Trio Snarveier og manuell statistikk separat før merge.
+
+**Grenser:** Kun tilgjengelige oppgaver observeres; UIA-virtualisering, horisontal skjuling av nødvendige kolonner eller alternative radrepresentasjoner kan fremdeles hindre lesing. Skanningen har 4 sekunders kooperativ grense, 6000 besøkte UIA-noder og opptil 2000 rader. En enkelt COM-/ListView-operasjon kan ta lengre tid; grensen er ikke en hard timeout. Ingen automatisk scrolling. ID og tidspunkt er volatile RAM-nøkler; ingen varig dagsbuffer. Oppgaver er ikke det samme som dokumenterte besvarte samtaler. **Draft beholdes; ikke merge før faktisk Trio-QA.**
+
+## Historikk RC1–RC8
+
+Seksjonene nedenfor beskriver tidligere utkast og er ikke spesifikasjonen for RC9.
 
 ## Funksjoner i dette utkastet
 - Egen side **Statistikk** i venstremenyen. Oppdatert hver sekund mens siden vises.
