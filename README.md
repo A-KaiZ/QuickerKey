@@ -9,7 +9,7 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Trio Snarveier:** Menykommandoer inne i **Trio Attendant** (ny i v3.0).
 - **Vindusbytter:** Opptil fire vanlige programmer/vinduer og nettleserfaner.
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
-- **Statistikk (PR #9):** Manuelle samtaletellere, skriftlig tid og skrivebeskyttet UIA-diagnose for Trio Oppgavelogg.
+- **Statistikk (PR #9):** Automatisk, foreløpig innlesing fra Trio Oppgavelogg til eget dashboard, manuell skriftlig tid og UIA-diagnostikk.
 
 ## v3.12-rc8 – Statistikk + Trio Oppgavelogg (PR #9)
 
@@ -22,13 +22,13 @@ En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **
 | Poll-/diagnoseintervall | 30 sekunder |
 | Vis feilstatus i Statistikk | På |
 
-**Oppførsel:** Når Trio er startet og det har gått minst fire sekunder uten fysisk input (uavhengig av hvilket vindu som er aktivt, og hvor musepekeren er), forsøker QuickerKeys `Vis → Oppgavelogg` via standard Win32-meny, **uten** `WinActivate`, `Click` eller `Send`. Et nytt separat Oppgavelogg-vindu gjenkjennes i Trios prosess eller samme exe, og flyttes **bak andre vinduer med `WinMoveBottom`**, uten å minimeres. Vinduer brukeren allerede har åpnet, flyttes ikke av automatikken. Fokuset forsøkes ikke flyttet tilbake. En kort synlig åpning er fortsatt mulig når Trio selv oppretter vinduet.
+**Oppførsel:** Når Trio er startet og det har gått minst fire sekunder uten fysisk input (uavhengig av hvilket vindu som er aktivt, og hvor musepekeren er), forsøker QuickerKeys `Vis → Oppgavelogg` via standard Win32-meny, **uten** `WinActivate`, `Click` eller `Send`. Et nytt separat Oppgavelogg-vindu gjenkjennes i Trios prosess eller samme exe, og flyttes **bak andre vinduer med `WinMoveBottom`**, uten å minimeres. Ved manuell bruk får Oppgavelogg stå i fred; RC6 legger det bakerst igjen etter en kort pause når brukeren går videre. Fokuset forsøkes ikke flyttet tilbake. En kort synlig åpning er fortsatt mulig når Trio selv oppretter vinduet.
 
 Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller vinduet ikke gjenkjennes, vises status. For å unngå gjentatte popup-vinduer blir et mislykket automatisk åpningsforsøk ikke gjentatt i samme Trio-prosess før omstart.
 
 **Diagnose:** Automatisk åpningskontroll kjører hvert 2,5 sekund og UIA-diagnose hvert 30. sekund. Manuell «Kjør UIA-test nå» undersøker bare en allerede åpen Oppgavelogg, uavhengig av fokus. Ved feil vises stegnavn, kort AHK-feil og linjenummer. RC4 retter også navnekollisjonen mellom lokal `logg` (HWND) og funksjonen `Logg()`, som tidligere kunne gi `Integer has no method named Call` etter en vellykket UIA-lesing. UIA bruker `ElementFromHandle` og en begrenset `ControlViewWalker` (maks 140 registrerte noder og dybde 5). Den rapporterer bare kontrolltyper (DataGrid, Table, List, DataItem/ListItem), et antall gjenkjente standardoverskrifter, minimeringsstatus og tidsforbruk. Ingen celleverdier, kundenumre, telefonnumre, IM-referanser eller kommentarer eksporteres. Brukeren kan kopiere en anonym statusrapport.
 
-**Viktig:** Brukertesten 03.11.2026 bekreftet at UIA **ikke** kan lese tabell/listestruktur når Trio 10.1.35 Oppgavelogg er minimert (0 lister, 0 rader), men at den gjør det i normalt vindu (1 List, 68 listeelementer, 8 kjente overskrifter). Dette er ikke 68 bekreftede samtaler. **RC5 bruker derfor bakgrunnsmodus som standard**. Den nye konfigurasjonsnøkkelen `TrioBakgrunn=1` erstatter gamle `TrioAutoMinimer`; minimering anbefales ikke og utføres ikke lenger automatisk. Har du et *allerede minimert* Oppgavelogg-vindu fra RC4, må du manuelt gjenopprette det eller lukke det og la RC5 åpne et nytt. Vi har ennå ikke bekreftet at `WinMoveBottom` fungerer uten synlig glimt/fokusendring i brukerens Trio-miljø. Det finnes **ingen automatisk dataimport eller samtaletelling fra Trio** i denne PR-en. Kjør [QA-statistikk-v3.12](docs/QA-statistikk-v3.12.md) i faktisk Trio-miljø før merge. Innstillingene lagres under `[Statistikk]` i `Innstillinger\QuickerKeys.ini`.
+**Viktig:** Brukertesten 03.11.2026 bekreftet at UIA **ikke** kan lese tabell/listestruktur når Trio 10.1.35 Oppgavelogg er minimert (0 lister, 0 rader), men at den gjør det i normalt vindu (1 List, 68 listeelementer, 8 kjente overskrifter). Dette er ikke 68 bekreftede samtaler. **RC5 bruker derfor bakgrunnsmodus som standard**. Den nye konfigurasjonsnøkkelen `TrioBakgrunn=1` erstatter gamle `TrioAutoMinimer`; minimering anbefales ikke og utføres ikke lenger automatisk. Har du et *allerede minimert* Oppgavelogg-vindu fra RC4, må du manuelt gjenopprette det eller lukke det og la RC5 åpne et nytt. Vi har ennå ikke bekreftet at `WinMoveBottom` fungerer uten synlig glimt/fokusendring i brukerens Trio-miljø. Fra og med RC8 forsøker QuickerKeys **automatisk innlesing av dagens validerte oppgaver**, men resultatet er foreløpig og kan være ufullstendig fordi Trio-lister kan være virtualisert. Kjør [QA-statistikk-v3.12](docs/QA-statistikk-v3.12.md) i faktisk Trio-miljø før merge. Innstillingene lagres under `[Statistikk]` i `Innstillinger\QuickerKeys.ini`.
 
 ### RC6 – Oppgavelogg styrer seg selv uten flere knapper
 
@@ -38,10 +38,10 @@ Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller 
 - **Manuell minimering:** Etter ca. 15 sekunder forsøker QuickerKeys å gjenopprette vinduet med Win32 `ShowWindowAsync(..., SW_SHOWNOACTIVATE=4)` og flytte det bakerst. Gjenoppretting krever også minst 4 sekunder uten fysisk input og er ikke testet i Trio ennå. Dette er nødvendig fordi UIA-tabellen ikke er synlig for UIA når Oppgavelogg er minimert.
 - **Manuell lukking:** Hvis du lukker et Oppgavelogg-vindu som QuickerKeys har oppdaget, venter programmet minst **30 sekunder** før det igjen forsøker å åpne det automatisk. Gjenåpning skjer først etter minst 4 sekunder fysisk inaktivitet.
 - **Ingen nye kontroller:** RC5-innstillingene beholdes, men ingen egne Pause/Gjenoppta-knapper er lagt til. De 30 sekundene i innstillingene er fortsatt **UIA-diagnoseintervallet**, ikke tiden før vinduet legges bakerst.
-- **Ingen automatisk statistikkimport:** Vi registrerer fremdeles ikke samtaler fra Trio; RC6 styrer kun loggvinduet og kjører skrivebeskyttet UIA-diagnostikk.
+- **RC6-historikk:** På dette stadiet var automatisk statistikkimport ennå ikke implementert. Dette ble senere endret i RC8.
 
 **Forbehold:** Trio/Windows kan vise et kort vindusglimt ved åpning eller gjenoppretting. `ShowWindowAsync` og `WinMoveBottom` kan oppføre seg annerledes i den faktiske Trio-klienten. Test før merge.
-### RC7 – Første datatest og visuell oversikt
+### RC7 (historikk) – Første datatest og visuell oversikt
 
 - Ny **Visualiseringer**-knapp øverst i Statistikk åpner et separat mørkt dashboard. De fire nøkkeltallene og timegrafen (08–18) bruker **kun faktiske manuelle registreringer fra dagens CSV**; ingen eksempeldata vises i programmet.
 - Ny knapp **Test Trio-rader (uten lagring)** inne i dashboardet. Den leser kontrollert opptil 12 ListItem/DataItem-rader fra **det ene** UIA-List-elementet i Oppgavelogg.
@@ -49,7 +49,7 @@ Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller 
 - Rapporten viser **kun aggregerte antall gjenkjente felter**, aldri telefonnummer, kundenummer, rå oppgave-ID, IM-tekst eller kommentar. Raw UIA-strenger behandles midlertidig i minnet og skrives ikke til disk. Det er ingen automatisk eksport eller import av Trio-historikk.
 - **Kopier testresultat** sender kun den anonymiserte formatrapporten til utklippstavlen. Dette er innhentingstest, **ikke** en statistikk over alle samtaler. UIA-virtualisering kan gjøre at historiske rader ikke er tilgjengelige.
 
-**Neste milepæl:** Når en test i Trio 10.1.35 bekrefter hvilken UIA-radstruktur som faktisk brukes, kan vi lage en feltspesifikk parser, oppgave-ID-deduplisering og automatisk dagsstatistikk. Ikke bland Trio-data med manuelle timer før det er verifisert at de beskriver samme hendelse.
+**RC7-historikk:** Dette var det første utkastet basert på manuelle CSV-data. RC8 erstatter visningen med foreløpig Trio-data og gjør innlesing automatisk. Ikke bland Trio-data med manuelle timer før samsvar er bekreftet.
 ### RC8 – Trio-innlesing som standard, «Oppdater nå» som reserve
 
 - **Automatikk:** Den allerede eksisterende 30-sekunders UIA-syklusen undersøker nå også faktiske felter fra tilgjengelige rader i Trio Oppgavelogg. Brukeren trenger normalt ikke å klikke for å lese nye data.
