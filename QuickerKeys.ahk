@@ -5119,8 +5119,13 @@ class StatistikkModul {
     TestTrioRader(*) {
         if !IsObject(this.VisualTrioTekst)
             return
-        this.VisualTrioTekst.Value := "Leser UIA-kontrollstruktur…"
+        if this.TrioOpptatt {
+            this.VisualTrioTekst.Value := "En annen UIA-kontroll kjører. Prøv igjen etterpå."
+            return
+        }
+        this.TrioOpptatt := true
         try {
+            this.VisualTrioTekst.Value := "Leser UIA-kontrollstruktur…"
             trioHwnd := this.TrioLeser.FinnTrio()
             loggHwnd := this.TrioLeser.FinnLoggvindu(trioHwnd)
             resultat := this.TrioLeser.TestRadstruktur(loggHwnd)
@@ -5129,6 +5134,8 @@ class StatistikkModul {
         } catch as feil {
             this.VisualTrioTekst.Value := "Radtest feilet: " Type(feil)
                 . " (linje " feil.Line ")`r`nIngen kundedata ble kopiert."
+        } finally {
+            this.TrioOpptatt := false
         }
     }
 
