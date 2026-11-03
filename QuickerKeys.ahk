@@ -30,13 +30,15 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.11"
+global APP_VERSJON := "3.12-rc1"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
 global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
 global LOGG_MAPPE  := DATA_MAPPE "\Logg"
 global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
+global STATS_MAPPE := DATA_MAPPE "\Statistikk"
+global STATS := ""
 global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global VIS_VILKAR := Map()                   ; controls shown only when context needs them
@@ -53,8 +55,10 @@ RyddGamleLogger()
 lukketListe := LukkGamleSkript()
 Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser en tekstkode
 VERKTOY_LISTE := VerktoyListe()
+STATS := StatistikkModul()
 ByggHovedvindu()
 ByggTrayMeny()
+STATS.Start()
 Logg(APP_NAVN " " APP_VERSJON " startet  –  mappe: " DATA_MAPPE)
 for linje in FLYTTET
     Logg(linje)
@@ -128,7 +132,7 @@ FinnDataMappe() {
 ; Støtter både gammel flat struktur (v2.8) og undermapper (v2.9), også fra gammel AppData-mappe.
 LagMappestruktur() {
     meldinger := []
-    for mappe in [INNST_MAPPE, TEKST_MAPPE, LOGG_MAPPE] {
+    for mappe in [INNST_MAPPE, TEKST_MAPPE, LOGG_MAPPE, STATS_MAPPE] {
         if !DirExist(mappe)
             DirCreate mappe
     }
@@ -272,8 +276,8 @@ ByggHovedvindu() {
     navValg := ["Oversikt"]
     for vt in VERKTOY_LISTE
         navValg.Push(vt.Navn)
-    navValg.Push("Logg", "Innstillinger")
-    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 40))
+    navValg.Push("Statistikk", "Logg", "Innstillinger")
+    APP_H := Max(600, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 40))
 
     HOVED := Gui("-MaximizeBox", APP_NAVN)
     HOVED.BackColor := TEMA.bg
@@ -316,6 +320,7 @@ ByggHovedvindu() {
     ByggOversikt()
     for vt in VERKTOY_LISTE
         ByggVerktoyPanel(vt)
+    STATS.ByggPanel()
     ByggLoggPanel()
     ByggInnstillingerPanel()
     if NETT_PAA
@@ -523,6 +528,8 @@ VisPanel(navn, *) {
         knapp.Opt("Background" (knappNavn = valgt ? TEMA.aksent : TEMA.nav))
         knapp.Redraw()
     }
+    if (navn = "Statistikk" && IsObject(STATS))
+        STATS.Oppdater()
 }
 
 VisHoved(*) {
@@ -4568,6 +4575,288 @@ TrioTastFraTekst(tekst) {
     if (mods = "" || tast = "")
         return ""
     return GetKeyVK(tast) ? mods tast : ""
+}
+
+
+; =====================================================================
+;  STATISTIKK v1 - lokale, manuelle aktivitetslogger (ingen persondata)
+;  Automatisk Trio-telling aktiveres IKKE uten pålitelig samtalestatus.
+;  Fullførte økter lagres som CSV i AppData\QuickerKeys\Statistikk.
+;  Pågående økter lagres i Aktiv.ini så Reload/omstart ikke mister dem.
+; =====================================================================
+class StatistikkModul {
+    SamtaleType := ""                 ; "inn" = mottatt, "ut" = utgående
+    SamtaleStart := ""
+    Viderekoblet := false
+    SkriftStart := ""
+    SisteBeskjed := ""
+    Stat1 := ""
+    Stat2 := ""
+    Stat3 := ""
+    TilstandK := ""
+    SkriftKnapp := ""
+    Liste := ""
+
+    __New() {
+        this.StateFil := STATS_MAPPE "\Aktiv.ini"
+        this.TickCb := ObjBindMethod(this, "Tick")
+        this.HentTilstand()
+    }
+
+    HentTilstand() {
+        this.SamtaleType := IniRead(this.StateFil, "Aktiv", "SamtaleType", "")
+        this.SamtaleStart := IniRead(this.StateFil, "Aktiv", "SamtaleStart", "")
+        this.Viderekoblet := IniRead(this.StateFil, "Aktiv", "Viderekoblet", "0") = "1"
+        this.SkriftStart := IniRead(this.StateFil, "Aktiv", "SkriftStart", "")
+        if (this.SamtaleType != "inn" && this.SamtaleType != "ut")
+            this.SamtaleType := "", this.SamtaleStart := "", this.Viderekoblet := false
+        if (this.SamtaleStart != "" && !RegExMatch(this.SamtaleStart, "^\d{14}$"))
+            this.SamtaleType := "", this.SamtaleStart := "", this.Viderekoblet := false
+        if (this.SkriftStart != "" && !RegExMatch(this.SkriftStart, "^\d{14}$"))
+            this.SkriftStart := ""
+    }
+
+    LagreTilstand() {
+        IniWrite(this.SamtaleType, this.StateFil, "Aktiv", "SamtaleType")
+        IniWrite(this.SamtaleStart, this.StateFil, "Aktiv", "SamtaleStart")
+        IniWrite(this.Viderekoblet ? "1" : "0", this.StateFil, "Aktiv", "Viderekoblet")
+        IniWrite(this.SkriftStart, this.StateFil, "Aktiv", "SkriftStart")
+    }
+
+    Start() {
+        SetTimer this.TickCb, 1000
+        this.Oppdater()
+    }
+
+    ByggPanel() {
+        pn := "Statistikk", x := INNHOLD_X, b := INNHOLD_B
+        PanelTittel(pn, "Statistikk")
+        Skrift(HOVED, "s9 bold c" TEMA.dempet)
+        Reg(pn, HOVED.AddText("x" x " y123 w" b " h21 Background" TEMA.bg,
+            "I DAG  ·  MANUELT REGISTRERT  ·  IKKE TRIO-TELEMETRI"))
+        Skrift(HOVED, "s11 bold c" TEMA.tekst)
+        this.Stat1 := Reg(pn, HOVED.AddText("x" x " y151 w" b " h26 Background" TEMA.bg, ""))
+        Skrift(HOVED, "s10 norm c" TEMA.tekst)
+        this.Stat2 := Reg(pn, HOVED.AddText("x" x " y183 w" b " h24 Background" TEMA.bg, ""))
+        this.Stat3 := Reg(pn, HOVED.AddText("x" x " y212 w" b " h24 Background" TEMA.bg, ""))
+        Reg(pn, HOVED.AddText("x" x " y241 w" b " h1 Background" TEMA.linje))
+        Skrift(HOVED, "s10 bold c" TEMA.paa)
+        this.TilstandK := Reg(pn, HOVED.AddText("x" x " y250 w" b " h44 Background" TEMA.bg, ""))
+        Skrift(HOVED, "s10 bold c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" x " y302 w240 h36", "Start mottatt samtale",
+            ObjBindMethod(this, "StartKall", "inn")))
+        Reg(pn, Knapp(HOVED, "x" (x + 252) " y302 w240 h36", "Ring ut / start samtale",
+            ObjBindMethod(this, "StartKall", "ut"), TEMA.aksent2))
+        Reg(pn, Knapp(HOVED, "x" x " y345 w240 h36", "Avslutt samtale",
+            ObjBindMethod(this, "AvsluttKall"), TEMA.paa))
+        Reg(pn, Knapp(HOVED, "x" (x + 252) " y345 w240 h36", "Merk som satt videre",
+            ObjBindMethod(this, "MerkVidere"), TEMA.aksent2))
+        this.SkriftKnapp := Reg(pn, Knapp(HOVED, "x" x " y391 w240 h36", "Start skriftlig tid",
+            ObjBindMethod(this, "SkriftToggle")))
+        Reg(pn, Knapp(HOVED, "x" (x + 252) " y391 w240 h36", "Forkast pågående økter",
+            ObjBindMethod(this, "Forkast"), TEMA.av))
+        Skrift(HOVED, "s9 norm c" TEMA.dempet)
+        Reg(pn, HOVED.AddText("x" x " y437 w" b " h19 Background" TEMA.bg,
+            "SISTE REGISTRERINGER I DAG (uten kundeinformasjon)"))
+        Skrift(HOVED, "s9 norm c" TEMA.tekst)
+        this.Liste := Reg(pn, HOVED.AddListView("x" x " y457 w" b " h92 -Multi -Sort Background" TEMA.kort,
+            ["Tid", "Type", "Varighet", "Videre"]))
+        this.Liste.ModifyCol(1, 100), this.Liste.ModifyCol(2, 153)
+        this.Liste.ModifyCol(3, 122), this.Liste.ModifyCol(4, 92)
+        Skrift(HOVED, "s9 bold c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" x " y556 w240 h30", "Åpne statistikk / CSV",
+            (*) => Run('"' STATS_MAPPE '"'), TEMA.aksent2))
+        Skrift(HOVED, "s8 norm c" TEMA.dempet)
+        Reg(pn, HOVED.AddText("x" (x + 252) " y555 w240 h34 Background" TEMA.bg,
+            "Kun økter du starter og avslutter registreres."))
+        this.Oppdater()
+    }
+
+    Melding(tekst) {
+        this.SisteBeskjed := tekst
+        this.Oppdater()
+        Tip(tekst, 2500)
+    }
+
+    StartKall(type, *) {
+        if (this.SamtaleType != "")
+            return this.Melding("Avslutt pågående samtale før du starter en ny.")
+        this.SamtaleType := type
+        this.SamtaleStart := A_Now
+        this.Viderekoblet := false
+        try this.LagreTilstand()
+        catch as feil {
+            this.SamtaleType := "", this.SamtaleStart := ""
+            return this.Melding("Kunne ikke lagre starttid: " feil.Message)
+        }
+        this.SisteBeskjed := ""
+        this.Oppdater()
+        Logg("Statistikk: startet " (type = "inn" ? "mottatt" : "utgående") " samtale (manuelt)")
+    }
+
+    MerkVidere(*) {
+        if (this.SamtaleType != "inn")
+            return this.Melding("Start en mottatt samtale før du merker viderekobling.")
+        this.Viderekoblet := true
+        try this.LagreTilstand()
+        catch as feil
+            return this.Melding("Kunne ikke lagre viderekobling: " feil.Message)
+        this.Oppdater()
+    }
+
+    AvsluttKall(*) {
+        if (this.SamtaleType = "")
+            return this.Melding("Ingen aktiv samtale å avslutte.")
+        sek := this.SekunderSiden(this.SamtaleStart)
+        try this.LagreHendelse(this.SamtaleType, sek, this.Viderekoblet)
+        catch as feil
+            return this.Melding("Samtalen ble ikke lagret: " feil.Message)
+        this.SamtaleType := "", this.SamtaleStart := "", this.Viderekoblet := false
+        try this.LagreTilstand()
+        catch as feil
+            Logg("Statistikk: FEIL ved tømming av aktiv samtale: " feil.Message)
+        this.SisteBeskjed := ""
+        this.Oppdater()
+        Logg("Statistikk: samtale registrert (" sek " sekunder)")
+    }
+
+    SkriftToggle(*) {
+        if (this.SkriftStart = "") {
+            this.SkriftStart := A_Now
+            try this.LagreTilstand()
+            catch as feil {
+                this.SkriftStart := ""
+                return this.Melding("Kunne ikke starte skriftlig tid: " feil.Message)
+            }
+            this.SisteBeskjed := ""
+            Logg("Statistikk: startet skriftlig tid")
+        } else {
+            sek := this.SekunderSiden(this.SkriftStart)
+            try this.LagreHendelse("skriftlig", sek, false)
+            catch as feil
+                return this.Melding("Skriftlig tid ble ikke lagret: " feil.Message)
+            this.SkriftStart := ""
+            try this.LagreTilstand()
+            catch as feil
+                Logg("Statistikk: FEIL ved tømming av skriftlig tid: " feil.Message)
+            Logg("Statistikk: skriftlig tid registrert (" sek " sekunder)")
+            this.SisteBeskjed := ""
+        }
+        this.Oppdater()
+    }
+
+    Forkast(*) {
+        if (this.SamtaleType = "" && this.SkriftStart = "")
+            return this.Melding("Ingen pågående økter å forkaste.")
+        if (MsgBox("Forkaste pågående samtale og/eller skriftlig tid? Ingen ny CSV-rad opprettes.",
+            APP_NAVN " – Statistikk", "YesNo Icon? Default2") != "Yes")
+            return
+        this.SamtaleType := "", this.SamtaleStart := "", this.Viderekoblet := false, this.SkriftStart := ""
+        try this.LagreTilstand()
+        catch as feil
+            return this.Melding("Kunne ikke lagre forkasting: " feil.Message)
+        this.SisteBeskjed := ""
+        this.Oppdater()
+        Logg("Statistikk: pågående økter forkastet av bruker")
+    }
+
+    SekunderSiden(start) {
+        if (start = "")
+            return 0
+        try return Max(0, DateDiff(A_Now, start, "Seconds"))
+        return 0
+    }
+
+    Tid(sek) {
+        sek := Max(0, Integer(sek))
+        return Format("{:02}:{:02}:{:02}", sek // 3600, Mod(sek // 60, 60), Mod(sek, 60))
+    }
+
+    LagreHendelse(type, sek, videre) {
+        if !InStr("|inn|ut|skriftlig|", "|" type "|")
+            throw Error("Ugyldig statistikktype.")
+        if (sek < 0 || sek > 86400)
+            throw Error("Økten varer over 24 timer. Forkast den og registrer på nytt.")
+        fil := STATS_MAPPE "\" FormatTime(, "yyyy-MM-dd") ".csv"
+        if !FileExist(fil)
+            FileAppend("Dato,Tid,Type,VarighetSekunder,Viderekoblet,Kilde" Chr(13) Chr(10), fil, "UTF-8-RAW")
+        rad := FormatTime(, "yyyy-MM-dd") "," FormatTime(, "HH:mm:ss") "," type "," sek ","
+            . (videre ? "1" : "0") ",manuell" Chr(13) Chr(10)
+        FileAppend(rad, fil, "UTF-8-RAW")
+    }
+
+    LesDagen() {
+        result := {inn: 0, ut: 0, videre: 0, sekInn: 0, sekUt: 0, skriftSek: 0, rader: []}
+        fil := STATS_MAPPE "\" FormatTime(, "yyyy-MM-dd") ".csv"
+        if !FileExist(fil)
+            return result
+        tekst := StrReplace(FileRead(fil, "UTF-8"), Chr(13), "")
+        for rad in StrSplit(tekst, Chr(10)) {
+            c := StrSplit(rad, ",")
+            if (c.Length != 6 || c[1] = "Dato")
+                continue
+            try sek := Integer(c[4])
+            catch
+                continue
+            if (sek < 0 || sek > 86400)
+                continue
+            switch c[3] {
+                case "inn":
+                    result.inn += 1
+                    result.sekInn += sek
+                    if (c[5] = "1")
+                        result.videre += 1
+                case "ut":
+                    result.ut += 1
+                    result.sekUt += sek
+                case "skriftlig":
+                    result.skriftSek += sek
+                default:
+                    continue
+            }
+            result.rader.Push({tid: c[2], type: c[3], sek: sek, videre: c[5] = "1"})
+        }
+        return result
+    }
+
+    Tick(*) {
+        if IsObject(this.TilstandK) && this.TilstandK.Visible
+            this.Oppdater()
+    }
+
+    Oppdater() {
+        if !IsObject(this.Stat1)
+            return
+        try {
+            dag := this.LesDagen()
+            this.Stat1.Text := "Mottatt: " dag.inn "      Ring ut: " dag.ut "      Satt videre: " dag.videre
+            this.Stat2.Text := "Samtaletid: " this.Tid(dag.sekInn + dag.sekUt)
+                . "      Snitt mottatt: " (dag.inn ? Round(dag.sekInn / dag.inn / 60, 1) " min" : "—")
+            this.Stat3.Text := "Skriftlig tid: " this.Tid(dag.skriftSek)
+                . "      Totalt telefoner: " (dag.inn + dag.ut)
+            aktiv := this.SamtaleType = "" ? "Ingen pågående samtale"
+                : (this.SamtaleType = "inn" ? "Mottatt samtale" : "Utgående samtale")
+                    . "  " this.Tid(this.SekunderSiden(this.SamtaleStart))
+                    . (this.Viderekoblet ? "  ·  satt videre" : "")
+            skrift := this.SkriftStart = "" ? "Skriftlig tid: av"
+                : "Skriftlig tid: " this.Tid(this.SekunderSiden(this.SkriftStart)) " (pågår)"
+            this.TilstandK.Text := aktiv Chr(10) skrift
+                . (this.SisteBeskjed = "" ? "" : "  ·  " this.SisteBeskjed)
+            this.SkriftKnapp.Text := this.SkriftStart = "" ? "Start skriftlig tid" : "Avslutt skriftlig tid"
+            this.SkriftKnapp.Opt("Background" (this.SkriftStart = "" ? TEMA.aksent : TEMA.paa))
+            this.Liste.Opt("-Redraw")
+            this.Liste.Delete()
+            loop Min(dag.rader.Length, 4) {
+                item := dag.rader[dag.rader.Length - A_Index + 1]
+                navn := item.type = "inn" ? "Mottatt" : item.type = "ut" ? "Ring ut" : "Skriftlig"
+                this.Liste.Add(, item.tid, navn, this.Tid(item.sek), item.videre ? "Ja" : "")
+            }
+            this.Liste.Opt("+Redraw")
+        } catch as feil {
+            this.TilstandK.Text := "Statistikk kunne ikke leses: " feil.Message
+            Logg("Statistikk: FEIL " feil.Message)
+        }
+    }
 }
 
 ; =====================================================================
