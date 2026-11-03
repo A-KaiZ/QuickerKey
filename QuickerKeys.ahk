@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc7"
+global APP_VERSJON := "3.12-rc8"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4817,6 +4817,162 @@ class TrioOppgaveloggDiagnose {
         } catch as feil {
             return {ok:false, status:"Trio-radtesten feilet.", detaljer:this.KortTekniskFeil("TestRadstruktur", feil)}
         }
+    }
+
+    ; RC8: read available rows from Trio. Only validated, minimal summaries
+    ; survive after the call; phone/customer numbers and comment content do not.
+    ; This does NOT guarantee that all daily rows are loaded (virtualized UIA).
+    HentDagensData(loggHwnd) {
+        out := {ok:false, status:"", kilde:"", sett:Map(), kandidater:0, avvist:0
+            , andreDager:0, begrenset:false, start:""}
+        if !loggHwnd {
+            out.status := "Oppgavelogg er ikke tilgjengelig."
+            return out
+        }
+        try {
+            if (WinGetMinMax("ahk_id " loggHwnd) = -1) {
+                out.status := "Oppgavelogg er minimert – venter på bakgrunnsmodus."
+                return out
+            }
+            kandidater := []
+            ; Standard Win32 ListView provides column aligned text.
+            for ctrl in WinGetControlsHwnd("ahk_id " loggHwnd) {
+                klasse := ""
+                try klasse := WinGetClass("ahk_id " ctrl)
+                if (StrLower(klasse) != "syslistview32")
+                    continue
+                try {
+                    antKol := ListViewGetContent("Count Col", ctrl, "ahk_id " loggHwnd)
+                    if (antKol != 13)
+                        continue
+                    raatekst := ListViewGetContent("", ctrl, "ahk_id " loggHwnd)
+                    for rad in StrSplit(raatekst, "`n", "`r") {
+                        if (Trim(rad) = "")
+                            continue
+                        kandidater.Push(StrSplit(rad, A_Tab))
+                        if (kandidater.Length >= 2000) {
+                            out.begrenset := true
+                            break
+                        }
+                    }
+                    if kandidater.Length {
+                        out.kilde := "Win32 ListView"
+                        break
+                    }
+                }
+            }
+            if !kandidater.Length {
+                ; Custom controls: the List that was observed in RC4/RC6.
+                rot := UiaFraVindu(loggHwnd)
+                if !IsObject(rot) {
+                    out.status := "UIA-rot kunne ikke leses."
+                    return out
+                }
+                lister := UiaFinnAlle(rot, 50008)
+                if (lister.Length != 1) {
+                    out.status := "Fant " lister.Length " UIA-lister; trenger nøyaktig én."
+                    return out
+                }
+                elementer := UiaFinnAlle(lister[1], 50007)
+                if !elementer.Length
+                    elementer := UiaFinnAlle(lister[1], 50029)
+                out.kilde := "UIA List (tilgjengelige elementer)"
+                tidStart := A_TickCount
+                flate := []
+                for el in elementer {
+                    if (kandidater.Length >= 150 || flate.Length >= 1950
+                        || A_TickCount - tidStart > 4000) {
+                        out.begrenset := true
+                        break
+                    }
+                    tekstKontroller := UiaFinnAlle(el, 50020)
+                    if (tekstKontroller.Length = 13) {
+                        felt := []
+                        for tc in tekstKontroller {
+                            verdi := ""
+                            try verdi := Trim(UiaStreng(tc, 30005))
+                            felt.Push(verdi)
+                        }
+                        kandidater.Push(felt)
+                        continue
+                    }
+                    ; Some providers expose one tab-separated Name per row.
+                    navn := ""
+                    try navn := UiaStreng(el, 30005)
+                    if InStr(navn, A_Tab) {
+                        felt := StrSplit(navn, A_Tab)
+                        if (felt.Length = 13) {
+                            kandidater.Push(felt)
+                            continue
+                        }
+                    }
+                    ; Some providers expose one ListItem per cell. Only
+                    ; accept sequences which pass the 13-field validation.
+                    if (navn != "")
+                        flate.Push(navn)
+                }
+                if !kandidater.Length && flate.Length >= 13 {
+                    i := 1
+                    while (i + 12 <= flate.Length && kandidater.Length < 150) {
+                        felt := []
+                        loop 13
+                            felt.Push(flate[i + A_Index - 1])
+                        if this.GyldigOppgaveFormat(felt)
+                            kandidater.Push(felt), i += 13
+                        else
+                            i++
+                    }
+                }
+            }
+            out.kandidater := kandidater.Length
+            datoIDag := FormatTime(, "dd.MM.yyyy")
+            for felt in kandidater {
+                if !this.GyldigOppgaveFormat(felt) {
+                    out.avvist++
+                    continue
+                }
+                if (SubStr(felt[1], 1, 10) != datoIDag) {
+                    out.andreDager++
+                    continue
+                }
+                ; Task ID is used solely as volatile, local deduplication key.
+                nokkel := felt[2] "|" felt[1]
+                koblet := Trim(felt[11])
+                videresendt := koblet != "" && !InStr("|N/A|-|", "|" koblet "|")
+                imFinnes := RegExMatch(felt[13], "i)\bIM\d{4,12}\b") > 0
+                sek := this.VarighetSekunder(felt[9])
+                koSek := this.VarighetSekunder(felt[10])
+                out.sett[nokkel] := {time:SubStr(felt[1], 12, 2), sek:sek
+                    , koSek:koSek, koHarVerdi:koSek >= 0
+                    , videre:videresendt, im:imFinnes}
+            }
+            out.ok := out.sett.Count > 0
+            out.status := out.ok
+                ? "Leste " out.sett.Count " validerte oppgaver fra tilgjengelig liste."
+                : "Ingen dagens oppgaver kunne valideres. UIA-kolonneformat må undersøkes."
+        } catch as feil {
+            out.status := "Feil under Trio-lesing: " Type(feil) " (linje " feil.Line ")."
+        }
+        return out
+    }
+
+    GyldigOppgaveFormat(felt) {
+        if (felt.Length != 13)
+            return false
+        if !RegExMatch(Trim(felt[1]), "^\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}:\d{2}$")
+            return false
+        if !RegExMatch(Trim(felt[2]), "^\d{6,15}$")
+            return false
+        return this.VarighetSekunder(felt[9]) >= 0
+    }
+
+    VarighetSekunder(tekst) {
+        tekst := Trim(tekst)
+        if RegExMatch(tekst, "^(\d{1,3}):([0-5]\d):([0-5]\d)$", &m)
+            return Integer(m[1]) * 3600 + Integer(m[2]) * 60 + Integer(m[3])
+        if RegExMatch(tekst, "^(\d{1,3}):([0-5]\d)$", &m)
+            return Integer(m[1]) * 60 + Integer(m[2])
+        return -1
     }
 
     KortTekniskFeil(steg, feil) {
