@@ -41,6 +41,15 @@ Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller 
 - **Ingen automatisk statistikkimport:** Vi registrerer fremdeles ikke samtaler fra Trio; RC6 styrer kun loggvinduet og kjører skrivebeskyttet UIA-diagnostikk.
 
 **Forbehold:** Trio/Windows kan vise et kort vindusglimt ved åpning eller gjenoppretting. `ShowWindowAsync` og `WinMoveBottom` kan oppføre seg annerledes i den faktiske Trio-klienten. Test før merge.
+### RC7 – Første datatest og visuell oversikt
+
+- Ny **Visualiseringer**-knapp øverst i Statistikk åpner et separat mørkt dashboard. De fire nøkkeltallene og timegrafen (08–18) bruker **kun faktiske manuelle registreringer fra dagens CSV**; ingen eksempeldata vises i programmet.
+- Ny knapp **Test Trio-rader (uten lagring)** inne i dashboardet. Den leser kontrollert opptil 12 ListItem/DataItem-rader fra **det ene** UIA-List-elementet i Oppgavelogg.
+- Testen undersøker om radene eksponerer 13 Text-underkontroller og validerer **kun format**, ikke verdi, for tidspunkt (kol. 1), numerisk oppgave-ID (kol. 2), behandlingstid (kol. 9) og køtid (kol. 10). Den rapporterer også hvor mange i det avgrensede utvalget som har dagens dato.
+- Rapporten viser **kun aggregerte antall gjenkjente felter**, aldri telefonnummer, kundenummer, rå oppgave-ID, IM-tekst eller kommentar. Raw UIA-strenger behandles midlertidig i minnet og skrives ikke til disk. Det er ingen automatisk eksport eller import av Trio-historikk.
+- **Kopier testresultat** sender kun den anonymiserte formatrapporten til utklippstavlen. Dette er innhentingstest, **ikke** en statistikk over alle samtaler. UIA-virtualisering kan gjøre at historiske rader ikke er tilgjengelige.
+
+**Neste milepæl:** Når en test i Trio 10.1.35 bekrefter hvilken UIA-radstruktur som faktisk brukes, kan vi lage en feltspesifikk parser, oppgave-ID-deduplisering og automatisk dagsstatistikk. Ikke bland Trio-data med manuelle timer før det er verifisert at de beskriver samme hendelse.
 ## v3.11 – Nettverk og UIA-feltgjenkjenning (nå i main)
 
 Denne oppdateringen bygger videre på v3.8 i `main`.
