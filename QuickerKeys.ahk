@@ -16,6 +16,8 @@ SendMode "Input"
 ;    Åpne igjen fra ikonet ved klokka eller med Ctrl+Alt+M.
 ;  • Nytt verktøy? Lag en klasse som «extends VT_Base» (se malen helt
 ;    nederst) og legg den til i VerktoyListe() rett under her.
+;  • Nettverk-siden (Nettverk + MAC Import for Cisco ISE) er av som standard.
+;    Slås på under Innstillinger → «Nettverksgeni?».
 ; =====================================================================
 
 VerktoyListe() => [
@@ -28,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.8"
+global APP_VERSJON := "3.11"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -39,11 +41,14 @@ global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 4
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global VIS_VILKAR := Map()                   ; controls shown only when context needs them
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
+global NETT_PAA := false, NETT := Map()
+global NAV_FOR := Map()
 
 ; ---------------- Oppstart ----------------
 global FLYTTET := LagMappestruktur()
 SikreIni()
 TEMA := TemaPalett(Innst("App", "Tema", "Midnatt"))
+NETT_PAA := Innst("App", "Nettverk", "0") = "1"
 RyddGamleLogger()
 lukketListe := LukkGamleSkript()
 Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser en tekstkode
@@ -58,11 +63,17 @@ for navn in lukketListe
 for vt in VERKTOY_LISTE
     SettAktiv(vt, Innst(vt.Id, "Aktiv", "1") = "1", false)
 SettVisTast(Innst("App", "VisTast", "^!m"))
-VisPanel("Oversikt")
-if (Innst("App", "StartSkjult", "0") = "1")
-    Logg("Startet skjult – åpne med ikonet ved klokka eller hurtigtasten")
-else
+if (NETT_PAA && Innst("App", "NettverkApne", "0") = "1") {
+    SettInnst("App", "NettverkApne", "0")
+    VisPanel("Nettverk")
     VisHoved()
+} else {
+    VisPanel("Oversikt")
+    if (Innst("App", "StartSkjult", "0") = "1")
+        Logg("Startet skjult – åpne med ikonet ved klokka eller hurtigtasten")
+    else
+        VisHoved()
+}
 
 
 ; =====================================================================
@@ -262,7 +273,7 @@ ByggHovedvindu() {
     for vt in VERKTOY_LISTE
         navValg.Push(vt.Navn)
     navValg.Push("Logg", "Innstillinger")
-    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + 40)
+    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 40))
 
     HOVED := Gui("-MaximizeBox", APP_NAVN)
     HOVED.BackColor := TEMA.bg
@@ -286,13 +297,29 @@ ByggHovedvindu() {
         NAVKNAPPER[navn] := knapp
     }
     bunnY := 84 + navValg.Length * 44
-    HOVED.AddText("x0 y" bunnY " w160 h" (APP_H - bunnY) " Background" TEMA.nav)
+    if NETT_PAA {
+        nettY := APP_H - 52
+        linjeY := nettY - 12
+        HOVED.AddText("x0 y" bunnY " w160 h" (linjeY - bunnY) " Background" TEMA.nav)
+        HOVED.AddText("x0 y" linjeY " w16 h1 Background" TEMA.nav)
+        HOVED.AddText("x16 y" linjeY " w128 h1 Background" TEMA.linje)
+        HOVED.AddText("x144 y" linjeY " w16 h1 Background" TEMA.nav)
+        HOVED.AddText("x0 y" (linjeY + 1) " w160 h" (nettY - linjeY - 1) " Background" TEMA.nav)
+        knapp := HOVED.AddText("x0 y" nettY " w160 h44 +0x200 Background" TEMA.nav, "    Nettverk")
+        knapp.OnEvent("Click", VisPanel.Bind("Nettverk"))
+        NAVKNAPPER["Nettverk"] := knapp
+        HOVED.AddText("x0 y" (nettY + 44) " w160 h" (APP_H - nettY - 44) " Background" TEMA.nav)
+    } else {
+        HOVED.AddText("x0 y" bunnY " w160 h" (APP_H - bunnY) " Background" TEMA.nav)
+    }
 
     ByggOversikt()
     for vt in VERKTOY_LISTE
         ByggVerktoyPanel(vt)
     ByggLoggPanel()
     ByggInnstillingerPanel()
+    if NETT_PAA
+        ByggNettverkPanel()
 }
 
 ByggOversikt() {
@@ -377,12 +404,19 @@ ByggInnstillingerPanel() {
     Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", "Importer konfigurasjon…", ImporterKonfigurasjon, TEMA.aksent))
     Reg(pn, Knapp(HOVED, "x" (x + 198) " y" y " w132 h34", "Themes…", VisTemaer, TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 340) " y" y " w152 h34", "Last inn på nytt", (*) => Reload(), TEMA.aksent2))
+    y += 52
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", NETT_PAA ? "Skru av Nettverk" : "Nettverksgeni?"
+        , VekslNettverk, NETT_PAA ? TEMA.av : TEMA.aksent))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" (x + 198) " y" y " w" (b - 198) " h34 +0x200 Background" TEMA.bg
+        , NETT_PAA ? "Nettverk-siden er på (nede til venstre)." : "Egen side med MAC Import for Cisco ISE."))
 
     ; Utviklerkreditering nederst på Innstillinger-siden.
     Skrift(HOVED, "s9 bold c" TEMA.dempet)
     Reg(pn, HOVED.AddText("x" x " y" (APP_H - 108) " w" b " h22 Background" TEMA.bg, "Developers"))
     Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 82) " w" b " h26 Background" TEMA.bg, "MAUUNI  ·  KAISAD"))
+    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 82) " w" b " h26 Background" TEMA.bg, "MAAUNI  ·  KAISAD"))
 }
 
 ; Sidetittel med «?»-knapp. medToggle = siden har PÅ/AV-knapp oppe til høyre.
@@ -439,6 +473,14 @@ HjelpTekst(side) {
                 . "•  «Themes» velger farger; programmet starter på nytt ved bytte.`n"
                 . "•  «Last inn på nytt» aktiverer endringer du har gjort direkte i INI-filen.`n"
                 . "•  Data: " DATA_MAPPE
+        case "Nettverk":
+            return "•  Startsiden for nettverksverktøy, som MAC Import.`n"
+                . "•  «← Nettverk» øverst i verktøyet går tilbake til Nettverk."
+        case "MAC Import":
+            return "•  Lim inn MAC-adresser; komma, mellomrom og linjeskift støttes.`n"
+                . "•  Gi eksakt Identity Group fra Cisco ISE.`n"
+                . "•  Generer 31-kolonners CSV, bekreft oppsettet og importer manuelt i ISE.`n"
+                . "•  Ugyldige MAC-adresser flagges og duplikater fjernes."
     }
     return ""
 }
@@ -476,8 +518,9 @@ VisPanel(navn, *) {
     for panelNavn, liste in PANELER
         for ktrl in liste
             ktrl.Visible := (panelNavn = navn) && (!VIS_VILKAR.Has(ktrl) || VIS_VILKAR[ktrl]())
+    valgt := NAV_FOR.Has(navn) ? NAV_FOR[navn] : navn
     for knappNavn, knapp in NAVKNAPPER {
-        knapp.Opt("Background" (knappNavn = navn ? TEMA.aksent : TEMA.nav))
+        knapp.Opt("Background" (knappNavn = valgt ? TEMA.aksent : TEMA.nav))
         knapp.Redraw()
     }
 }
@@ -640,19 +683,21 @@ ImporterKonfigurasjon(*) {
         ImporterGammelQuickKey(fil)
         return
     }
-    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier)\]\s*$") {
+    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk)\]\s*$") {
         MsgBox "Ukjent konfigurasjonsformat. Forventet QuickerKeys/MAAUNI eller gamle QuickKey [Shortcuts].", APP_NAVN, "Icon!"
         return
     }
     ; Kun anerkjente nøkkelverdier importeres: eksterne filstier og programmappe beholdes lokale.
     seksjoner := Map(
-        "App", ["StartSkjult", "VisTast", "Tema"],
+        "App", ["StartSkjult", "VisTast", "Tema", "Nettverk"],
         "Tekstflyt", ["Aktiv"],
         "SMKontakt", ["Aktiv", "TrioKilde", "WebVindu", "WebEtikett", "TrioVindu", "Etikett"
             , "AndreLinjeRegex", "ManuellTast", "TrioKontroll", "SMVindu"
-            , "KontaktX", "KontaktY", "KnappX", "KnappY"],
+            , "KontaktX", "KontaktY", "KnappX", "KnappY"
+            , "KontaktType", "KontaktNavn", "KontaktId", "KontaktKlasse"],
         "Vindusbytter", ["Aktiv"],
-        "TrioSnarveier", ["Aktiv", "HKCopy"]
+        "TrioSnarveier", ["Aktiv", "HKCopy", "HKCopyKilde", "ApneIM", "IMVindu", "IMX", "IMY", "IMNavn", "IMId", "IMKlasse", "IMModus"],
+        "Nettverk", ["Skilletegn"]
     )
     loop 4 {
         i := A_Index
@@ -898,6 +943,351 @@ Tip(melding, ms := 1800) {
     SetTimer () => ToolTip(), -ms
 }
 
+
+; =====================================================================
+;  NETTVERK – egne verktøy. Av som standard; aktiveres via Innstillinger.
+;  MAC Import genererer bare en importfil; ingen Cisco ISE-endringer.
+; =====================================================================
+
+; Header tilsvarende Ren_mal.csv: 31 kolonner.
+NettHeader() => "MACAddress,EndPointPolicy,IdentityGroup,PortalUser.GuestType,Description,PortalUser.Location,PortalUser.GuestStatus,StaticAssignment,User-Name,DeviceRegistrationStatus,PortalUser.CreationType,AUPAccepted,PortalUser.EmailAddress,PortalUser.PhoneNumber,FirstName,ip,Device Type,host-name,StaticGroupAssignment,MDMEnrolled,MDMOSVersion,PortalUser.LastName,PortalUser.GuestSponsor,EmailAddress,PortalUser,PortalUser.FirstName,BYODRegistration,MDMServerName,LastName,MDMServerID,Location"
+
+NettFarge(type) {
+    lys := Innst("App", "Tema", "Midnatt") = "Lys"
+    switch type {
+        case "ok":   return lys ? "1E7B4A" : "4FD6A0"
+        case "feil": return lys ? "B3261E" : "FF8A80"
+    }
+    return TEMA.dempet
+}
+
+; Flere verktøy legges til her, sammen med en Bygg…Panel-funksjon.
+NettverkVerktoy() => [
+    {navn: "MAC Import", beskrivelse: "Lag importfil for endepunkter i Cisco ISE – MAC-adresser med Identity Group (VLAN / EPG).", bygg: ByggMacImportPanel}
+]
+
+ByggNettverkPanel() {
+    pn := "Nettverk", x := INNHOLD_X, b := INNHOLD_B
+    PanelTittel(pn, "Nettverk")
+    Skrift(HOVED, "s10 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y124 w" b " h40 Background" TEMA.bg
+        , "Verktøy for oss som jobber med nettverk. Velg et verktøy under – flere kan legges til etter hvert."))
+    for i, nv in NettverkVerktoy() {
+        y := 172 + (i - 1) * 96
+        Skrift(HOVED, "s12 bold c" TEMA.tekst)
+        navnK := Reg(pn, HOVED.AddText("x" x " y" y " w" (b - 140) " h26 Background" TEMA.bg, nv.navn))
+        navnK.OnEvent("Click", VisPanel.Bind(nv.navn))
+        Skrift(HOVED, "s9 norm c" TEMA.dempet)
+        Reg(pn, HOVED.AddText("x" x " y" (y + 28) " w" (b - 140) " h56 Background" TEMA.bg, nv.beskrivelse))
+        Skrift(HOVED, "s10 norm c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" (x + b - 116) " y" (y + 20) " w116 h34", "Åpne  →", VisPanel.Bind(nv.navn), TEMA.aksent2))
+        Reg(pn, HOVED.AddText("x" x " y" (y + 88) " w" b " h1 Background" TEMA.linje))
+        NAV_FOR[nv.navn] := "Nettverk"
+        try nv.bygg.Call(nv.navn)
+        catch as feil
+            Logg("Klarte ikke å bygge siden for " nv.navn ": " feil.Message)
+    }
+}
+
+ByggMacImportPanel(pn) {
+    x := INNHOLD_X, b := INNHOLD_B
+    PanelTittel(pn, "MAC Import")
+    Skrift(HOVED, "s10 norm c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x+b-164) " y86 w120 h30", "←  Nettverk", VisPanel.Bind("Nettverk"), TEMA.aksent2))
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y124 w" b " h18 Background" TEMA.bg, "LAG IMPORTFIL FOR CISCO ISE"))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y144 w" b " h34 Background" TEMA.bg
+        , "Lim inn MAC-adresser – skilt med komma, linjeskift, mellomrom eller helt uten skilletegn. Duplikater fjernes automatisk."))
+    Skrift(HOVED, "s10 norm c" TEMA.tekst, "Consolas")
+    NETT["Macs"] := Reg(pn, HOVED.AddEdit("x" x " y182 w" b " h118 Multi VScroll -E0x200 Background" TEMA.kort))
+    NETT["Macs"].OnEvent("Change", (*) => SetTimer(NettOppdaterStatus, -300))
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    NETT["Status"] := Reg(pn, HOVED.AddText("x" x " y304 w" b " h32 Background" TEMA.bg, "Ingen MAC-adresser lagt inn."))
+
+    Skrift(HOVED, "s9 norm c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y340 w128 h28", "Formater liste", NettFormater, TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" (x+136) " y340 w72 h28", "Tøm", NettTom, TEMA.aksent2))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" (x+216) " y340 w116 h28 +0x200 Right Background" TEMA.bg, "Skilletegn i fila  "))
+    Skrift(HOVED, "s9 bold c" TEMA.tekst, "Consolas")
+    NETT["Kolon"] := Reg(pn, Knapp(HOVED, "x" (x+340) " y340 w74 h28", "AA:BB", NettVelgSkille.Bind(":")))
+    NETT["Strek"] := Reg(pn, Knapp(HOVED, "x" (x+418) " y340 w74 h28", "AA-BB", NettVelgSkille.Bind("-")))
+
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y382 w" b " h18 Background" TEMA.bg, "IDENTITY GROUP  (VLAN / EPG)"))
+    Skrift(HOVED, "s11 norm c" TEMA.tekst)
+    NETT["Gruppe"] := Reg(pn, HOVED.AddEdit("x" x " y402 w" b " h28 -E0x200 Background" TEMA.kort))
+    Reg(pn, HOVED.AddText("x" x " y440 w4 h52 BackgroundC0392B"))
+    Reg(pn, HOVED.AddText("x" (x+4) " y440 w12 h52 BackgroundFCE8E6"))
+    Reg(pn, HOVED.AddText("x" (x+16) " y440 w" (b-16) " h8 BackgroundFCE8E6"))
+    Reg(pn, HOVED.AddText("x" (x+b-8) " y448 w8 h44 BackgroundFCE8E6"))
+    Skrift(HOVED, "s9 bold c8B1A1A")
+    Reg(pn, HOVED.AddText("x" (x+16) " y448 w" (b-24) " h44 BackgroundFCE8E6"
+        , "VIKTIG: Navnet må være NØYAKTIG likt Identity Group i ISE – store/små bokstaver, "
+        . "mellomrom og tegn. Feil navn gir feil VLAN / EPG for enhetene."))
+    Skrift(HOVED, "s11 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y504 w" b " h40", "Generer importfil (CSV)", NettGenerer))
+    NettVelgSkille(Innst("Nettverk", "Skilletegn", ":"))
+}
+
+NettVelgSkille(sep, *) {
+    NETT["Skille"] := sep = "-" ? "-" : ":"
+    for navn, verdi in Map("Kolon", ":", "Strek", "-") {
+        k := NETT[navn]
+        k.Opt("Background" (NETT["Skille"] = verdi ? TEMA.aksent : TEMA.aksent2))
+        k.Redraw()
+    }
+    SettInnst("Nettverk", "Skilletegn", NETT["Skille"])
+}
+
+; Parser: 12 hextegn, store bokstaver, uten duplikater.
+NettParse(tekst) {
+    gyldige := [], ugyldige := [], sett := Map(), duplikater := 0
+    for bit in StrSplit(RegExReplace(tekst, "[,;\s]+", ","), ",") {
+        bit := Trim(bit)
+        if (bit = "")
+            continue
+        hex := StrUpper(RegExReplace(bit, "[:\-.]"))
+        if !RegExMatch(hex, "^[0-9A-F]+$") || Mod(StrLen(hex), 12) != 0 {
+            ugyldige.Push(bit)
+            continue
+        }
+        loop StrLen(hex) // 12 {
+            mac := SubStr(hex, (A_Index-1)*12+1, 12)
+            if sett.Has(mac) {
+                duplikater++
+                continue
+            }
+            sett[mac] := true
+            gyldige.Push(mac)
+        }
+    }
+    return {gyldige:gyldige, ugyldige:ugyldige, duplikater:duplikater}
+}
+
+NettMac(hex, sep) {
+    ut := ""
+    loop 6
+        ut .= (A_Index > 1 ? sep : "") SubStr(hex, A_Index*2-1, 2)
+    return ut
+}
+
+NettJoin(liste, sep, maks := 0) {
+    ut := ""
+    for i, v in liste {
+        if (maks && i > maks) {
+            ut .= sep "… (+" (liste.Length - maks) " til)"
+            break
+        }
+        ut .= (i > 1 ? sep : "") v
+    }
+    return ut
+}
+
+NettOppdaterStatus(*) {
+    r := NettParse(NETT["Macs"].Value)
+    k := NETT["Status"]
+    if (r.gyldige.Length = 0 && r.ugyldige.Length = 0) {
+        k.SetFont("c" TEMA.dempet)
+        k.Text := "Ingen MAC-adresser lagt inn."
+        return
+    }
+    s := "Gyldige: " r.gyldige.Length "      Duplikater fjernet: " r.duplikater "      Ugyldige: " r.ugyldige.Length
+    if r.ugyldige.Length {
+        s .= "`nUgyldig: " NettJoin(r.ugyldige, ",  ", 4)
+        k.SetFont("c" NettFarge("feil"))
+    } else
+        k.SetFont("c" NettFarge("ok"))
+    k.Text := s
+}
+
+NettFormater(*) {
+    r := NettParse(NETT["Macs"].Value)
+    linjer := []
+    for mac in r.gyldige
+        linjer.Push(NettMac(mac, NETT["Skille"]))
+    for feil in r.ugyldige
+        linjer.Push(feil)
+    NETT["Macs"].Value := NettJoin(linjer, ",`r`n")
+    NettOppdaterStatus()
+}
+
+NettTom(*) {
+    NETT["Macs"].Value := ""
+    NettOppdaterStatus()
+    NETT["Macs"].Focus()
+}
+
+NettGenerer(*) {
+    tittel := "MAC Import – " APP_NAVN
+    HOVED.Opt("+OwnDialogs")
+    r := NettParse(NETT["Macs"].Value)
+    if (r.gyldige.Length = 0) {
+        MsgBox("Fant ingen gyldige MAC-adresser.", tittel, "Icon!")
+        NETT["Macs"].Focus()
+        return
+    }
+    if r.ugyldige.Length {
+        melding := r.ugyldige.Length " oppføring(er) er ikke gyldige MAC-adresser og blir IKKE tatt med:`n`n"
+            . NettJoin(r.ugyldige, "`n", 15) . "`n`nVil du fortsette uten disse?"
+        if (MsgBox(melding, tittel, "YesNo Icon! Default2") != "Yes")
+            return
+    }
+    gruppe := Trim(NETT["Gruppe"].Value)
+    if (gruppe = "") {
+        MsgBox("Fyll inn Identity Group (VLAN / EPG).", tittel, "Icon!")
+        NETT["Gruppe"].Focus()
+        return
+    }
+    if RegExMatch(gruppe, '[,"\r\n]') {
+        MsgBox("Identity Group kan ikke inneholde komma, anførselstegn eller linjeskift.", tittel, "Icon!")
+        NETT["Gruppe"].Focus()
+        return
+    }
+    if (gruppe != NETT["Gruppe"].Value)
+        NETT["Gruppe"].Value := gruppe
+
+    bekreft := "Identity Group (VLAN / EPG):`n`n          " gruppe
+        . "`n`nAntall MAC-adresser: " r.gyldige.Length
+        . "`n`nNavnet må være NØYAKTIG likt Identity Group-navnet i ISE – samme store/små bokstaver, mellomrom og tegn."
+        . "`n`nDu er selv ansvarlig for at VLAN / EPG er korrekt før filen importeres."
+        . "`n`nStemmer dette, og vil du lage filen?"
+    if (MsgBox(bekreft, "Bekreft VLAN / EPG – " APP_NAVN, "YesNo Icon! Default2") != "Yes")
+        return
+
+    trygg := RegExReplace(gruppe, '[\\/:*?"<>|\s]+', "_")
+    forslag := EnvGet("USERPROFILE") "\Downloads\MAC_Import_" trygg "_" FormatTime(, "yyyyMMdd_HHmm") ".csv"
+    fil := FileSelect("S16", forslag, "Lagre importfil – " APP_NAVN, "CSV-fil (*.csv)")
+    if (fil = "")
+        return
+    if !RegExMatch(fil, "i)\.csv$")
+        fil .= ".csv"
+
+    kolonner := StrSplit(NettHeader(), ",")
+    kolMac := 0, kolGruppe := 0
+    for i, navn in kolonner {
+        if (navn = "MACAddress")
+            kolMac := i
+        else if (navn = "IdentityGroup")
+            kolGruppe := i
+    }
+    ut := NettHeader() "`n"
+    for mac in r.gyldige {
+        loop kolonner.Length {
+            if (A_Index > 1)
+                ut .= ","
+            if (A_Index = kolMac)
+                ut .= NettMac(mac, NETT["Skille"])
+            else if (A_Index = kolGruppe)
+                ut .= gruppe
+        }
+        ut .= "`n"
+    }
+    try {
+        f := FileOpen(fil, "w", "UTF-8-RAW")
+        f.Write(ut)
+        f.Close()
+    } catch as feil {
+        Logg("FEIL: MAC Import kunne ikke lagre " fil ": " feil.Message)
+        MsgBox("Kunne ikke lagre filen:`n`n" feil.Message, tittel, "Iconx")
+        return
+    }
+    Logg("MAC Import: " r.gyldige.Length " MAC-adresser i Identity Group «" gruppe "» → " fil)
+    ferdig := "Filen er lagret:`n" fil
+        . "`n`n" r.gyldige.Length " MAC-adresser i Identity Group «" gruppe "»."
+        . "`n`nÅpne mappen?"
+    if (MsgBox(ferdig, tittel, "YesNo Iconi") = "Yes")
+        Run('explorer.exe /select,"' fil '"')
+}
+
+VekslNettverk(*) {
+    if NETT_PAA {
+        SettInnst("App", "Nettverk", "0")
+        Logg("Nettverk-siden slått av")
+        Reload()
+        return
+    }
+    SettInnst("App", "Nettverk", "1")
+    SettInnst("App", "NettverkApne", "1")
+    Logg("Nettverksgeni aktivert – Nettverk-siden slått på")
+    try NettFyrverkeri()
+    Reload()
+}
+
+; Lite fyrverkeri over hovedvinduet, deretter åpnes Nettverk-siden.
+NettFyrverkeri() {
+    try {
+        WinGetClientPos(&wx, &wy, &ww, &wh, "ahk_id " HOVED.Hwnd)
+    } catch {
+        return
+    }
+    fw := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +Owner" HOVED.Hwnd)
+    fw.BackColor := "010101"
+    fw.MarginX := 0, fw.MarginY := 0
+    farger := [TEMA.aksent, "FFD447", "FF6B6B", "7CF0B4", "FFFFFF", "C792EA", "6EC6FF"]
+    oppsett := [[0.20, 0.30, 0], [0.80, 0.26, 14], [0.50, 0.12, 28]]
+    raketter := []
+    for o in oppsett {
+        mx := Round(ww * o[1]), my := Round(wh * o[2])
+        Skrift(fw, "s12 bold cFFFFFF")
+        rk := fw.AddText("x" mx " y" wh " w16 h18 Center Hidden", "●")
+        gnister := []
+        loop 18 {
+            vinkel := (A_Index / 18) * 6.2832 + Random(-0.15, 0.15)
+            fart := Random(3.5, 6.5)
+            Skrift(fw, "s11 bold c" farger[Random(1, farger.Length)])
+            k := fw.AddText("x" mx " y" my " w16 h18 Center Hidden", "●")
+            gnister.Push({k:k, x:mx+0.0, y:my+0.0, vx:Cos(vinkel)*fart, vy:Sin(vinkel)*fart, smaa:false})
+        }
+        raketter.Push({rk:rk, mx:mx, my:my, start:o[3], gnister:gnister})
+    }
+    ikonSkrift := FileExist(A_WinDir "\Fonts\SegoeIcons.ttf") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets"
+    ikonFarge := "4DA3FF"
+    fw.SetFont("s20 norm c" ikonFarge, ikonSkrift)
+    ikon := fw.AddText("x0 y" (wh//2-170) " w" ww " h170 Center +0x200 Hidden", Chr(0xE968))
+    storrelser := [20,34,48,62,76,90,104,98,94]
+    Skrift(fw, "s22 bold cFFFFFF")
+    tekst := fw.AddText("x0 y" (wh//2+8) " w" ww " h40 Center Hidden", "Nettverksmodus aktivert!")
+    fw.Show("x" wx " y" wy " w" ww " h" wh " NoActivate")
+    WinSetTransColor("010101", fw)
+    stig := 16, levetid := 46
+    loop 110 {
+        f := A_Index
+        for r in raketter {
+            t := f - r.start
+            if (t >= 1 && t <= stig) {
+                r.rk.Visible := true
+                r.rk.Move(r.mx, Round(wh - (wh-r.my)*(t/stig)))
+            } else if (t = stig+1) {
+                r.rk.Visible := false
+                for g in r.gnister
+                    g.k.Visible := true
+            } else if (t > stig+1 && t <= stig+levetid) {
+                for g in r.gnister {
+                    g.x += g.vx, g.y += g.vy
+                    g.vy += 0.22, g.vx *= 0.97
+                    g.k.Move(Round(g.x), Round(g.y))
+                    if (!g.smaa && t > stig+levetid-14) {
+                        g.smaa := true
+                        g.k.Text := "·"
+                    }
+                }
+            } else if (t = stig+levetid+1) {
+                for g in r.gnister
+                    g.k.Visible := false
+            }
+        }
+        if (f >= 4 && f < 4+storrelser.Length) {
+            ikon.SetFont("s" storrelser[f-3] " c" ikonFarge, ikonSkrift)
+            ikon.Visible := true
+        }
+        if (f = 16)
+            tekst.Visible := true
+        Sleep 16
+    }
+    fw.Destroy()
+}
 
 ; =====================================================================
 ;  VERKTØY: TEKSTFLYT
@@ -1431,7 +1821,8 @@ class VT_SMKontakt extends VT_Base {
         "AndreLinjeRegex", "i)(2\.?\s*linje|andrelinje|2nd\s*line)",
         "ManuellTast",     "^!k"
     )
-    static Lart := ["TrioKontroll", "SMVindu", "KontaktX", "KontaktY", "KnappX", "KnappY"]
+    static Lart := ["TrioKontroll", "SMVindu", "KontaktX", "KontaktY", "KnappX", "KnappY"
+        , "KontaktType", "KontaktNavn", "KontaktId", "KontaktKlasse"]
     static Moduser := [["auto", "Automatisk"], ["web", "Trio Web"], ["attendant", "Trio Attendant"]]
     static MetodeNavn := Map("kontroll", "feltet du klikket på", "html", "HTML-panelet", "vindu", "vindusteksten", "uia", "UI Automation")
 
@@ -1536,7 +1927,9 @@ class VT_SMKontakt extends VT_Base {
     ErLart() => this.Cfg["SMVindu"] != "" && InStr(this.Cfg["SMVindu"], "Service Manager") && this.Cfg["KontaktX"] != ""
 
     OppdaterTekster() {
-        sm := this.Cfg["KontaktX"] != "" ? VennligNavn(this.Cfg["SMVindu"]) (this.Cfg["KnappX"] != "" ? "  ·  knapp lært" : "  ·  ingen knapp") : "ikke lært ennå – trykk «Lær oppsett»"
+        sm := this.Cfg["KontaktX"] != "" ? VennligNavn(this.Cfg["SMVindu"])
+            . (this.Cfg["KontaktType"] != "" ? "  ·  felt gjenkjent" : "  ·  klikkposisjon") "  ·  Tab + Enter"
+            : "ikke lært ennå – trykk «Lær oppsett»"
         try this.OppsettK.Text := "Service Manager:  " sm
             . "`nTrio Web:  " VennligNavn(this.Cfg["WebVindu"]) "     ·     Trio Attendant:  hurtigkopiering"
     }
@@ -2013,19 +2406,16 @@ class VT_SMKontakt extends VT_Base {
     ; Aldri mens Trio er aktivt. Ellers avbrytes alt, uten at noe er klikket eller skrevet.
     Fyll(bruker, kilde := "") {
         bruker := Trim(bruker)
-        if (bruker = "")                               ; aldri fyll inn en tom verdi
-            return false
-        if (this.Cfg["KontaktX"] = "")
+        if (bruker = "" || this.Cfg["KontaktX"] = "")
             return false
         Critical
-        VentTasterSluppet(2000)                        ; tastene fra hurtigkopieringen må være sluppet
+        VentTasterSluppet(2000)
         trioHwnd := (kilde = "web") ? FinnVindu(this.Cfg["WebVindu"], false) : 0
         CoordMode "Mouse", "Screen"
         MouseGetPos &mx, &my
-
         smHwnd := 0
-        loop 3 {                                       ; Trio kan ta fokus – prøv opptil 3 ganger
-            h := AktiverFane(this.Cfg["SMVindu"], false)  ; SM Kontakt skal aldri bla gjennom urelaterte Edge-faner
+        loop 3 {
+            h := AktiverFane(this.Cfg["SMVindu"], false)
             if h {
                 Sleep 300
                 if this.ErTrygt(h) {
@@ -2033,20 +2423,26 @@ class VT_SMKontakt extends VT_Base {
                     break
                 }
             }
-            Logg("SM Kontakt: fyll – Service Manager ble ikke aktiv (forsøk " A_Index "), aktivt vindu: " AktivtVinduNavn())
+            Logg("SM Kontakt: Service Manager ikke aktiv (forsøk " A_Index "): " AktivtVinduNavn())
             Sleep 400
         }
         if !smHwnd
-            return this.FyllAvbrutt(bruker, "fant ikke Service Manager, eller et annet vindu tok fokus")
-        Logg("SM Kontakt: fyll – Service Manager er aktiv")
-        if (trioHwnd && smHwnd = trioHwnd) {
-            Logg("SM Kontakt: Trio Agent og Service Manager er i samme Edge-vindu – flytt Trio Agent til et eget vindu, ellers kan ikke Trio leses i bakgrunnen")
-            Tip("Tips: Dra Trio Agent-fanen ut i et eget Edge-vindu,`nså kan programmet lese den i bakgrunnen.", 5000)
+            return this.FyllAvbrutt(bruker, "fant ikke bekreftet Service Manager")
+        if (trioHwnd && smHwnd = trioHwnd)
+            Tip("Tips: Legg Trio Agent i eget Edge-vindu for lesing i bakgrunnen.", 5000)
+        if (this.Cfg["KontaktType"] != "") {
+            if !this.ErTrygt(smHwnd)
+                return this.FyllAvbrutt(bruker, "før Kontakt-feltet ble søkt opp")
+            felt := UiaFinnFelt(smHwnd, this.Signatur("Kontakt"), &grunn)
+            p := IsObject(felt) ? UiaSenter(felt) : ""
+            if !IsObject(p)
+                return this.FeltIkkeFunnet(bruker, "Kontakt-feltet", IsObject(felt) ? "ikke synlig" : grunn)
+            if !this.TryggKlikkSkjerm(smHwnd, p.x, p.y)
+                return this.FyllAvbrutt(bruker, "før UIA-klikk i Kontakt-feltet")
+        } else {
+            if !this.TryggKlikk(smHwnd, this.Cfg["KontaktX"], this.Cfg["KontaktY"])
+                return this.FyllAvbrutt(bruker, "før klikk i Kontakt-feltet")
         }
-
-        if !this.TryggKlikk(smHwnd, this.Cfg["KontaktX"], this.Cfg["KontaktY"])
-            return this.FyllAvbrutt(bruker, "før klikk i Kontakt-feltet")
-        Logg("SM Kontakt: fyll – klikket i Kontakt-feltet")
         Sleep 150
         if !this.ErTrygt(smHwnd)
             return this.FyllAvbrutt(bruker, "før Ctrl+A")
@@ -2055,16 +2451,18 @@ class VT_SMKontakt extends VT_Base {
         if !this.ErTrygt(smHwnd)
             return this.FyllAvbrutt(bruker, "før brukernavnet ble skrevet")
         SendText bruker
-        Logg("SM Kontakt: fyll – skrev " bruker)
-        if (this.Cfg["KnappX"] != "") {
-            Sleep 200
-            if !this.TryggKlikk(smHwnd, this.Cfg["KnappX"], this.Cfg["KnappY"])
-                return this.FyllAvbrutt(bruker, "før klikk på knappen ved siden av Kontakt")
-            Logg("SM Kontakt: fyll – klikket knappen ved siden av Kontakt")
-        }
+        Logg("SM Kontakt: skrev " bruker)
+        Sleep 150
+        if !this.ErTrygt(smHwnd)
+            return this.FyllAvbrutt(bruker, "før Tab")
+        Send "{Tab}"
+        Sleep 150
+        if !this.ErTrygt(smHwnd)
+            return this.FyllAvbrutt(bruker, "før Enter")
+        Send "{Enter}"
         CoordMode "Mouse", "Screen"
         MouseMove mx, my, 0
-        Logg("SM Kontakt: fylte inn " bruker)
+        Logg("SM Kontakt: fylte inn " bruker " (Tab + Enter)")
         return true
     }
 
@@ -2084,24 +2482,63 @@ class VT_SMKontakt extends VT_Base {
         return true
     }
 
-    ; Klikker på et punkt i Service Manager – bare hvis det er Service Manager som ligger under punktet
+    ; Klikk kun i bekreftet Service Manager-vindu og eier av punktet.
     TryggKlikk(smHwnd, kx, ky) {
         if !this.ErTrygt(smHwnd)
             return false
         WinGetClientPos &wx, &wy, , , "ahk_id " smHwnd
-        sx := wx + kx, sy := wy + ky
+        return this.TryggKlikkSkjerm(smHwnd, wx + kx, wy + ky)
+    }
+
+    TryggKlikkSkjerm(smHwnd, sx, sy) {
+        if !this.ErTrygt(smHwnd)
+            return false
         under := DllCall("WindowFromPoint", "Int64", (sy << 32) | (sx & 0xFFFFFFFF), "Ptr")
-        rot := under ? DllCall("GetAncestor", "Ptr", under, "UInt", 2, "Ptr") : 0     ; GA_ROOT
+        rot := under ? DllCall("GetAncestor", "Ptr", under, "UInt", 2, "Ptr") : 0
         if (rot != smHwnd) {
-            navn := ""
-            try navn := WinGetTitle("ahk_id " rot) " (" WinGetProcessName("ahk_id " rot) ")"
-            Logg("SM Kontakt: fyll – et annet vindu ligger over Service Manager der det skal klikkes: " navn)
+            Logg("SM Kontakt: et annet vindu ligger over målfeltet")
             return false
         }
         CoordMode "Mouse", "Screen"
         Click sx, sy
         return true
     }
+
+    FeltIkkeFunnet(bruker, hva, grunn) {
+        Logg("SM Kontakt: AVBRUTT – fant ikke " hva " (" grunn "). Ingen videre innskriving.")
+        Varsel("Avbrutt", bruker, "Fant ikke " hva " – ingenting skrevet", false)
+        return false
+    }
+
+    Signatur(prefiks) => {type:this.Cfg[prefiks "Type"], navn:this.Cfg[prefiks "Navn"]
+        , id:this.Cfg[prefiks "Id"], klasse:this.Cfg[prefiks "Klasse"]}
+
+    LaerFelt(prefiks, sx, sy, typer) {
+        sig := ""
+        try sig := UiaSignatur(UiaFeltFraPunkt(sx, sy, typer))
+        ok := UiaKanGjenkjennes(sig)
+        if ok {
+            gyldigType := false
+            for t in typer
+                if (sig.type = t)
+                    gyldigType := true
+            ok := gyldigType
+        }
+        this.Ny[prefiks "Type"] := ok ? sig.type : ""
+        this.Ny[prefiks "Navn"] := ok ? sig.navn : ""
+        this.Ny[prefiks "Id"] := ok ? sig.id : ""
+        this.Ny[prefiks "Klasse"] := ok ? sig.klasse : ""
+        return ok
+    }
+
+    BeskrivFelt(prefiks) {
+        if (this.Ny.Has(prefiks "Type") && this.Ny[prefiks "Type"] != "")
+            return UiaBeskriv({type:this.Ny[prefiks "Type"], navn:this.Ny[prefiks "Navn"], id:this.Ny[prefiks "Id"]})
+        if (this.Ny.Has(prefiks "X") && this.Ny[prefiks "X"] != "")
+            return "klikkposisjon (ingen UIA-signatur)"
+        return "ingen"
+    }
+
 
     FyllAvbrutt(bruker, hvor) {
         CoordMode "Mouse", "Screen"
@@ -2156,7 +2593,7 @@ class VT_SMKontakt extends VT_Base {
         if (this.LaerSteg < 1 || this.LaerSteg > 4)
             return
         modus := this.Cfg["TrioKilde"]
-        antall := 3
+        antall := 2
         nr := this.LaerSteg >= 3 ? this.LaerSteg - 1 : this.LaerSteg
         steg1 := modus = "web" ? "Klikk på KUNDENUMMERET i Trio Web."
             : modus = "attendant" ? "Trykk HURTIGKOPIERING i Trio (IDM username)."
@@ -2165,7 +2602,7 @@ class VT_SMKontakt extends VT_Base {
             steg1,
             "",
             "Klikk i KONTAKT-feltet i Service Manager.",
-            "Klikk på KNAPPEN ved siden av Kontakt-feltet.`n(Esc = ingen knapp)"
+            "Kontakt-feltet læres i forrige steg."
         ]
         ToolTip "Lær oppsett – steg " nr (antall != "" ? " av " antall : "") "`n" tekster[this.LaerSteg]
             . (this.LaerInfo != "" ? "`n`n" this.LaerInfo : "") ((this.LaerSteg = 1 || this.LaerSteg = 3) ? "`n(Esc = avbryt)" : "")
@@ -2210,42 +2647,34 @@ class VT_SMKontakt extends VT_Base {
         CoordMode "Mouse", "Screen"
         MouseGetPos &sx, &sy, &win
         if (!win || WinGetPID("ahk_id " win) = ProcessExist())
-            return                                    ; klikk i dette programmet teller ikke
+            return
         WinGetClientPos &cx, &cy, , , "ahk_id " win
         ox := sx - cx, oy := sy - cy
-
         if (this.LaerSteg = 1) {
             if (!ErNettleser(win) || this.Cfg["TrioKilde"] = "attendant")
-                return                                ; Trio Attendant læres med hurtigkopiering (se LaerKopi)
+                return
             this.Ny["WebVindu"] := VindusId(win)
             this.LaerKilde := "web"
             this.LaerInfo := "Trio Web: " WinGetTitle("ahk_id " win)
-            this.LaerSteg := 3                        ; ingen legg på-knapp for Trio Web
+            this.LaerSteg := 3
         } else if (this.LaerSteg = 3) {
-            ; Bruk en stabil Service Manager-identifikator, ikke Edge sin tilfeldige fanetittel.
-            ; Stopper læring hvis det er YouTube eller en annen side som er aktiv.
             if ErNettleser(win) {
                 if !NettleserFaneBekreftet(win, "Service Manager") {
-                    Logg("SM Kontakt: læring – klikket i Edge, men kunne ikke bekrefte Service Manager-fanen")
-                    Tip("Fant ikke bekreftet Service Manager-fane. Åpne SM 02 og klikk i Kontakt-feltet.", 4200)
+                    Tip("Åpne SM 02 og klikk i Kontakt-feltet.", 4200)
                     return
                 }
                 smId := "Service Manager ahk_exe " WinGetProcessName("ahk_id " win)
             } else {
                 smId := VindusId(win)
                 if !InStr(smId, "Service Manager") {
-                    Tip("Dette ser ikke ut som Service Manager. Klikk i riktig Kontakt-felt.", 4000)
+                    Tip("Dette er ikke Service Manager – klikk i riktig Kontakt-felt.", 4000)
                     return
                 }
             }
             this.Ny["SMVindu"] := smId, this.Ny["KontaktX"] := ox, this.Ny["KontaktY"] := oy
+            this.Ny["KnappX"] := "", this.Ny["KnappY"] := ""
+            this.LaerFelt("Kontakt", sx, sy, UiaFeltTyper())
             this.SmHwnd := win
-            this.LaerInfo .= "`nService Manager: " smId
-            this.LaerSteg := 4
-        } else if (this.LaerSteg = 4) {
-            if (win != this.SmHwnd)
-                return
-            this.Ny["KnappX"] := ox, this.Ny["KnappY"] := oy
             this.LaerTestVindu()
         }
     }
@@ -2290,7 +2719,7 @@ class VT_SMKontakt extends VT_Base {
         tv.AddText("x20 y52 w520 Background" TEMA.bg
             , trioLinje
             . "`nService Manager:   " VennligNavn(this.Ny["SMVindu"])
-            . "`nKnapp ved siden av Kontakt:   " (this.Ny["KnappX"] != "" ? "lært" : "ingen"))
+            . "`nKontakt-felt:   " this.BeskrivFelt("Kontakt") "  ·  Tab + Enter")
         Skrift(tv, "s9 bold c" TEMA.dempet)
         tv.AddText("x20 y132 w520 Background" TEMA.bg, att ? "BRUKERNAVN FRA TRIO" : "LESER " StrUpper(this.VerdiNavn(this.LaerKilde)) " FRA TRIO NÅ")
         Skrift(tv, "s18 bold c" (lest.bruker != "" ? TEMA.paa : TEMA.dempet))
@@ -3075,6 +3504,202 @@ AktiverChromiumTilgjengelighet(hwnd) {
     try SendMessage(0x3D, 0, 1, "Chrome_RenderWidgetHostHWND1", "ahk_id " hwnd, , , , 500)      ; WM_GETOBJECT
 }
 
+; ---------------- Felt i nettsider – signaturer framfor faste koordinater ----------------
+; signatur: ControlType, Name, AutomationId og ClassName fra UI Automation.
+
+UiaStrengBetingelse(egenskap, tekst) {
+    variant := Buffer(24, 0)
+    NumPut("UShort", 8, variant, 0)
+    NumPut("Ptr", DllCall("oleaut32\SysAllocString", "WStr", tekst, "Ptr"), variant, 8)
+    p := 0
+    try {
+        if (A_PtrSize = 8)
+            ComCall(23, Uia().uia, "Int", egenskap, "Ptr", variant, "Ptr*", &p)
+        else
+            ComCall(23, Uia().uia, "Int", egenskap, "Int64", NumGet(variant, 0, "Int64"), "Int64", NumGet(variant, 8, "Int64"), "Ptr*", &p)
+    } finally {
+        DllCall("oleaut32\VariantClear", "Ptr", variant)
+    }
+    return p ? ComValue(13, p) : ""
+}
+
+UiaOg(a, b) {
+    p := 0
+    ComCall(25, Uia().uia, "Ptr", a, "Ptr", b, "Ptr*", &p)
+    return p ? ComValue(13, p) : ""
+}
+
+UiaFinnAlleMed(element, betingelse) {
+    resultat := []
+    p := 0
+    ComCall(6, element, "Int", 4, "Ptr", betingelse, "Ptr*", &p)
+    if !p
+        return resultat
+    liste := ComValue(13, p)
+    antall := 0
+    ComCall(3, liste, "Int*", &antall)
+    loop antall {
+        e := 0
+        ComCall(4, liste, "Int", A_Index-1, "Ptr*", &e)
+        if e
+            resultat.Push(ComValue(13, e))
+    }
+    return resultat
+}
+
+UiaUnike(doker, betingelse, filter := "") {
+    treff := []
+    for dok in doker {
+        for e in UiaFinnAlleMed(dok, betingelse) {
+            if (IsObject(filter) && !filter(e))
+                continue
+            if (doker.Length = 1) {
+                treff.Push(e)
+                continue
+            }
+            kjent := false
+            for t in treff
+                if UiaSamme(t, e) {
+                    kjent := true
+                    break
+                }
+            if !kjent
+                treff.Push(e)
+        }
+    }
+    return treff
+}
+
+UiaNavnLik(e, navn) {
+    try return Trim(UiaStreng(e, 30005)) = Trim(navn)
+    return false
+}
+
+UiaSamme(a, b) {
+    lik := 0
+    try ComCall(3, Uia().uia, "Ptr", a, "Ptr", b, "Int*", &lik)
+    return lik != 0
+}
+
+UiaForelder(element) {
+    static vandrer := ""
+    if !IsObject(vandrer) {
+        p := 0
+        ComCall(14, Uia().uia, "Ptr*", &p)
+        vandrer := ComValue(13, p)
+    }
+    p := 0
+    try ComCall(3, vandrer, "Ptr", element, "Ptr*", &p)
+    return p ? ComValue(13, p) : ""
+}
+
+UiaSignatur(el) {
+    sig := {type:0, navn:"", id:"", klasse:""}
+    if !IsObject(el)
+        return sig
+    try sig.type := UiaTall(el, 30003)
+    try sig.navn := UiaStreng(el, 30005)
+    try sig.id := UiaStreng(el, 30011)
+    try sig.klasse := UiaStreng(el, 30012)
+    return sig
+}
+
+UiaFeltFraPunkt(sx, sy, typer) {
+    el := UiaFraPunkt(sx, sy)
+    if !IsObject(el)
+        return ""
+    kandidat := el
+    loop 4 {
+        t := 0
+        try t := UiaTall(kandidat, 30003)
+        for ok in typer
+            if (t = ok)
+                return kandidat
+        kandidat := UiaForelder(kandidat)
+        if !IsObject(kandidat)
+            break
+    }
+    return el
+}
+
+UiaFeltTyper() => [50004,50003]  ; Edit, ComboBox
+UiaKanGjenkjennes(sig) => IsObject(sig) && sig.type && (Trim(sig.navn) != "" || sig.id != "")
+
+UiaBeskriv(sig) {
+    typer := Map(50004,"tekstfelt",50003,"nedtrekksliste",50000,"knapp",50005,"lenke",50011,"menyvalg")
+    t := typer.Has(Integer(sig.type)) ? typer[Integer(sig.type)] : "element"
+    if (sig.navn != "")
+        return "«" KortVerdi(sig.navn, 40) "» (" t ")"
+    return "ID «" KortVerdi(sig.id, 30) "» (" t ") – uten navn, ID-en kan endre seg"
+}
+
+; Returnerer unikt, synlig felt fra AKTIV Service Manager-side.
+UiaFinnFelt(hwnd, sig, &grunn := "") {
+    grunn := ""
+    if !UiaKanGjenkjennes(sig) {
+        grunn := "feltet er ikke lært"
+        return ""
+    }
+    try {
+        AktiverChromiumTilgjengelighet(hwnd)
+        rot := UiaFraVindu(hwnd)
+        if !IsObject(rot) {
+            grunn := "fikk ikke lest siden"
+            return ""
+        }
+        typeBet := UiaTypeBetingelse(Integer(sig.type))
+        medNavn := Trim(sig.navn) != ""
+        betingelse := UiaOg(typeBet, medNavn ? UiaStrengBetingelse(30005, sig.navn) : UiaStrengBetingelse(30011, sig.id))
+        doker := UiaFinnAlle(rot, 50030)
+        treff := UiaUnike(doker, betingelse)
+        if (!treff.Length && medNavn)
+            treff := UiaUnike(doker, typeBet, (e) => UiaNavnLik(e, sig.navn))
+    } catch as feil {
+        grunn := "feil ved lesing av siden: " feil.Message
+        return ""
+    }
+    synlige := []
+    for e in treff {
+        skjult := true
+        try skjult := UiaBool(e, 30022) ; IsOffscreen
+        if !skjult
+            synlige.Push(e)
+    }
+    if !synlige.Length {
+        grunn := "fant ikke feltet i siden"
+        return ""
+    }
+    if (synlige.Length = 1)
+        return synlige[1]
+    beste := [], topp := -1
+    for e in synlige {
+        poeng := 0
+        try poeng += (sig.id != "" && UiaStreng(e, 30011) = sig.id) ? 2 : 0
+        try poeng += (sig.klasse != "" && UiaStreng(e, 30012) = sig.klasse) ? 1 : 0
+        if (poeng > topp) {
+            topp := poeng
+            beste := [e]
+        } else if (poeng = topp)
+            beste.Push(e)
+    }
+    if (beste.Length = 1)
+        return beste[1]
+    grunn := "fant " synlige.Length " like felt og vet ikke hvilket"
+    return ""
+}
+
+; Midtpunkt fra UIA-bounding rectangle i skjermkoordinater.
+UiaSenter(el) {
+    r := Buffer(16, 0)
+    try ComCall(43, el, "Ptr", r)
+    catch
+        return ""
+    v := NumGet(r,0,"Int"), t := NumGet(r,4,"Int"), h := NumGet(r,8,"Int"), b := NumGet(r,12,"Int")
+    if (h <= v || b <= t)
+        return ""
+    return {x:(v+h)//2, y:(t+b)//2}
+}
+
 LagGuid(tekst) {
     buf := Buffer(16)
     DllCall("ole32\CLSIDFromString", "WStr", tekst, "Ptr", buf)
@@ -3651,29 +4276,29 @@ class VT_TrioSnarveier extends VT_Base {
         if (!win || WinGetPID("ahk_id " win) = ProcessExist())
             return
         if (!ErNettleser(win) || !NettleserFaneBekreftet(win, "Service Manager")) {
-            ToolTip "Dette var ikke Service Manager." Chr(10)
-                . "Åpne Search i Service Manager og klikk i Search-feltet." Chr(10) "(Esc = avbryt)"
+            ToolTip("Dette var ikke Service Manager. Åpne Search i Service Manager. (Esc = avbryt)")
             return
         }
-        t := 0, n := ""
-        try {
-            el := UiaFraPunkt(sx, sy)
-            if IsObject(el) {
-                t := UiaTall(el, 30003)
-                n := UiaStreng(el, 30005)
-            }
-        }
+        el := ""
+        try el := UiaFraPunkt(sx, sy)
+        t := 0, n := "", id := "", klasse := ""
+        try t := UiaTall(el, 30003)
+        try n := UiaStreng(el, 30005)
+        try id := UiaStreng(el, 30011)
+        try klasse := UiaStreng(el, 30012)
         if (t != 50004) {
-            ToolTip "Dette var ikke et tekstfelt." Chr(10)
-                . "Klikk i Search-feltet til venstre for Smart Search." Chr(10) "(Esc = avbryt)"
+            ToolTip("Dette var ikke et tekstfelt. Klikk i Search-feltet. (Esc = avbryt)")
             return
         }
         if InStr(n, "Smart") {
-            ToolTip "Du klikket i Smart Search." Chr(10)
-                . "Klikk i Search-feltet til venstre for ikonet." Chr(10) "(Esc = avbryt)"
+            ToolTip("Du valgte Smart Search. Klikk i Search-feltet. (Esc = avbryt)")
             return
         }
+        somFelt := Trim(n) != "" || id != ""
         WinGetClientPos &cx, &cy, &cw, , "ahk_id " win
+        this.Lagre("IMId", id)
+        this.Lagre("IMKlasse", klasse)
+        this.Lagre("IMModus", somFelt ? "felt" : "")
         this.Lagre("IMVindu", "Service Manager ahk_exe " WinGetProcessName("ahk_id " win))
         this.Lagre("IMX", cw - (sx - cx))
         this.Lagre("IMY", sy - cy)
@@ -3682,8 +4307,8 @@ class VT_TrioSnarveier extends VT_Base {
         this.ImLaerStopp()
         try this.ImSjekkK.Value := 1
         this.ImVisStatus()
-        this.Melding("Search-feltet er lært. IM-en åpnes etter kopiering.")
-        Logg("Trio Snarveier: Search-feltet i Service Manager lært (navn " n ")")
+        this.Melding(somFelt ? "Search-feltet er lært med UIA-signatur ✓" : "Search-feltet er lært som klikkposisjon")
+        Logg("Trio Snarveier: Search lært med UIA " (somFelt ? "signatur" : "koordinat"))
     }
 
     ; Lagre avstand fra høyre klientkant for bedre toleranse ved vindusendring.
@@ -3692,20 +4317,24 @@ class VT_TrioSnarveier extends VT_Base {
         return {x: cx + cw - this.Hent("IMX", 0), y: cy + this.Hent("IMY", 0)}
     }
 
-    ; Bare les målpunktet. Klikk aldri hvis en annen fane eller kontroll er der.
+    ; Search må finnes i rett, aktiv Service Manager-fane.
+    ImSignatur() => {type:50004, navn:this.Hent("IMNavn",""), id:this.Hent("IMId",""), klasse:this.Hent("IMKlasse","")}
+
     ImSearchApent(h) {
         if (!h || !WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
             return false
+        if (this.Hent("IMModus","") = "felt")
+            return IsObject(UiaFinnFelt(h, this.ImSignatur()))
         p := this.ImPunkt(h)
-        under := DllCall("WindowFromPoint", "Int64", (p.y << 32) | (p.x & 0xFFFFFFFF), "Ptr")
-        if (!under || DllCall("GetAncestor", "Ptr", under, "UInt", 2, "Ptr") != h)
+        under := DllCall("WindowFromPoint","Int64",(p.y << 32) | (p.x & 0xFFFFFFFF),"Ptr")
+        if (!under || DllCall("GetAncestor","Ptr",under,"UInt",2,"Ptr") != h)
             return false
         try {
-            el := UiaFraPunkt(p.x, p.y)
+            el := UiaFraPunkt(p.x,p.y)
             if !IsObject(el)
                 return false
-            navn := this.Hent("IMNavn", "")
-            return UiaTall(el, 30003) = 50004 && (navn = "" || UiaStreng(el, 30005) = navn)
+            navn := this.Hent("IMNavn","")
+            return UiaTall(el,30003) = 50004 && (navn = "" || UiaStreng(el,30005) = navn)
         }
         return false
     }
@@ -3771,6 +4400,8 @@ class VT_TrioSnarveier extends VT_Base {
 
     ; Klikker i verifisert Search, skriver IM og Enter. Bevarer museposisjon.
     ImSkriv(h, im) {
+        if (this.Hent("IMModus","") = "felt")
+            return this.ImSkrivFelt(h, im)
         if !this.ImSearchApent(h) {
             this.Melding("Search-feltet er ikke tilgjengelig – " im " ble ikke skrevet", false)
             return false
@@ -3796,6 +4427,47 @@ class VT_TrioSnarveier extends VT_Base {
             Send "{Enter}"
             this.Melding(im " ble skrevet i Search og Enter trykket")
             Logg("Trio Snarveier: søkte etter " im " i Service Manager")
+            Varsel("Service Manager", im, "IM-søk startet i Service Manager")
+            return true
+        } finally {
+            MouseMove mx, my, 0
+        }
+    }
+
+    ; For UIA-opplært Search: finn det nåværende synlige feltet, ikke gamle koordinater.
+    ImSkrivFelt(h, im) {
+        if (!h || !WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
+            return false
+        felt := UiaFinnFelt(h, this.ImSignatur(), &grunn)
+        p := IsObject(felt) ? UiaSenter(felt) : ""
+        if !IsObject(p) {
+            this.Melding("Fant ikke Search-feltet (" grunn ") – " im " ble ikke søkt", false)
+            Logg("Trio Snarveier: Search UIA ikke funnet: " grunn)
+            return false
+        }
+        under := DllCall("WindowFromPoint","Int64",(p.y << 32) | (p.x & 0xFFFFFFFF),"Ptr")
+        if (!under || DllCall("GetAncestor","Ptr",under,"UInt",2,"Ptr") != h) {
+            this.Melding("Et annet vindu ligger over Search – " im " ble ikke søkt", false)
+            return false
+        }
+        CoordMode "Mouse", "Screen"
+        MouseGetPos &mx, &my
+        try {
+            Click p.x, p.y
+            Sleep 80
+            if (!WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
+                return false
+            ; Samme felt skal fortsatt finnes etter klikk.
+            if !IsObject(UiaFinnFelt(h, this.ImSignatur()))
+                return false
+            Send "^a"
+            SendText im
+            Sleep 30
+            if (!WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
+                return false
+            Send "{Enter}"
+            this.Melding(im " ble skrevet i Search og Enter trykket ✓")
+            Logg("Trio Snarveier: IM-søk startet med UIA Search – " im)
             Varsel("Service Manager", im, "IM-søk startet i Service Manager")
             return true
         } finally {
