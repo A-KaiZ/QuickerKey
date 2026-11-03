@@ -106,3 +106,31 @@ Enghouse Trio har egne statistikk-/rapporteringsfunksjoner. Produktdokumentasjon
 - [ ] Start en manuell samtale eller skriftlig tid og klikk 🗑: sletting blir avvist til aktiv økt er avsluttet/forkastet.
 - [ ] Test 🗑 uten eksisterende CSV: vis kort status, ingen filendring.
 - [ ] Utfør regresjonstest på SM Kontakt, Trio Snarveier og Nettverk etter oppdateringen.
+
+## RC5 – Bekreftet begrensning ved minimert Oppgavelogg (03.11.2026)
+
+Brukertest av Trio Attendant 10.1.35:
+
+| Tilstand | UIA-kontrollnoder (av maks 140) | List | DataItem/ListItem | Gjenkjente overskrifter |
+| --- | ---: | ---: | ---: | ---: |
+| Minimert | 9 | 0 | 0 | 0 |
+| Åpent, ikke minimert | 140 | 1 | 68 | 8 |
+
+**Konklusjon:** Minimering fjerner den lesbare UIA-listestrukturen i Trio 10.1.35. Det er ikke verifisert at 68 listeelementer tilsvarer 68 samtaler eller at alle historiske rader er tilgjengelige.
+
+**RC5-endring:** Automatisk opprettet Oppgavelogg flyttes med AutoHotkey v2-funksjonen `WinMoveBottom` (nederst i Z-rekkefølgen) **uten å minimere**. Dette er ny standard `TrioBakgrunn=1` under `[Statistikk]`. Den gamle nøkkelen `TrioAutoMinimer` er avviklet; gamle INI-er bevares, men styrer ikke lenger vindushåndteringen. Velg ny checkbox «Legg Oppgavelogg bak andre vinduer (ikke minimer)» i Innstillinger. Autoåpning og 30-sekunders diagnoseintervall beholdes. Ingen nye oppgavedata importeres.
+
+**Merknad:** `WinMoveBottom` påvirker vindusrekkefølgen, ikke aktivt vindu direkte. Trio kan likevel selv vise et vindu kort under `MenuSelect`, og eide/always-on-top-vinduer kan oppføre seg spesielt. Dette må funksjonstestes. Eget minimert loggvindu fra RC4 gjenopprettes **ikke automatisk**; bruker kan gjenopprette manuelt eller lukke det og la RC5 åpne nytt.
+
+### RC5 QA
+- [ ] Gjenopprett eksisterende Oppgavelogg manuelt eller lukk det før autoåpningstest. Kontroller at `TrioBakgrunn` er på.
+- [ ] Med Trio åpent og Service Manager i forgrunnen: la tastatur/mus være i ro minst 4 sekunder. Verifiser at nytt Oppgavelogg legges bak andre vinduer, **ikke** minimeres.
+- [ ] Kontroller at Service Manager forblir aktivt; noter eventuelt glimt/fokusbytte fra Trio.
+- [ ] Vent én full 30-sekunders UIA-periode. Verifiser `List ≥ 1` og gjenkjente kolonner selv om Oppgavelogg ligger bak Service Manager.
+- [ ] Gjenta med QuickerKeys-vinduet aktivt og Oppgavelogg bak, uten å gjenopprette loggen.
+- [ ] Åpne Oppgavelogg manuelt før QuickerKeys starter; kontroller at eksisterende vindu **ikke** flyttes eller minimeres.
+- [ ] Bekreft at knappen «Kjør UIA-test nå» fortsatt ikke leser celleverdier eller lagrer kunde/IM/oppgave-ID.
+- [ ] Bekreft at rød søppelknapp med «Nei»/«Ja» fortsatt virker, og at SM Kontakt/Trio Snarveier ikke påvirkes.
+- [ ] Hvis `WinMoveBottom` ikke skjuler loggen slik vi ønsker, ikke bytt til `WinHide` eller `WinSetTransparent` uten egen UIA-kompatibilitetstest.
+
+**Neste fase:** Før automatisk telling må vi undersøke ListItem-innhold via godkjent, dataminimert parser (oppgave-ID, tidspunkt, behandlingstid, køtid, Koblet og tilstedeværelse av IM, uten å logge rå kundedata). Bekreft også listevirtualisering og duplikatkontroll.
