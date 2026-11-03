@@ -11,7 +11,7 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 - **Statistikk (PR #9):** Manuelle samtaletellere, skriftlig tid og skrivebeskyttet UIA-diagnose for Trio Oppgavelogg.
 
-## v3.12-rc6 – Statistikk + Trio Oppgavelogg (PR #9)
+## v3.12-rc8 – Statistikk + Trio Oppgavelogg (PR #9)
 
 En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **Siste registreringer i dag** er det en liten rød **🗑**-knapp med bekreftelse. Den sletter kun dagens fullførte manuelle CSV-statistikk etter eksplisitt Ja, og blokkeres hvis en samtale eller skriftlig tid fortsatt pågår. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
 
@@ -50,6 +50,18 @@ Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller 
 - **Kopier testresultat** sender kun den anonymiserte formatrapporten til utklippstavlen. Dette er innhentingstest, **ikke** en statistikk over alle samtaler. UIA-virtualisering kan gjøre at historiske rader ikke er tilgjengelige.
 
 **Neste milepæl:** Når en test i Trio 10.1.35 bekrefter hvilken UIA-radstruktur som faktisk brukes, kan vi lage en feltspesifikk parser, oppgave-ID-deduplisering og automatisk dagsstatistikk. Ikke bland Trio-data med manuelle timer før det er verifisert at de beskriver samme hendelse.
+### RC8 – Trio-innlesing som standard, «Oppdater nå» som reserve
+
+- **Automatikk:** Den allerede eksisterende 30-sekunders UIA-syklusen undersøker nå også faktiske felter fra tilgjengelige rader i Trio Oppgavelogg. Brukeren trenger normalt ikke å klikke for å lese nye data.
+- **Valgfri handling:** Knappen i Visualiseringer heter **Oppdater nå** og kjører den samme lesesyklusen umiddelbart. Den er tiltenkt første test og feilsøking, ikke rutinedrift.
+- **Dagsdashboard fra Trio:** Øverst vises foreløpig antall observerte oppgaver, antall med «Koblet», antall med IM-referanse i Kommentar, samlet behandlingstid og en timegraf. Ikke bland disse tallene med de manuelle CSV-registreringene.
+- **Lesemetode:** Foretrekker AutoHotkey v2 `ListViewGetContent` for `SysListView32` med 13 kolonner; ved egendefinert liste forsøkes UIA `List`/`ListItem`/`DataItem`. En liste som ikke eksponerer nøyaktig 13 felter i forventet rekkefølge, blir **ikke** tolket som en samtale.
+- **Validering:** Kode kontrollerer dato/tid (kolonne 1), numerisk oppgave-ID (2) og behandlingstid (9). Køtid (10) brukes dersom gyldig, `Koblet` (11) indikerer mulig videresending, og en IM-mønsterkontroll på Kommentar (13) gir kun en boolsk tilstedeværelse. Telefonnumre/kundenummer/kommentar- eller IM-tekst kopieres ikke til filer eller GUI.
+- **Deduplisering:** Oppgave-ID og tidspunkt brukes som midlertidig nøkkel i RAM. Nye og endrede observerte oppgaver fra flere skanninger overskriver samme nøkkel. Dagsbufferen nullstilles ved ny dato. Ingenting importeres til manuell CSV.
+- **Datakvalitet:** Dashboardet er **foreløpig** og viser observerte oppgaver, ikke et bekreftet fullstendig dagsantall eller nødvendigvis bare besvarte samtaler. Virtualiserte lister kan vise færre oppgaver enn hele historikken. Ved ingen validerte rader vises «—» og forklarende status, ikke oppdiktede tall.
+- **Feilsøking uten skjermbilder:** Eksisterende «Kopier diagnose»-knapp inkluderer nå en anonym oppsummering av innlesingsstatus, kilde, vurderte rader og antall observerte oppgaver. Ingen rå oppgave-ID, telefonnummer, kundenummer eller IM-referanser deles.
+
+**Viktig:** Kun statisk kodekontroll er utført i utviklingsmiljøet. RC8 må verifiseres mot den virkelige Trio Attendant 10.1.35 UIA-strukturen før tallene kan regnes som komplette. Ingen endring i Trio, ingen automatisk saksoppretting og ingen merge til `main`.
 ## v3.11 – Nettverk og UIA-feltgjenkjenning (nå i main)
 
 Denne oppdateringen bygger videre på v3.8 i `main`.
