@@ -4579,7 +4579,7 @@ TrioTastFraTekst(tekst) {
 
 
 ; =====================================================================
-;  STATISTIKK v1 - lokale, manuelle aktivitetslogger (ingen persondata)
+;  STATISTIKK v1 - lokale, manuelle aktivitetslogger (uten kundedata)
 ;  Automatisk Trio-telling aktiveres IKKE uten pålitelig samtalestatus.
 ;  Fullførte økter lagres som CSV i AppData\QuickerKeys\Statistikk.
 ;  Pågående økter lagres i Aktiv.ini så Reload/omstart ikke mister dem.
