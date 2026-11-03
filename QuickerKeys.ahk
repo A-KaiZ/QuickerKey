@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc2"
+global APP_VERSJON := "3.12-rc3"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4633,8 +4633,7 @@ class TrioOppgaveloggDiagnose {
                 return false
             if !(WinGetStyle("ahk_id " hwnd) & 0x10000000)
                 return false
-            return RegExMatch(tittel, "i)trio\s*attendant|^trio\b")
-                || RegExMatch(exe, "i)trio|attendant")
+            return RegExMatch(tittel, "i)trio\s*attendant|^trio\b") || RegExMatch(exe, "i)trio|attendant")
         }
         return false
     }
@@ -4655,7 +4654,7 @@ class TrioOppgaveloggDiagnose {
                 if (h = trioHwnd)
                     continue
                 title := WinGetTitle("ahk_id " h)
-                if !RegExMatch(title, "i)oppgavelogg")
+                if !RegExMatch(title, "i)oppgavelogg|task\s*(?:log|history)")
                     continue
                 cpid := WinGetPID("ahk_id " h)
                 cexe := StrLower(WinGetProcessName("ahk_id " h))
@@ -4722,6 +4721,11 @@ class TrioOppgaveloggDiagnose {
         return {kode:"opprettet", status:autoMinimer ? "Oppgavelogg åpnet og minimert automatisk." : "Oppgavelogg åpnet automatisk.", logg:funnet}
     }
 
+    KortTekniskFeil(steg, feil) {
+        melding := StrReplace(StrReplace(feil.Message, "`r", " "), "`n", " ")
+        return "Steg: " steg "`nAHK-feil: " SubStr(melding, 1, 180) "`nLinje: " feil.Line
+    }
+
     ; Tre-/kontrollkartlegging: leser kun TYPE og ET SNEVERT SETT
     ; STATISKE KOLONNENAVN. Ingen UIA Value, cellenavn, telefonnumre,
     ; kundenumre, IM-ID-er eller kommentarer samles/lagres.
@@ -4733,16 +4737,16 @@ class TrioOppgaveloggDiagnose {
         t0 := A_TickCount
         rot := ""
         try rot := UiaFraVindu(loggHwnd)
-        catch {
-            return {ok:false, status:"UIA kunne ikke koble til Oppgavelogg.", detaljer:"UIA ElementFromHandle feilet."}
+        catch as feil {
+            return {ok:false, status:"UIA kunne ikke koble til Oppgavelogg.", detaljer:this.KortTekniskFeil("ElementFromHandle", feil)}
         }
         if !IsObject(rot)
             return {ok:false, status:"UIA fant ikke vinduets rot-element.", detaljer:"Ingen lesbare kontroller."}
 
         pw := 0
         try ComCall(14, Uia().uia, "Ptr*", &pw) ; get_ControlViewWalker
-        catch {
-            return {ok:false, status:"Kunne ikke hente UIA ControlViewWalker.", detaljer:"UIA-walker feilet."}
+        catch as feil {
+            return {ok:false, status:"Kunne ikke hente UIA ControlViewWalker.", detaljer:this.KortTekniskFeil("ControlViewWalker", feil)}
         }
         if !pw
             return {ok:false, status:"UIA returnerte ingen kontrollvandrer.", detaljer:"Ingen kontroller lest."}
