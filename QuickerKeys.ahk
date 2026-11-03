@@ -4756,7 +4756,7 @@ class TrioOppgaveloggDiagnose {
         return {ok:false, status:"", kilde:"", sett:Map(), kandidater:0, avvist:0
             , andreDager:0, begrenset:false, detaljer:"", noder:0, lesefeil:0
             , grunner:Map("felt",0,"dato",0,"id",0,"tid",0,"konflikt",0)
-            , former:Map(), kolonner:[], kart:Map(), metoder:Map()}
+            , former:Map(), funnfelt:Map(), kolonner:[], kart:Map(), metoder:Map()}
     }
 
     HentDagensData(loggHwnd, kunUia := false) {
@@ -5058,6 +5058,8 @@ class TrioOppgaveloggDiagnose {
         out.kandidater := kandidater.Length
         for rad in kandidater {
             felt := rad.felt
+            for key in felt
+                this.Tell(out.funnfelt,key)
             grunn := ""
             if rad.konflikt
                 grunn := "konflikt"
@@ -5117,6 +5119,7 @@ class TrioOppgaveloggDiagnose {
         tekst := "Kolonner med lesbar plassering: " out.kolonner.Length
         for key, navn in feltNavn
             tekst .= "`n" navn ": " (out.kart.Has(key) ? "koblet" : "mangler eller tvetydig plassering")
+                . " | celler lest: " (out.funnfelt.Has(key) ? out.funnfelt[key] : 0)
         tekst .= "`nKandidatrader: " out.kandidater " | Validerte i dag: " out.sett.Count
             . " | Andre dager: " out.andreDager
             . "`nAvvist – manglende felt: " out.grunner["felt"] ", dato/tid: " out.grunner["dato"]
