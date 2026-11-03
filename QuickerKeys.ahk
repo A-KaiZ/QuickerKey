@@ -683,19 +683,21 @@ ImporterKonfigurasjon(*) {
         ImporterGammelQuickKey(fil)
         return
     }
-    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier)\]\s*$") {
+    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk)\]\s*$") {
         MsgBox "Ukjent konfigurasjonsformat. Forventet QuickerKeys/MAAUNI eller gamle QuickKey [Shortcuts].", APP_NAVN, "Icon!"
         return
     }
     ; Kun anerkjente nøkkelverdier importeres: eksterne filstier og programmappe beholdes lokale.
     seksjoner := Map(
-        "App", ["StartSkjult", "VisTast", "Tema"],
+        "App", ["StartSkjult", "VisTast", "Tema", "Nettverk"],
         "Tekstflyt", ["Aktiv"],
         "SMKontakt", ["Aktiv", "TrioKilde", "WebVindu", "WebEtikett", "TrioVindu", "Etikett"
             , "AndreLinjeRegex", "ManuellTast", "TrioKontroll", "SMVindu"
-            , "KontaktX", "KontaktY", "KnappX", "KnappY"],
+            , "KontaktX", "KontaktY", "KnappX", "KnappY"
+            , "KontaktType", "KontaktNavn", "KontaktId", "KontaktKlasse"],
         "Vindusbytter", ["Aktiv"],
-        "TrioSnarveier", ["Aktiv", "HKCopy"]
+        "TrioSnarveier", ["Aktiv", "HKCopy", "HKCopyKilde", "ApneIM", "IMVindu", "IMX", "IMY", "IMNavn", "IMId", "IMKlasse", "IMModus"],
+        "Nettverk", ["Skilletegn"]
     )
     loop 4 {
         i := A_Index
