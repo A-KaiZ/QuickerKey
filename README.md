@@ -11,7 +11,7 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 - **Statistikk (PR #9):** Manuelle samtaletellere, skriftlig tid og skrivebeskyttet UIA-diagnose for Trio Oppgavelogg.
 
-## v3.12-rc5 – Statistikk + Trio Oppgavelogg (PR #9)
+## v3.12-rc6 – Statistikk + Trio Oppgavelogg (PR #9)
 
 En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **Siste registreringer i dag** er det en liten rød **🗑**-knapp med bekreftelse. Den sletter kun dagens fullførte manuelle CSV-statistikk etter eksplisitt Ja, og blokkeres hvis en samtale eller skriftlig tid fortsatt pågår. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
 
@@ -30,6 +30,17 @@ Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller 
 
 **Viktig:** Brukertesten 03.11.2026 bekreftet at UIA **ikke** kan lese tabell/listestruktur når Trio 10.1.35 Oppgavelogg er minimert (0 lister, 0 rader), men at den gjør det i normalt vindu (1 List, 68 listeelementer, 8 kjente overskrifter). Dette er ikke 68 bekreftede samtaler. **RC5 bruker derfor bakgrunnsmodus som standard**. Den nye konfigurasjonsnøkkelen `TrioBakgrunn=1` erstatter gamle `TrioAutoMinimer`; minimering anbefales ikke og utføres ikke lenger automatisk. Har du et *allerede minimert* Oppgavelogg-vindu fra RC4, må du manuelt gjenopprette det eller lukke det og la RC5 åpne et nytt. Vi har ennå ikke bekreftet at `WinMoveBottom` fungerer uten synlig glimt/fokusendring i brukerens Trio-miljø. Det finnes **ingen automatisk dataimport eller samtaletelling fra Trio** i denne PR-en. Kjør [QA-statistikk-v3.12](docs/QA-statistikk-v3.12.md) i faktisk Trio-miljø før merge. Innstillingene lagres under `[Statistikk]` i `Innstillinger\QuickerKeys.ini`.
 
+### RC6 – Oppgavelogg styrer seg selv uten flere knapper
+
+- **Automatisk drift:** QuickerKeys oppdager Oppgavelogg og åpner den ved behov uten å kreve Trio i forgrunnen. Første åpning krever minst 4 sekunder uten fysisk input for å redusere forstyrrelser.
+- **Manuell bruk:** Når du åpner/aktiverer Oppgavelogg, lar QuickerKeys deg jobbe der uten å flytte vinduet. Etter at du bytter til et annet vindu, legges Oppgavelogg bakerst igjen etter ca. **15 sekunder**, uten å minimere.
+- **Lang inaktivitet:** Hvis Oppgavelogg fortsatt er aktivt, men mus og tastatur har vært helt i ro i minst **60 sekunder**, legger QuickerKeys vinduet bakerst.
+- **Manuell minimering:** Etter ca. 15 sekunder forsøker QuickerKeys å gjenopprette vinduet med Win32 `ShowWindowAsync(..., SW_SHOWNOACTIVATE=4)` og flytte det bakerst. Gjenoppretting krever også minst 4 sekunder uten fysisk input og er ikke testet i Trio ennå. Dette er nødvendig fordi UIA-tabellen ikke er synlig for UIA når Oppgavelogg er minimert.
+- **Manuell lukking:** Hvis du lukker et Oppgavelogg-vindu som QuickerKeys har oppdaget, venter programmet minst **30 sekunder** før det igjen forsøker å åpne det automatisk. Gjenåpning skjer først etter minst 4 sekunder fysisk inaktivitet.
+- **Ingen nye kontroller:** RC5-innstillingene beholdes, men ingen egne Pause/Gjenoppta-knapper er lagt til. De 30 sekundene i innstillingene er fortsatt **UIA-diagnoseintervallet**, ikke tiden før vinduet legges bakerst.
+- **Ingen automatisk statistikkimport:** Vi registrerer fremdeles ikke samtaler fra Trio; RC6 styrer kun loggvinduet og kjører skrivebeskyttet UIA-diagnostikk.
+
+**Forbehold:** Trio/Windows kan vise et kort vindusglimt ved åpning eller gjenoppretting. `ShowWindowAsync` og `WinMoveBottom` kan oppføre seg annerledes i den faktiske Trio-klienten. Test før merge.
 ## v3.11 – Nettverk og UIA-feltgjenkjenning (nå i main)
 
 Denne oppdateringen bygger videre på v3.8 i `main`.
