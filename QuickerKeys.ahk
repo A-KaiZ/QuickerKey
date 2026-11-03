@@ -5159,6 +5159,7 @@ class StatistikkModul {
                 this.TrioLoggHwnd := 0
                 this.TrioLoggManglerSiden := 0
                 this.TrioLoggBakert := false
+                this.TrioLoggSistForsokTick := 0
                 return
             }
 
@@ -5185,11 +5186,11 @@ class StatistikkModul {
                 ; Ikke forstyrr mens brukeren jobber i Oppgavelogg.
                 ; Etter Alt+Tab: 15 s. Mens vinduet fortsatt er aktivt:
                 ; 60 s uten fysisk aktivitet før det legges bakerst.
-                if (aktiv && A_TimeIdlePhysical < 60000)
-                    return
                 if (!aktiv && na - this.TrioLoggSistAktivTick < 15000)
                     return
-                if (!aktiv && A_TimeIdlePhysical < 4000)
+                ; Vanlig bakgrunnsvindu kan flyttes mens brukeren jobber i SM.
+                ; Gjenoppretting fra minimering krever inaktivitet.
+                if (!aktiv && minimert && A_TimeIdlePhysical < 4000)
                     return
                 if (this.TrioLoggBakert && !minimert && !aktiv)
                     return
@@ -5203,6 +5204,8 @@ class StatistikkModul {
                     try {
                         WinMoveBottom "ahk_id " loggHwnd
                         this.TrioLoggBakert := true
+                        this.TrioLoggSistForsokTick := 0
+                        this.TrioFeil := false
                         this.TrioStatusTekst := "Oppgavelogg lagt bakerst etter 60 sekunder uten aktivitet."
                     } catch as feil {
                         this.TrioStatusTekst := "Kunne ikke legge Oppgavelogg bakerst."
@@ -5212,6 +5215,8 @@ class StatistikkModul {
                 } else {
                     resultat := this.TrioLeser.LeggBakgrunn(loggHwnd)
                     this.TrioLoggBakert := resultat.ok
+                    if resultat.ok
+                        this.TrioLoggSistForsokTick := 0
                     this.TrioStatusTekst := resultat.status
                     this.TrioFeil := !resultat.ok
                 }
