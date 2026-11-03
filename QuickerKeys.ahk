@@ -16,6 +16,8 @@ SendMode "Input"
 ;    Åpne igjen fra ikonet ved klokka eller med Ctrl+Alt+M.
 ;  • Nytt verktøy? Lag en klasse som «extends VT_Base» (se malen helt
 ;    nederst) og legg den til i VerktoyListe() rett under her.
+;  • Nettverk-siden (Nettverk + MAC Import for Cisco ISE) er av som standard.
+;    Slås på under Innstillinger → «Nettverksgeni?».
 ; =====================================================================
 
 VerktoyListe() => [
@@ -28,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.8"
+global APP_VERSJON := "3.11"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -39,11 +41,14 @@ global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 4
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global VIS_VILKAR := Map()                   ; controls shown only when context needs them
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
+global NETT_PAA := false, NETT := Map()
+global NAV_FOR := Map()
 
 ; ---------------- Oppstart ----------------
 global FLYTTET := LagMappestruktur()
 SikreIni()
 TEMA := TemaPalett(Innst("App", "Tema", "Midnatt"))
+NETT_PAA := Innst("App", "Nettverk", "0") = "1"
 RyddGamleLogger()
 lukketListe := LukkGamleSkript()
 Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser en tekstkode
@@ -58,11 +63,17 @@ for navn in lukketListe
 for vt in VERKTOY_LISTE
     SettAktiv(vt, Innst(vt.Id, "Aktiv", "1") = "1", false)
 SettVisTast(Innst("App", "VisTast", "^!m"))
-VisPanel("Oversikt")
-if (Innst("App", "StartSkjult", "0") = "1")
-    Logg("Startet skjult – åpne med ikonet ved klokka eller hurtigtasten")
-else
+if (NETT_PAA && Innst("App", "NettverkApne", "0") = "1") {
+    SettInnst("App", "NettverkApne", "0")
+    VisPanel("Nettverk")
     VisHoved()
+} else {
+    VisPanel("Oversikt")
+    if (Innst("App", "StartSkjult", "0") = "1")
+        Logg("Startet skjult – åpne med ikonet ved klokka eller hurtigtasten")
+    else
+        VisHoved()
+}
 
 
 ; =====================================================================
@@ -262,7 +273,7 @@ ByggHovedvindu() {
     for vt in VERKTOY_LISTE
         navValg.Push(vt.Navn)
     navValg.Push("Logg", "Innstillinger")
-    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + 40)
+    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 40))
 
     HOVED := Gui("-MaximizeBox", APP_NAVN)
     HOVED.BackColor := TEMA.bg
@@ -286,13 +297,29 @@ ByggHovedvindu() {
         NAVKNAPPER[navn] := knapp
     }
     bunnY := 84 + navValg.Length * 44
-    HOVED.AddText("x0 y" bunnY " w160 h" (APP_H - bunnY) " Background" TEMA.nav)
+    if NETT_PAA {
+        nettY := APP_H - 52
+        linjeY := nettY - 12
+        HOVED.AddText("x0 y" bunnY " w160 h" (linjeY - bunnY) " Background" TEMA.nav)
+        HOVED.AddText("x0 y" linjeY " w16 h1 Background" TEMA.nav)
+        HOVED.AddText("x16 y" linjeY " w128 h1 Background" TEMA.linje)
+        HOVED.AddText("x144 y" linjeY " w16 h1 Background" TEMA.nav)
+        HOVED.AddText("x0 y" (linjeY + 1) " w160 h" (nettY - linjeY - 1) " Background" TEMA.nav)
+        knapp := HOVED.AddText("x0 y" nettY " w160 h44 +0x200 Background" TEMA.nav, "    Nettverk")
+        knapp.OnEvent("Click", VisPanel.Bind("Nettverk"))
+        NAVKNAPPER["Nettverk"] := knapp
+        HOVED.AddText("x0 y" (nettY + 44) " w160 h" (APP_H - nettY - 44) " Background" TEMA.nav)
+    } else {
+        HOVED.AddText("x0 y" bunnY " w160 h" (APP_H - bunnY) " Background" TEMA.nav)
+    }
 
     ByggOversikt()
     for vt in VERKTOY_LISTE
         ByggVerktoyPanel(vt)
     ByggLoggPanel()
     ByggInnstillingerPanel()
+    if NETT_PAA
+        ByggNettverkPanel()
 }
 
 ByggOversikt() {
@@ -377,6 +404,13 @@ ByggInnstillingerPanel() {
     Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", "Importer konfigurasjon…", ImporterKonfigurasjon, TEMA.aksent))
     Reg(pn, Knapp(HOVED, "x" (x + 198) " y" y " w132 h34", "Themes…", VisTemaer, TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 340) " y" y " w152 h34", "Last inn på nytt", (*) => Reload(), TEMA.aksent2))
+    y += 52
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", NETT_PAA ? "Skru av Nettverk" : "Nettverksgeni?"
+        , VekslNettverk, NETT_PAA ? TEMA.av : TEMA.aksent))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" (x + 198) " y" y " w" (b - 198) " h34 +0x200 Background" TEMA.bg
+        , NETT_PAA ? "Nettverk-siden er på (nede til venstre)." : "Egen side med MAC Import for Cisco ISE."))
 
     ; Utviklerkreditering nederst på Innstillinger-siden.
     Skrift(HOVED, "s9 bold c" TEMA.dempet)
@@ -439,6 +473,14 @@ HjelpTekst(side) {
                 . "•  «Themes» velger farger; programmet starter på nytt ved bytte.`n"
                 . "•  «Last inn på nytt» aktiverer endringer du har gjort direkte i INI-filen.`n"
                 . "•  Data: " DATA_MAPPE
+        case "Nettverk":
+            return "•  Startsiden for nettverksverktøy, som MAC Import.`n"
+                . "•  «← Nettverk» øverst i verktøyet går tilbake til Nettverk."
+        case "MAC Import":
+            return "•  Lim inn MAC-adresser; komma, mellomrom og linjeskift støttes.`n"
+                . "•  Gi eksakt Identity Group fra Cisco ISE.`n"
+                . "•  Generer 31-kolonners CSV, bekreft oppsettet og importer manuelt i ISE.`n"
+                . "•  Ugyldige MAC-adresser flagges og duplikater fjernes."
     }
     return ""
 }
@@ -476,8 +518,9 @@ VisPanel(navn, *) {
     for panelNavn, liste in PANELER
         for ktrl in liste
             ktrl.Visible := (panelNavn = navn) && (!VIS_VILKAR.Has(ktrl) || VIS_VILKAR[ktrl]())
+    valgt := NAV_FOR.Has(navn) ? NAV_FOR[navn] : navn
     for knappNavn, knapp in NAVKNAPPER {
-        knapp.Opt("Background" (knappNavn = navn ? TEMA.aksent : TEMA.nav))
+        knapp.Opt("Background" (knappNavn = valgt ? TEMA.aksent : TEMA.nav))
         knapp.Redraw()
     }
 }
