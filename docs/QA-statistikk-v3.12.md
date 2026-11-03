@@ -175,3 +175,27 @@ Brukeren ønsker at QuickerKeys alltid skal drifte Oppgavelogg i bakgrunnen, men
 2. 12 rader er bare et begrenset utvalg; ikke bruk dette som faktisk dagsstatistikk.
 3. Ikke ta i bruk automatisk registrering, IM-telling, overføringsklassifisering eller diagrammer basert på Trio før kolonneindekser og oppgave-ID-deduplisering er validert.
 4. Ingen Windows-runtime-test er utført av utviklingsmiljøet; RC7 må prøves i faktisk Trio 10.1.35.
+
+## RC8 – Automatisk innlesing og frivillig «Oppdater nå»
+
+Brukeren ønsker ingen manuell registrering av telefoner når Trio allerede har loggen. RC8 bruker 30-sekunders syklusen til å forsøke å parse dagens oppgaver fra de tilgjengelige radene, med samme funksjon bak den frivillige **Oppdater nå**-knappen i Visualiseringer.
+
+### Test med dagens oppgavelogg i Trio 10.1.35
+- [ ] Start RC8 med Trio Oppgavelogg åpen i bakgrunnen. Vent én 30-sekunders synkronisering og åpne **Statistikk → Visualiseringer** uten å trykke noen oppdateringsknapp.
+- [ ] Kontroller at dashboardet viser **Trio** som kilde. Hvis ingen rader kan valideres, vises «—» og en forklaring, ikke manuelle eller hypotetiske tall.
+- [ ] Trykk **Oppdater nå** én gang for å teste umiddelbar lesing. Samme parser og samme dagsbuffer brukes som ved automatisk synkronisering.
+- [ ] Kopier eksisterende UIA-diagnose og inspiser den anonymiserte innlesingsstatusen: antall tilgjengelige kandidatrader og unike observerte oppgaver. Del aldri rå klient- eller IM-informasjon.
+- [ ] Sammenlign et utvalg av dagens manuelt synlige Trio-oppgaver med dashboardet: riktig dato, tidspunkt, behandlingstid og tegn på Koblet/IM.
+- [ ] Test samme oppgavelogg flere ganger. Antall skal ikke øke bare fordi de samme oppgave-ID-ene blir lest igjen (deduplisering på ID + tidspunkt).
+- [ ] Legg til/oppdater en reell oppgave i Trio. Innen neste synkronisering skal ny eller endret oppgave gi oppdaterte foreløpige tall dersom raden er lesbar via UIA.
+- [ ] Kontroller at oppgaver fra i går ikke teller på dagens dashboard, og at dagsbufferen nullstilles ved datobytte.
+- [ ] Test med Oppgavelogg minimert: eksisterende foreløpige totaler beholdes i RAM, men ingen nye rader kan innleses; status skal ikke hevde fullstendig dekning.
+- [ ] Verifiser at ingen rå telefonnumre, kundenummer, oppgave-ID-er eller IM-strenger havner i QuickerKeys-logg, kopi-rapport eller dagens manuelle CSV.
+- [ ] Bekreft at automatisk flytting av Oppgavelogg og SM Kontakt fortsatt fungerer.
+
+**Begrensninger og akseptkriterier:**
+1. UIA-kildestrukturen kan være ListItem-per-celle, ListItem-per-rad eller en virtualisert tilpasset liste. Bare eksakte 13-kolonners kandidater som valideres tolkes. Manglende tall betyr at parseren ennå ikke passer klienten, ikke at det ikke finnes oppgaver.
+2. Antall er observerte validerte **oppgaver**, ikke dokumentert antall mottatte/besvarte samtaler (telefonsymbolets retning er ikke dekodet).
+3. En aktiv dagsbuffer i RAM dedupliserer innen samme QuickerKeys-økt; den lagres ikke på disk og kan derfor ikke garantere komplett dagshistorikk etter restart hvis Trio virtualiserer eldre rader.
+4. Før produksjonsmerking må dashboardet sammenholdes med en fullstendig, autorisert Trio-statistikkrapport eller et manuelt bekreftet antall.
+5. RC8 er ikke kjørt i Windows under utviklingen; bekreft både parser og GUI før PR-merging.
