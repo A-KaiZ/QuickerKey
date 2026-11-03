@@ -4832,6 +4832,7 @@ class StatistikkModul {
     TrioOpptatt := false
     TrioForrigeLogg := ""
     TrioSistSjekket := ""
+    TrioApneOpptatt := false
     TrioGui := ""
     TrioInfoK := ""
     TrioAutoK := ""
@@ -4843,6 +4844,7 @@ class StatistikkModul {
         this.StateFil := STATS_MAPPE "\Aktiv.ini"
         this.TickCb := ObjBindMethod(this, "Tick")
         this.TrioCb := ObjBindMethod(this, "TrioSjekk")
+        this.TrioOpenCb := ObjBindMethod(this, "TrioApneTimer")
         this.TrioLeser := TrioOppgaveloggDiagnose()
         this.TrioAutoApne := Innst("Statistikk", "TrioAutoApne", "1") = "1"
         this.TrioAutoMinimer := Innst("Statistikk", "TrioAutoMinimer", "1") = "1"
@@ -4875,6 +4877,7 @@ class StatistikkModul {
     Start() {
         SetTimer this.TickCb, 1000
         SetTimer this.TrioCb, this.TrioIntervall * 1000
+        SetTimer this.TrioOpenCb, 2500  ; lightweight foreground/idle check, NOT UIA
         this.Oppdater()
     }
 
@@ -5073,53 +5076,98 @@ class StatistikkModul {
     }
 
 
-    ; UIA-undersøkelse hvert 30. sekund (eller annen valgt frekvens).
-    ; Ingen dataimport, GUI-aktivering eller tastetrykk i bakgrunnsleseren.
+    ; Check initial opening every 2.5 sec, independent of the 30 sec UIA.
+    ; No input or focus changes; existing log windows are left alone.
+    TrioApneTimer(*) {
+        if (!this.TrioAutoApne || this.TrioApneOpptatt || this.TrioOpptatt)
+            return
+        this.TrioApneOpptatt := true
+        try {
+            trio := this.TrioLeser.FinnTrio()
+            if !trio
+                return
+            if this.TrioLeser.FinnLoggvindu(trio)
+                return
+            if !WinActive("ahk_id " trio)
+                return
+            if (A_TimeIdlePhysical < 4000)
+                return
+            resultat := this.TrioLeser.ApneVedBehov(this.TrioAutoMinimer)
+            this.TrioStatusTekst := resultat.status
+            this.TrioFeil := InStr("|menyfeil|ikke-funnet|sperret|minimer-feil|",
+                "|" resultat.kode "|") > 0
+            this.TrioDetaljer := "Trio Oppgavelogg: " resultat.status
+                . "`nNeste UIA-diagnose: inntil " this.TrioIntervall " sekunder."
+            if (this.TrioStatusTekst != this.TrioForrigeLogg) {
+                this.TrioForrigeLogg := this.TrioStatusTekst
+                Logg("Statistikk / Trio: " this.TrioStatusTekst)
+            }
+        } catch as feil {
+            this.TrioStatusTekst := "Feil ved automatisk åpning av Oppgavelogg."
+            this.TrioDetaljer := this.TrioFeilBeskrivelse("Autoåpning", feil)
+            this.TrioFeil := true
+            Logg("Statistikk / Trio: " this.TrioDetaljer)
+        } finally {
+            this.TrioApneOpptatt := false
+            this.OppdaterTrioStatus()
+        }
+    }
+
+    ; Manual button checks an already-open Oppgavelogg regardless of focus.
+    ; It NEVER calls MenuSelect or creates a window by itself.
     TrioSjekk(*) {
         if this.TrioOpptatt
             return
         this.TrioOpptatt := true
         this.TrioSistSjekket := A_Now
+        steg := "Finn Trio"
         try {
             trio := this.TrioLeser.FinnTrio()
-            logg := this.TrioLeser.FinnLoggvindu(trio)
-            forlop := ""
-            kode := ""
-            if (!logg && this.TrioAutoApne) {
-                a := this.TrioLeser.ApneVedBehov(this.TrioAutoMinimer)
-                logg := a.logg
-                forlop := a.status
-                kode := a.kode
-            }
-            if logg {
-                r := this.TrioLeser.Kartlegg(logg)
-                this.TrioStatusTekst := r.status
-                this.TrioDetaljer := (forlop != "" ? "Vindushåndtering: " forlop "`n" : "") r.detaljer
-                this.TrioFeil := !r.ok
-                if (kode = "minimer-feil")
-                    this.TrioFeil := true
+            if !trio {
+                this.TrioStatusTekst := "Fant ikke ett entydig Trio Attendant-hovedvindu."
+                this.TrioDetaljer := "Steg: Finn Trio"
+                    . "`nÅpne Trio Attendant. Hvis det ikke oppdages, må vindustittel/prosess identifiseres."
+                    . "`nIngen vinduer ble aktivert eller åpnet."
+                this.TrioFeil := true
             } else {
-                this.TrioStatusTekst := forlop != "" ? forlop
-                    : trio ? "Oppgavelogg er ikke åpen. Autoåpning er slått av." : "Trio Attendant er ikke startet."
-                this.TrioDetaljer := "Ingen UIA-celler ble lest. " (forlop != "" ? forlop : "")
-                this.TrioFeil := (kode = "menyfeil" || kode = "ikke-funnet" || kode = "sperret")
+                steg := "Finn Oppgavelogg"
+                logg := this.TrioLeser.FinnLoggvindu(trio)
+                if !logg {
+                    this.TrioStatusTekst := "Trio funnet, men Oppgavelogg ble ikke gjenkjent."
+                    this.TrioDetaljer := "Steg: Finn Oppgavelogg"
+                        . "`nÅpne Vis > Oppgavelogg manuelt én gang og trykk Kjør UIA-test nå igjen."
+                        . "`nVinduet må ha Oppgavelogg i tittelen, og tilhøre samme programfil/PID."
+                    this.TrioFeil := true
+                } else {
+                    steg := "UIA: ElementFromHandle / ControlViewWalker"
+                    r := this.TrioLeser.Kartlegg(logg)
+                    this.TrioStatusTekst := r.status
+                    this.TrioDetaljer := "Steg: " steg "`n" r.detaljer
+                    this.TrioFeil := !r.ok
+                }
             }
             if (this.TrioStatusTekst != this.TrioForrigeLogg) {
                 this.TrioForrigeLogg := this.TrioStatusTekst
                 Logg("Statistikk / Trio: " this.TrioStatusTekst)
             }
-        } catch {
-            this.TrioStatusTekst := "Feil under UIA-diagnose (ingen data importert)."
-            this.TrioDetaljer := "Sjekk at Trio Attendant og Oppgavelogg er tilgjengelige."
+        } catch as feil {
+            this.TrioStatusTekst := "UIA-diagnose feilet under: " steg
+            this.TrioDetaljer := this.TrioFeilBeskrivelse(steg, feil)
             this.TrioFeil := true
-            if (this.TrioForrigeLogg != this.TrioStatusTekst) {
-                this.TrioForrigeLogg := this.TrioStatusTekst
-                Logg("Statistikk / Trio: " this.TrioStatusTekst)
-            }
+            Logg("Statistikk / Trio: " this.TrioDetaljer)
         } finally {
             this.TrioOpptatt := false
             this.OppdaterTrioStatus()
         }
+    }
+
+    TrioFeilBeskrivelse(steg, feil) {
+        ; Only AHK error metadata. No title, cell values or stack trace.
+        melding := StrReplace(StrReplace(feil.Message, "`r", " "), "`n", " ")
+        return "Steg: " steg "`nAHK-feiltype: " Type(feil)
+            . "`nMelding: " SubStr(melding, 1, 180)
+            . "`nLinje: " feil.Line
+            . "`nIngen rad-/kundedata ble hentet."
     }
 
     OppdaterTrioStatus() {
