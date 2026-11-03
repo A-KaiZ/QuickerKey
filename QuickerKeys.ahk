@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc5"
+global APP_VERSJON := "3.12-rc6"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4719,6 +4719,32 @@ class TrioOppgaveloggDiagnose {
         return {kode:"opprettet", status:"Oppgavelogg åpnet uten minimering.", logg:funnet}
     }
 
+    ; Sett allerede åpen Oppgavelogg bakerst uten å hente den foran.
+    ; Hvis brukeren har minimert den, gjenopprett uten å aktivere
+    ; (SW_SHOWNOACTIVATE=4). Returnerer bare anonym status.
+    LeggBakgrunn(loggHwnd) {
+        if !WinExist("ahk_id " loggHwnd)
+            return {ok:false, status:"Oppgavelogg finnes ikke lenger."}
+        try {
+            if (WinGetMinMax("ahk_id " loggHwnd) = -1) {
+                ; SW_SHOWNOACTIVATE: gjenopprett i tidligere størrelse uten fokus.
+                if !DllCall("User32\ShowWindowAsync", "Ptr", loggHwnd, "Int", 4, "Int")
+                    return {ok:false, status:"Windows kunne ikke gjenopprette Oppgavelogg uten fokus."}
+                Sleep 120
+                if (WinGetMinMax("ahk_id " loggHwnd) = -1)
+                    return {ok:false, status:"Oppgavelogg er fortsatt minimert etter gjenopprettingsforsøk."}
+            }
+            ; Unngå å legge det bakerst dersom brukeren akkurat har aktivert
+            ; det mens vi undersøkte vinduets tilstand.
+            if WinActive("ahk_id " loggHwnd)
+                return {ok:false, status:"Oppgavelogg er i bruk; flyttes ikke nå."}
+            WinMoveBottom "ahk_id " loggHwnd
+            return {ok:true, status:"Oppgavelogg ligger bak andre vinduer, uten minimering."}
+        } catch as feil {
+            return {ok:false, status:"Bakgrunnsplassering feilet: " SubStr(feil.Message, 1, 130)}
+        }
+    }
+
     KortTekniskFeil(steg, feil) {
         melding := StrReplace(StrReplace(feil.Message, "`r", " "), "`n", " ")
         return "Steg: " steg "`nAHK-feil: " SubStr(melding, 1, 180) "`nLinje: " feil.Line
@@ -4835,6 +4861,11 @@ class StatistikkModul {
     TrioForrigeLogg := ""
     TrioSistSjekket := ""
     TrioApneOpptatt := false
+    TrioLoggHwnd := 0
+    TrioLoggSistAktivTick := 0
+    TrioLoggManglerSiden := 0
+    TrioLoggBakert := false
+    TrioLoggSistForsokTick := 0
     TrioGui := ""
     TrioInfoK := ""
     TrioAutoK := ""
@@ -5112,36 +5143,118 @@ class StatistikkModul {
     }
 
 
-    ; Check initial opening every 2.5 sec, independent of the 30 sec UIA.
-    ; Does not require Trio to be foreground, and does not send user input.
-    ; Existing log windows are left alone.
+    ; Ingen ekstra knapper eller brukerinndata: håndter Oppgavelogg automatisk.
+    ; Brukeren kan åpne/fokusere vinduet fritt. Etter at brukeren går
+    ; videre, flyttes det bakerst igjen etter 15 sekunder.
+    ; Ved 60 sekunder full inaktivitet kan det også legges bakerst mens
+    ; det fortsatt er aktivt. Minimering gjenopprettes uten fokus.
+    ; Manuell lukking respekteres i 30 sekunder før et nytt åpningsforsøk.
     TrioApneTimer(*) {
         if (!this.TrioAutoApne || this.TrioApneOpptatt || this.TrioOpptatt)
             return
         this.TrioApneOpptatt := true
         try {
-            trio := this.TrioLeser.FinnTrio()
-            if !trio
+            trioHwnd := this.TrioLeser.FinnTrio()
+            if !trioHwnd {
+                this.TrioLoggHwnd := 0
+                this.TrioLoggManglerSiden := 0
+                this.TrioLoggBakert := false
                 return
-            if this.TrioLeser.FinnLoggvindu(trio)
+            }
+
+            loggHwnd := this.TrioLeser.FinnLoggvindu(trioHwnd)
+            na := A_TickCount
+            if loggHwnd {
+                this.TrioLoggManglerSiden := 0
+                if (this.TrioLoggHwnd != loggHwnd) {
+                    this.TrioLoggHwnd := loggHwnd
+                    this.TrioLoggSistAktivTick := na
+                    this.TrioLoggBakert := false
+                    this.TrioLoggSistForsokTick := 0
+                }
+                if !this.TrioBakgrunn
+                    return
+
+                aktiv := WinActive("ahk_id " loggHwnd) != 0
+                minimert := WinGetMinMax("ahk_id " loggHwnd) = -1
+                if (aktiv && A_TimeIdlePhysical < 60000) {
+                    this.TrioLoggSistAktivTick := na
+                    this.TrioLoggBakert := false
+                    return
+                }
+                ; Ikke forstyrr mens brukeren jobber i Oppgavelogg.
+                ; Etter Alt+Tab: 15 s. Mens vinduet fortsatt er aktivt:
+                ; 60 s uten fysisk aktivitet før det legges bakerst.
+                if (aktiv && A_TimeIdlePhysical < 60000)
+                    return
+                if (!aktiv && na - this.TrioLoggSistAktivTick < 15000)
+                    return
+                if (!aktiv && A_TimeIdlePhysical < 4000)
+                    return
+                if (this.TrioLoggBakert && !minimert && !aktiv)
+                    return
+                if (this.TrioLoggSistForsokTick && na - this.TrioLoggSistForsokTick < 60000)
+                    return
+
+                this.TrioLoggSistForsokTick := na
+                ; Normal aktivt vindu kan sendes bak etter lang inaktivitet.
+                ; Ellers passiv håndtering uten å stjele aktivt vindu.
+                if (aktiv) {
+                    try {
+                        WinMoveBottom "ahk_id " loggHwnd
+                        this.TrioLoggBakert := true
+                        this.TrioStatusTekst := "Oppgavelogg lagt bakerst etter 60 sekunder uten aktivitet."
+                    } catch as feil {
+                        this.TrioStatusTekst := "Kunne ikke legge Oppgavelogg bakerst."
+                        this.TrioFeil := true
+                        this.TrioDetaljer := this.TrioFeilBeskrivelse("Legg bakerst", feil)
+                    }
+                } else {
+                    resultat := this.TrioLeser.LeggBakgrunn(loggHwnd)
+                    this.TrioLoggBakert := resultat.ok
+                    this.TrioStatusTekst := resultat.status
+                    this.TrioFeil := !resultat.ok
+                }
+                this.OppdaterTrioStatus()
+                return
+            }
+
+            ; Et kjent vindu ble lukket: gi brukeren 30 sekunder før
+            ; autoåpning. Hvis aldri sett før: vanlig oppstart etter 4 s.
+            if (this.TrioLoggHwnd != 0) {
+                this.TrioLoggHwnd := 0
+                this.TrioLoggManglerSiden := na
+                this.TrioLoggBakert := false
+            }
+            if (this.TrioLoggManglerSiden && na - this.TrioLoggManglerSiden < 30000)
                 return
             if (A_TimeIdlePhysical < 4000)
                 return
+
             resultat := this.TrioLeser.ApneVedBehov(this.TrioBakgrunn)
             this.TrioStatusTekst := resultat.status
             this.TrioFeil := InStr("|menyfeil|ikke-funnet|sperret|bakgrunn-feil|",
                 "|" resultat.kode "|") > 0
             this.TrioDetaljer := "Trio Oppgavelogg: " resultat.status
-                . "`nNeste UIA-diagnose: inntil " this.TrioIntervall " sekunder."
+                . "`nUIA-struktur undersøkes hvert " this.TrioIntervall " sekund."
+            if resultat.logg {
+                this.TrioLoggHwnd := resultat.logg
+                this.TrioLoggSistAktivTick := na
+                this.TrioLoggBakert := (resultat.kode = "opprettet") && this.TrioBakgrunn
+                this.TrioLoggSistForsokTick := 0
+            }
             if (this.TrioStatusTekst != this.TrioForrigeLogg) {
                 this.TrioForrigeLogg := this.TrioStatusTekst
                 Logg("Statistikk / Trio: " this.TrioStatusTekst)
             }
         } catch as feil {
-            this.TrioStatusTekst := "Feil ved automatisk åpning av Oppgavelogg."
-            this.TrioDetaljer := this.TrioFeilBeskrivelse("Autoåpning", feil)
+            this.TrioStatusTekst := "Feil under automatisk håndtering av Oppgavelogg."
+            this.TrioDetaljer := this.TrioFeilBeskrivelse("Oppgavelogg livssyklus", feil)
             this.TrioFeil := true
-            Logg("Statistikk / Trio: " this.TrioDetaljer)
+            if (this.TrioStatusTekst != this.TrioForrigeLogg) {
+                this.TrioForrigeLogg := this.TrioStatusTekst
+                Logg("Statistikk / Trio: " this.TrioDetaljer)
+            }
         } finally {
             this.TrioApneOpptatt := false
             this.OppdaterTrioStatus()
