@@ -2,7 +2,12 @@
 #SingleInstance Off
 v := Gui(, "QuickerKeys synthetic Trio fixture")
 ; Seven columns, changed order, unnamed icon and empty optional fields.
-lv := v.AddListView("w950 h220", ["Oppgave-ID","", "Behandlingstid","Tidspunkt","Kommentar (IM)","Køtid","Koblet"])
+durationHeader := "Behand" Chr(0xAD) "lings" Chr(0x200B) "tid"
+if (A_Args.Length && A_Args[1] = "reordered")
+    durationHeader := "Behandl. tid"
+if (A_Args.Length && A_Args[1] = "missing-duration")
+    durationHeader := "Ukjent varighet"
+lv := v.AddListView("w950 h220", ["Oppgave-ID","",durationHeader,"Tidspunkt","Kommentar (IM)","Køtid","Koblet"])
 lv.Add(,"9876543210","","02:30",FormatTime(,"dd.MM.yyyy") " 09:12:34","Synthetic-private-text IM99887766","00:10","")
 lv.Add(,"9876543211","","01:00",FormatTime(,"dd.MM.yyyy") " 10:00:00","","","")
 lv.Add(,"9876543212","","01:00",FormatTime(DateAdd(A_Now,-1,"Days"),"dd.MM.yyyy") " 10:00:00","","","")

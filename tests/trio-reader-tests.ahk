@@ -15,6 +15,12 @@ RunTrioTests() {
     try {
         r := TrioOppgaveloggDiagnose()
         TrioAssert(r.KolonneKey("Oppgave-ID") = "oppgave", "header alias")
+        TrioAssert(r.KolonneKey("Behand" Chr(0xAD) "lingstid") = "behandling", "soft hyphen in duration header")
+        TrioAssert(r.KolonneKey("Behandlings" Chr(0x200B) "tid") = "behandling", "zero-width duration header")
+        TrioAssert(r.KolonneKey("&Behandling" Chr(0xA0) "stid") = "behandling", "mnemonic and NBSP in header")
+        TrioAssert(r.KolonneKey("Behandl. tid") = "behandling" && r.KolonneKey("Beh. tid") = "behandling", "duration abbreviations")
+        TrioAssert(r.KolonneKey("Tid") = "" && r.KolonneKey("Køtid") = "ko", "unrelated time is not treatment duration")
+        TrioAssert(r.OverskriftTilDiagnose("Behand" Chr(0xAD) "lingstid") = "Behand[U+00AD]lingstid", "diagnostic exposes invisible header characters")
         TrioAssert(r.KolonneKey("Kundenummer") = "", "customer column is not an ID source")
         TrioAssert(r.Tidsstempel("3.11.2026 9:12") = "20261103091200", "Norwegian minute precision")
         TrioAssert(r.Tidsstempel("2026-11-03T09:12:34") = "20261103091234", "ISO timestamp")
@@ -42,19 +48,31 @@ RunTrioTests() {
         TrioAssert(!InStr(out.detaljer,"9876543210") && !InStr(out.detaljer,"IM99887766")
             && !InStr(out.detaljer,"Synthetic-private-text"), "diagnostic contains no raw values")
         mangler := TrioTestRad()
-        mangler.felt.Delete("behandling")
+        mangler.felt.Delete("oppgave")
         konflikt := TrioTestRad()
         r.SettFelt(konflikt,"oppgave","1234567")
         out := r.NyLesing()
         r.VurderRader([mangler,TrioTestRad("bad date"),TrioTestRad(,"not-an-id")
             ,TrioTestRad(,,"N/A"),konflikt],out,"20261103")
-        TrioAssert(out.avvist = 5 && out.grunner["felt"] = 1 && out.grunner["dato"] = 1
-            && out.grunner["id"] = 1 && out.grunner["tid"] = 1 && out.grunner["konflikt"] = 1,
-            "separate rejection reasons")
+        TrioAssert(out.avvist = 4 && out.grunner["felt"] = 1 && out.grunner["dato"] = 1
+            && out.grunner["id"] = 1 && out.grunner["konflikt"] = 1 && out.sett.Count = 1
+            && out.behandlingUgyldig = 1, "identity rejection reasons and independent unknown duration")
+        noDuration := TrioTestRad()
+        noDuration.felt.Delete("behandling")
+        out := r.NyLesing()
+        r.VurderRader([noDuration],out,"20261103")
+        TrioAssert(out.ok && out.sett.Count = 1 && out.behandlingMangler = 1, "count tasks without duration header")
+        sum := StatistikkModul.Prototype.TrioSummering.Call({TrioOppgaver:out.sett})
+        TrioAssert(sum.antall = 1 && sum.behandlingN = 0 && sum.sek = 0, "unknown duration excluded from time totals")
+        zeroDuration := TrioTestRad(,,"00:00")
+        out := r.NyLesing()
+        r.VurderRader([zeroDuration],out,"20261103")
+        sum := StatistikkModul.Prototype.TrioSummering.Call({TrioOppgaver:out.sett})
+        TrioAssert(sum.behandlingN = 1 && sum.sek = 0, "real zero duration remains known")
         a := {felt:Map("oppgave","42"),konflikt:false}
         b := {felt:Map("tidspunkt","03.11.2026 09:00:00","behandling","01:00"),konflikt:false}
         r.FlettFelt(a,b)
-        TrioAssert(r.HarNokkelfelt(a.felt) && !a.konflikt, "same-row cell merge")
+        TrioAssert(r.HarIdentitetsfelt(a.felt) && !a.konflikt, "same-row cell merge")
         ; Exercise the real Win32 and UIA backends in a second process.
         Run('"' A_AhkPath '" /ErrorStdOut=UTF-8 "' A_ScriptDir '\trio-fixture.ahk"',,, &fixturePid)
         hwnd := WinWait("QuickerKeys synthetic Trio fixture ahk_pid " fixturePid,,10)
@@ -93,6 +111,23 @@ RunTrioTests() {
         for key, post in native.sett
             TrioAssert(uia.sett.Has(key) && uia.sett[key].sek = post.sek,
                 "native/UIA agree after visual reorder")
+        ProcessClose fixturePid
+        ProcessWaitClose fixturePid, 5
+        Run('"' A_AhkPath '" /ErrorStdOut=UTF-8 "' A_ScriptDir '\trio-fixture.ahk" missing-duration',,, &fixturePid)
+        hwnd := WinWait("QuickerKeys synthetic Trio fixture ahk_pid " fixturePid,,10)
+        TrioAssert(hwnd != 0,"unknown duration header fixture opened")
+        Sleep 500
+        for onlyUia in [false,true] {
+            missing := r.HentDagensData(hwnd,onlyUia)
+            FileAppend(missing.status "`n" missing.detaljer "`n", "*", "UTF-8")
+            TrioAssert(missing.ok && missing.sett.Count = 2 && !missing.kart.Has("behandling"),
+                "unknown duration header does not block backend task counting")
+            sum := StatistikkModul.Prototype.TrioSummering.Call({TrioOppgaver:missing.sett})
+            TrioAssert(sum.antall = 2 && sum.behandlingN = 0 && sum.sek = 0,
+                "backend keeps unknown treatment duration out of totals")
+            TrioAssert(InStr(missing.detaljer,"Ukjent varighet") && !InStr(missing.detaljer,"IM99887766"),
+                "unknown header label reported without row values")
+        }
         FileAppend("ALL TRIO TESTS PASSED`n", "*", "UTF-8")
     } catch as err {
         FileAppend("FAIL " err.Message " (line " err.Line ")`n", "**", "UTF-8")

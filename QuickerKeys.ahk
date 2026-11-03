@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc9"
+global APP_VERSJON := "3.12-rc10"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4755,7 +4755,8 @@ class TrioOppgaveloggDiagnose {
     NyLesing() {
         return {ok:false, status:"", kilde:"", sett:Map(), kandidater:0, avvist:0
             , andreDager:0, begrenset:false, detaljer:"", noder:0, lesefeil:0
-            , grunner:Map("felt",0,"dato",0,"id",0,"tid",0,"konflikt",0)
+            , behandlingMangler:0, behandlingUgyldig:0
+            , grunner:Map("felt",0,"dato",0,"id",0,"konflikt",0)
             , former:Map(), funnfelt:Map(), kolonner:[], kart:Map(), metoder:Map()}
     }
 
@@ -4786,7 +4787,7 @@ class TrioOppgaveloggDiagnose {
                     if !hdr
                         continue
                     schema := this.LesKolonner(UiaFraVindu(hdr))
-                    if !this.HarNokkelfelt(schema.kart)
+                    if !this.HarIdentitetsfelt(schema.kart)
                         continue
                     antKol := ListViewGetContent("Count Col", ctrl, "ahk_id " loggHwnd)
                     if (antKol != schema.kolonner.Length)
@@ -4831,8 +4832,8 @@ class TrioOppgaveloggDiagnose {
                 out.kilde := "UIA List / kolonnenavn og celleplassering"
                 schema := this.LesKolonner(rot)
                 out.kolonner := schema.kolonner, out.kart := schema.kart
-                if !this.HarNokkelfelt(out.kart) {
-                    out.status := "Kan ikke koble nødvendige kolonner entydig. Se feltdiagnosen."
+                if !this.HarIdentitetsfelt(out.kart) {
+                    out.status := "Kan ikke koble Tidspunkt og Oppgave-ID entydig. Se overskriftene nedenfor."
                     return this.AvsluttLesing(out)
                 }
                 slutt := A_TickCount + 4000
@@ -4846,17 +4847,23 @@ class TrioOppgaveloggDiagnose {
         return this.AvsluttLesing(out)
     }
 
+    NormaliserOverskrift(navn) {
+        ; UIA labels may include soft hyphens, zero-width/directional marks,
+        ; NBSP, line wrapping or mnemonic '&'. Keep exact semantic matching.
+        return RegExReplace(StrLower(navn), "[\s\p{Z}\p{Cf}.():_–—&-]", "")
+    }
+
     KolonneKey(navn) {
-        n := RegExReplace(StrLower(Trim(navn)), "[\s.():_–-]", "")
+        n := this.NormaliserOverskrift(navn)
         switch n {
             case "tidspunkt", "dato/tid", "datotid": return "tidspunkt"
             case "oppgave", "oppgaveid", "oppgavenr", "oppgavenummer": return "oppgave"
-            case "behandlingstid": return "behandling"
+            case "behandlingstid", "behandltid", "behtid": return "behandling"
             case "køtid", "kotid": return "ko"
             case "koblet": return "koblet"
             case "kommentar", "kommentarim": return "kommentar"
         }
-        return "" ; Unknown labels are never included in the diagnostic.
+        return "" ; Unknown headers are reported as labels, never inferred from row values.
     }
 
     Rektangel(el) {
@@ -4878,8 +4885,9 @@ class TrioOppgaveloggDiagnose {
             rekt := this.Rektangel(el)
             if !IsObject(rekt)
                 continue
-            key := this.KolonneKey(UiaStreng(el, 30005))
-            kol := {key:key, l:rekt.l, r:rekt.r, t:rekt.t, b:rekt.b}
+            navn := UiaStreng(el, 30005)
+            key := this.KolonneKey(navn)
+            kol := {key:key, navn:this.OverskriftTilDiagnose(navn), l:rekt.l, r:rekt.r, t:rekt.t, b:rekt.b}
             ; Insertion sort by display position, never by text content.
             i := 1
             while (i <= kolonner.Length && kolonner[i].l < kol.l)
@@ -4905,7 +4913,7 @@ class TrioOppgaveloggDiagnose {
         return {kolonner:kolonner, kart:kart}
     }
 
-    HarNokkelfelt(kart) => kart.Has("tidspunkt") && kart.Has("oppgave") && kart.Has("behandling")
+    HarIdentitetsfelt(kart) => kart.Has("tidspunkt") && kart.Has("oppgave")
 
     ; Bounded traversal scoped to the List. Stop at outer row items so that
     ; nested ListItem cells are not counted as independent tasks.
@@ -5137,14 +5145,12 @@ class TrioOppgaveloggDiagnose {
             grunn := ""
             if rad.konflikt
                 grunn := "konflikt"
-            else if !this.HarNokkelfelt(felt)
+            else if !this.HarIdentitetsfelt(felt)
                 grunn := "felt"
             else if !(stamp := this.Tidsstempel(felt["tidspunkt"]))
                 grunn := "dato"
             else if !RegExMatch(felt["oppgave"], "^\d{1,15}$")
                 grunn := "id"
-            else if (this.VarighetSekunder(felt["behandling"]) < 0)
-                grunn := "tid"
             if (grunn != "") {
                 out.avvist++, out.grunner[grunn]++
                 continue
@@ -5153,19 +5159,26 @@ class TrioOppgaveloggDiagnose {
                 out.andreDager++
                 continue
             }
+            behandlingSek := felt.Has("behandling") ? this.VarighetSekunder(felt["behandling"]) : -1
+            if !felt.Has("behandling")
+                out.behandlingMangler++
+            else if (behandlingSek < 0)
+                out.behandlingUgyldig++
             key := felt["oppgave"] "|" stamp
             koSek := felt.Has("ko") ? this.VarighetSekunder(felt["ko"]) : -1
             koblet := felt.Has("koblet") ? Trim(felt["koblet"]) : ""
-            out.sett[key] := {time:SubStr(stamp,9,2), sek:this.VarighetSekunder(felt["behandling"])
+            out.sett[key] := {time:SubStr(stamp,9,2), sek:behandlingSek, behandlingKjent:behandlingSek >= 0
                 , koSek:koSek, koHarVerdi:koSek >= 0, videre:felt.Has("koblet")
                     ? (koblet != "" && !RegExMatch(koblet,"i)^(?:N/A|-|0|nei|false)$")) : false
                 , videreKjent:felt.Has("koblet"), imKjent:felt.Has("kommentar")
                 , im:felt.Has("kommentar") && RegExMatch(felt["kommentar"],"i)\bIM\d{4,12}\b") > 0}
         }
         out.ok := out.sett.Count > 0
-        if out.ok
+        if out.ok {
             out.status := "Leste " out.sett.Count " validerte oppgaver fra tilgjengelig liste."
-        else if (out.andreDager > 0 && out.avvist = 0)
+            if (out.behandlingMangler || out.behandlingUgyldig)
+                out.status .= " Behandlingstid er delvis eller helt ukjent."
+        } else if (out.andreDager > 0 && out.avvist = 0)
             out.status := "Lesbare oppgaver funnet, men ingen fra i dag."
         else
             out.status := "Ingen dagens oppgaver kunne leses. Se feltdiagnosen nedenfor."
@@ -5187,6 +5200,18 @@ class TrioOppgaveloggDiagnose {
         return ""
     }
 
+    OverskriftTilDiagnose(navn) {
+        ; Called ONLY on HeaderItem Names, never on row/cell contents.
+        ; Make invisible Unicode characters visible without copying row data.
+        tekst := ""
+        loop parse SubStr(navn, 1, 100) {
+            tegn := A_LoopField
+            tekst .= RegExMatch(tegn, "[\p{Cf}\p{Cc}]") || (tegn != " " && RegExMatch(tegn,"\p{Z}"))
+                ? Format("[U+{:04X}]", Ord(tegn)) : tegn
+        }
+        return tekst != "" ? tekst : "(tom)"
+    }
+
     AvsluttLesing(out) {
         feltNavn := Map("tidspunkt","Tidspunkt", "oppgave","Oppgave-ID", "behandling","Behandlingstid"
             , "ko","Køtid", "koblet","Koblet", "kommentar","Kommentar/IM")
@@ -5197,16 +5222,20 @@ class TrioOppgaveloggDiagnose {
         tekst .= "`nKandidatrader: " out.kandidater " | Validerte i dag: " out.sett.Count
             . " | Andre dager: " out.andreDager
             . "`nAvvist – manglende felt: " out.grunner["felt"] ", dato/tid: " out.grunner["dato"]
-            . ", ID-format: " out.grunner["id"] ", behandlingstid: " out.grunner["tid"]
-            . ", motstridende celler: " out.grunner["konflikt"]
+            . ", ID-format: " out.grunner["id"] ", motstridende celler: " out.grunner["konflikt"]
+            . "`nBehandlingstid – mangler: " out.behandlingMangler ", ugyldig/ukjent: " out.behandlingUgyldig
+            . " (stopper ikke oppgavetelling)"
             . "`nUIA-noder lest: " out.noder " | Lesefeil: " out.lesefeil
+        for i, kol in out.kolonner
+            tekst .= "`nOverskrift " i ": " kol.navn " -> " (kol.key != "" && out.kart.Has(kol.key)
+                ? kol.key : kol.key != "" ? "tvetydig " kol.key : "ikke koblet")
         for key, ant in out.former
             tekst .= "`nRadstruktur " key ": " ant " elementer"
         for key, ant in out.metoder
             tekst .= "`nLesemåte " key ": " ant " elementer"
         if out.begrenset
             tekst .= "`nUtvalget ble begrenset av tid-/node-/radgrense."
-        out.detaljer := tekst "`nKun feltnavn, formatutfall og antall. Ingen rå celleverdier."
+        out.detaljer := tekst "`nKun kolonneoverskrifter, formatutfall og antall. Ingen rå rad-/celleverdier."
         return out
     }
 
@@ -5308,7 +5337,7 @@ class TrioOppgaveloggDiagnose {
             . "`nKontrollnoder registrert (maks): " Min(ko.Length, TrioOppgaveloggDiagnose.MaksNoder)
             . "`nDataGrid: " antall["DataGrid"] " | Table: " antall["Table"] " | List: " antall["List"]
             . "`nDataItem/ListItem funnet: " rader " (ikke nødvendigvis alle oppgaver)"
-            . "`nKjente kolonneoverskrifter: " overskrifter.Count " av 12"
+            . "`nKjente overskriftalias i strukturutvalget: " overskrifter.Count
             . "`nTid: " (A_TickCount - t0) " ms"
             . "`nDenne strukturkontrollen teller bare kontroller. Feltdiagnosen nedenfor gjelder innlesingen."
         return {ok:funn > 0, status:status, detaljer:detaljer}
@@ -5477,7 +5506,7 @@ class StatistikkModul {
         this.VisualKortK.Push(this.VisualKort(v, 22, 85, "Observerte oppgaver", TEMA.aksent))
         this.VisualKortK.Push(this.VisualKort(v, 216, 85, "Med Koblet-verdi", TEMA.aksent2))
         this.VisualKortK.Push(this.VisualKort(v, 410, 85, "IM-referanser", TEMA.paa))
-        this.VisualKortK.Push(this.VisualKort(v, 604, 85, "Behandling (min)", TEMA.av))
+        this.VisualKortK.Push(this.VisualKort(v, 604, 85, "Behandling (kjent min)", TEMA.av))
 
         Skrift(v, "s11 bold c" TEMA.tekst)
         v.AddText("x22 y176 w730 h26 Background" TEMA.bg,
@@ -5758,6 +5787,8 @@ class StatistikkModul {
                         oppgave.videre := gammel.videre, oppgave.videreKjent := true
                     if (!oppgave.imKjent && gammel.imKjent)
                         oppgave.im := gammel.im, oppgave.imKjent := true
+                    if (!oppgave.behandlingKjent && gammel.behandlingKjent)
+                        oppgave.sek := gammel.sek, oppgave.behandlingKjent := true
                     if (!oppgave.koHarVerdi && gammel.koHarVerdi)
                         oppgave.koSek := gammel.koSek, oppgave.koHarVerdi := true
                 }
@@ -5768,7 +5799,7 @@ class StatistikkModul {
     }
 
     TrioSummering() {
-        sum := {antall:0, videre:0, videreN:0, im:0, imN:0, sek:0, koSek:0, koN:0, timer:Map()}
+        sum := {antall:0, videre:0, videreN:0, im:0, imN:0, sek:0, behandlingN:0, koSek:0, koN:0, timer:Map()}
         loop 24
             sum.timer[Format("{:02}", A_Index - 1)] := 0
         for nokkel, post in this.TrioOppgaver {
@@ -5777,7 +5808,8 @@ class StatistikkModul {
             sum.imN += post.imKjent ? 1 : 0
             sum.videre += post.videre ? 1 : 0
             sum.im += post.im ? 1 : 0
-            sum.sek += post.sek
+            if post.behandlingKjent
+                sum.sek += post.sek, sum.behandlingN++
             if post.koHarVerdi
                 sum.koSek += post.koSek, sum.koN++
             if sum.timer.Has(post.time)
@@ -5798,7 +5830,7 @@ class StatistikkModul {
             this.VisualKortK[1].Text := " " sum.antall
             this.VisualKortK[2].Text := sum.videreN ? " " sum.videre : " —"
             this.VisualKortK[3].Text := sum.imN ? " " sum.im : " —"
-            this.VisualKortK[4].Text := " " Round(sum.sek / 60, 1)
+            this.VisualKortK[4].Text := sum.behandlingN ? " " Round(sum.sek / 60, 1) : " —"
         } else {
             for k in this.VisualKortK
                 k.Text := " —"
@@ -5825,6 +5857,7 @@ class StatistikkModul {
                 . "`r`nUnike oppgaver observert i RAM: " sum.antall
                 . "`r`nGjennomsnittlig køtid for validerte oppgaver: "
                 . (sum.koN ? Round(sum.koSek / sum.koN / 60, 1) " min" : "ukjent")
+                . "`r`nBehandlingstid kjent for " sum.behandlingN "/" sum.antall " oppgaver."
                 . "`r`nKoblet-felt lest for " sum.videreN "/" sum.antall
                 . "; Kommentar/IM for " sum.imN "/" sum.antall ". Koblet er ikke bekreftet videresending."
                 . "`r`n`r`n" StrReplace(this.TrioFeltDiagnose, "`n", "`r`n")

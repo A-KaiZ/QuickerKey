@@ -1,5 +1,21 @@
 # QuickerKeys Statistikk v3.12 — QA og avgrensninger
 
+
+## RC10 – behandlingstidskolonnen skal ikke stoppe oppgavetelling
+
+**Brukerrapport 03.11.2026:** 13 HeaderItem med lesbar plassering. Tidspunkt, Oppgave-ID, Køtid, Koblet og Kommentar/IM koblet; bare Behandlingstid manglet/var tvetydig. 0 kandidatrader og 0 UIA-noder fordi RC9 avbrøt før radlesingen. Dette beviser en sperre i skjemaet, ikke manglende oppgaver. Den eksakte UIA-overskriften er ennå ikke sett.
+
+**Endret:** Overskriftsnormalisering fjerner Unicode-formattegn, NBSP, linjeskift og mnemonic-tegn. Eksakte forkortelser «Behandl. tid» / «Beh. tid» støttes. Identitet er tidspunkt + oppgave-ID; behandlingstid er nå uavhengig av oppgavetelling. Ukjent behandlingstid holdes utenfor summer, og feltdekning vises. Diagnosen viser HeaderItem-etikettene (aldri radverdier), med skjulte tegn synliggjort som `[U+....]`. Ingen plassbasert gjetting når overskriften er ukjent.
+
+### Verifikasjon
+
+- Automatiserte AHK-tester for myk bindestrek, nullbredde, NBSP, `&`, forkortelser og synliggjøring av skjulte tegn. «Tid» og «Køtid» må ikke tolkes som behandlingstid.
+- Syntetisk Windows ListView gjennom både Win32 og UIA: usynlige tegn i faktisk header, forkortet header med flyttede kolonner og fullstendig ukjent behandlingsoverskrift.
+- Ukjent behandlingsoverskrift skal fortsatt gi to oppgaver fra i dag, men ingen kjent behandlingstid. «00:00» skal derimot være kjent nulltid. Aggregatoren testes mot samme parserdata som dashboardet bruker.
+- Faktisk Trio-QA: start **3.12-rc10**, vent én automatisk syklus og åpne Visualiseringer. Sammenlign observerte oppgaver og kjent behandlingstid med Trio. Hvis oppgavene fortsatt ikke kan leses, kopier diagnosen med overskriftene og avvisningsgrunnene.
+
+## RC9 (historikk; RC10 endrer krav til behandlingstid)
+
 ## RC9 – innlesing etter kolonnenavn og konkret feltdiagnose
 
 **Feilen rapportert fra RC8:** UIA fant List og listeelementer, men 150 kandidater ga 0 validerte oppgaver. RC8 krevde 13 felter og faste posisjoner. Rapporten skilte ikke felt-/formatfeil fra oppgaver fra andre dager. Dette dokumenterer at RC8 ikke kunne lese brukerens data; den eksakte klientstrukturen er fortsatt ubekreftet.

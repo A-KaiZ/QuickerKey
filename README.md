@@ -11,7 +11,7 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 - **Statistikk (PR #9):** Automatisk, foreløpig innlesing fra Trio Oppgavelogg til eget dashboard, manuell skriftlig tid og UIA-diagnostikk.
 
-## v3.12-rc9 – Statistikk + Trio Oppgavelogg (PR #9)
+## v3.12-rc10 – Statistikk + Trio Oppgavelogg (PR #9)
 
 En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **Siste registreringer i dag** er det en liten rød **🗑**-knapp med bekreftelse. Den sletter kun dagens fullførte manuelle CSV-statistikk etter eksplisitt Ja, og blokkeres hvis en samtale eller skriftlig tid fortsatt pågår. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for automatisk innlesing og skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
 
@@ -26,7 +26,11 @@ En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **
 
 Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller vinduet ikke gjenkjennes, vises status. For å unngå gjentatte popup-vinduer blir et mislykket automatisk åpningsforsøk ikke gjentatt i samme Trio-prosess før omstart.
 
-**Innlesing og diagnose (RC9):** Hvert 30. sekund leses tilgjengelige oppgaver. Nøkkelfeltene identifiseres fra **Tidspunkt**, **Oppgave / Oppgave-ID** og **Behandlingstid**. Ingen fast antakelse om 13 kolonner eller behandlingstid i kolonne 9. Standard Win32 ListView leses kolonnevis med kobling mellom vist og logisk kolonnerekkefølge; egendefinert UIA-liste leses via HeaderItem og cellenes plassering. Tomme felt bevarer sin plass. Nested ListItem-celler behandles innen raden; ListItem-per-celle kan samles når de har identisk vertikal radplassering. Ingen glidende sammenslåing på tvers av rader. Tvetydig kolonnemapping eller motstridende celleverdier avvises.
+**Innlesing og diagnose (RC10):** Hvert 30. sekund leses tilgjengelige oppgaver. Oppgaver identifiseres fra **Tidspunkt** og **Oppgave / Oppgave-ID**. Behandlingstid er en separat, valgfri måling. Ingen fast antakelse om 13 kolonner eller behandlingstid i kolonne 9. Standard Win32 ListView leses kolonnevis med kobling mellom vist og logisk kolonnerekkefølge; egendefinert UIA-liste leses via HeaderItem og cellenes plassering. Tomme felt bevarer sin plass. Nested ListItem-celler behandles innen raden; ListItem-per-celle kan samles når de har identisk vertikal radplassering. Ingen glidende sammenslåing på tvers av rader. Tvetydig kolonnemapping eller motstridende celleverdier avvises.
+
+**RC10 etter brukertest:** RC9 fant 13 kolonner, men behandlingstid var den eneste ukoblede nøkkelkolonnen. Den tidlige sperren ga derfor 0 kandidatrader. RC10 normaliserer usynlige Unicode-formateringstegn (inkludert myk bindestrek og nullbredde), NBSP, linjeskift og `&` i overskrifter, og støtter de eksakte forkortelsene «Behandl. tid» og «Beh. tid». Ingen generell/fuzzy tolkning av «Tid» som behandlingstid.
+
+**Oppgavetelling fortsetter uten behandlingstid:** En gyldig oppgave-ID og et gyldig tidspunkt fra i dag er tilstrekkelig for observert antall og timegraf. Manglende/ugyldig behandlingstid blir **ukjent**, ikke 0, og tas ikke med i summen. Kortet «Behandling (kjent min)» viser «—» hvis ingen tider er kjent; status viser dekningen. Tidligere kjente tider i samme dagsbuffer beholdes ved en senere ufullstendig skanning. Diagnosen viser nå de faktiske **HeaderItem-overskriftene**, med usynlige tegn skrevet som `[U+....]`, slik at et ukjent kolonnenavn kan identifiseres uten rad-/kundedata. «8 av 12» er erstattet av et aliasantall i strukturutvalget, siden dette aldri var en kontroll av 12 faktiske kolonner.
 
 **Status betyr faktisk innlesing:** «UIA-struktur funnet» alene er ikke en vellykket import. Både hovedstatus, dashboard og **Kopier diagnose** viser resultatet av feltlesingen: nødvendige/valgfrie felt koblet eller manglende, kandidatrader, validerte oppgaver fra i dag, andre dager og separate avvisningsgrunner (manglende felt, dato/tid, ID-format, behandlingstid, motstridende celler). Radstruktur rapporteres som antall bladkontroller og lesemetode. Ingen rå celleverdier eksporteres. Oppdatering skjer automatisk; **Oppdater nå** er kun en reserve.
 
