@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc1"
+global APP_VERSJON := "3.12-rc2"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -5074,7 +5074,7 @@ class StatistikkModul {
                 this.TrioStatusTekst := forlop != "" ? forlop
                     : trio ? "Oppgavelogg er ikke åpen. Autoåpning er slått av." : "Trio Attendant er ikke startet."
                 this.TrioDetaljer := "Ingen UIA-celler ble lest. " (forlop != "" ? forlop : "")
-                this.TrioFeil := (kode = "menyfeil" || kode = "ikke-funnet")
+                this.TrioFeil := (kode = "menyfeil" || kode = "ikke-funnet" || kode = "sperret")
             }
             if (this.TrioStatusTekst != this.TrioForrigeLogg) {
                 this.TrioForrigeLogg := this.TrioStatusTekst
