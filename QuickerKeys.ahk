@@ -2480,24 +2480,56 @@ class VT_SMKontakt extends VT_Base {
         return true
     }
 
-    ; Klikker på et punkt i Service Manager – bare hvis det er Service Manager som ligger under punktet
+    ; Klikk kun i bekreftet Service Manager-vindu og eier av punktet.
     TryggKlikk(smHwnd, kx, ky) {
         if !this.ErTrygt(smHwnd)
             return false
         WinGetClientPos &wx, &wy, , , "ahk_id " smHwnd
-        sx := wx + kx, sy := wy + ky
+        return this.TryggKlikkSkjerm(smHwnd, wx + kx, wy + ky)
+    }
+
+    TryggKlikkSkjerm(smHwnd, sx, sy) {
+        if !this.ErTrygt(smHwnd)
+            return false
         under := DllCall("WindowFromPoint", "Int64", (sy << 32) | (sx & 0xFFFFFFFF), "Ptr")
-        rot := under ? DllCall("GetAncestor", "Ptr", under, "UInt", 2, "Ptr") : 0     ; GA_ROOT
+        rot := under ? DllCall("GetAncestor", "Ptr", under, "UInt", 2, "Ptr") : 0
         if (rot != smHwnd) {
-            navn := ""
-            try navn := WinGetTitle("ahk_id " rot) " (" WinGetProcessName("ahk_id " rot) ")"
-            Logg("SM Kontakt: fyll – et annet vindu ligger over Service Manager der det skal klikkes: " navn)
+            Logg("SM Kontakt: et annet vindu ligger over målfeltet")
             return false
         }
         CoordMode "Mouse", "Screen"
         Click sx, sy
         return true
     }
+
+    FeltIkkeFunnet(bruker, hva, grunn) {
+        Logg("SM Kontakt: AVBRUTT – fant ikke " hva " (" grunn "). Ingen videre innskriving.")
+        Varsel("Avbrutt", bruker, "Fant ikke " hva " – ingenting skrevet", false)
+        return false
+    }
+
+    Signatur(prefiks) => {type:this.Cfg[prefiks "Type"], navn:this.Cfg[prefiks "Navn"]
+        , id:this.Cfg[prefiks "Id"], klasse:this.Cfg[prefiks "Klasse"]}
+
+    LaerFelt(prefiks, sx, sy, typer) {
+        sig := ""
+        try sig := UiaSignatur(UiaFeltFraPunkt(sx, sy, typer))
+        ok := UiaKanGjenkjennes(sig)
+        this.Ny[prefiks "Type"] := ok ? sig.type : ""
+        this.Ny[prefiks "Navn"] := ok ? sig.navn : ""
+        this.Ny[prefiks "Id"] := ok ? sig.id : ""
+        this.Ny[prefiks "Klasse"] := ok ? sig.klasse : ""
+        return ok
+    }
+
+    BeskrivFelt(prefiks) {
+        if (this.Ny.Has(prefiks "Type") && this.Ny[prefiks "Type"] != "")
+            return UiaBeskriv({type:this.Ny[prefiks "Type"], navn:this.Ny[prefiks "Navn"], id:this.Ny[prefiks "Id"]})
+        if (this.Ny.Has(prefiks "X") && this.Ny[prefiks "X"] != "")
+            return "klikkposisjon (ingen UIA-signatur)"
+        return "ingen"
+    }
+
 
     FyllAvbrutt(bruker, hvor) {
         CoordMode "Mouse", "Screen"
@@ -2606,42 +2638,34 @@ class VT_SMKontakt extends VT_Base {
         CoordMode "Mouse", "Screen"
         MouseGetPos &sx, &sy, &win
         if (!win || WinGetPID("ahk_id " win) = ProcessExist())
-            return                                    ; klikk i dette programmet teller ikke
+            return
         WinGetClientPos &cx, &cy, , , "ahk_id " win
         ox := sx - cx, oy := sy - cy
-
         if (this.LaerSteg = 1) {
             if (!ErNettleser(win) || this.Cfg["TrioKilde"] = "attendant")
-                return                                ; Trio Attendant læres med hurtigkopiering (se LaerKopi)
+                return
             this.Ny["WebVindu"] := VindusId(win)
             this.LaerKilde := "web"
             this.LaerInfo := "Trio Web: " WinGetTitle("ahk_id " win)
-            this.LaerSteg := 3                        ; ingen legg på-knapp for Trio Web
+            this.LaerSteg := 3
         } else if (this.LaerSteg = 3) {
-            ; Bruk en stabil Service Manager-identifikator, ikke Edge sin tilfeldige fanetittel.
-            ; Stopper læring hvis det er YouTube eller en annen side som er aktiv.
             if ErNettleser(win) {
                 if !NettleserFaneBekreftet(win, "Service Manager") {
-                    Logg("SM Kontakt: læring – klikket i Edge, men kunne ikke bekrefte Service Manager-fanen")
-                    Tip("Fant ikke bekreftet Service Manager-fane. Åpne SM 02 og klikk i Kontakt-feltet.", 4200)
+                    Tip("Åpne SM 02 og klikk i Kontakt-feltet.", 4200)
                     return
                 }
                 smId := "Service Manager ahk_exe " WinGetProcessName("ahk_id " win)
             } else {
                 smId := VindusId(win)
                 if !InStr(smId, "Service Manager") {
-                    Tip("Dette ser ikke ut som Service Manager. Klikk i riktig Kontakt-felt.", 4000)
+                    Tip("Dette er ikke Service Manager – klikk i riktig Kontakt-felt.", 4000)
                     return
                 }
             }
             this.Ny["SMVindu"] := smId, this.Ny["KontaktX"] := ox, this.Ny["KontaktY"] := oy
+            this.Ny["KnappX"] := "", this.Ny["KnappY"] := ""
+            this.LaerFelt("Kontakt", sx, sy, UiaFeltTyper())
             this.SmHwnd := win
-            this.LaerInfo .= "`nService Manager: " smId
-            this.LaerSteg := 4
-        } else if (this.LaerSteg = 4) {
-            if (win != this.SmHwnd)
-                return
-            this.Ny["KnappX"] := ox, this.Ny["KnappY"] := oy
             this.LaerTestVindu()
         }
     }
@@ -2686,7 +2710,7 @@ class VT_SMKontakt extends VT_Base {
         tv.AddText("x20 y52 w520 Background" TEMA.bg
             , trioLinje
             . "`nService Manager:   " VennligNavn(this.Ny["SMVindu"])
-            . "`nKnapp ved siden av Kontakt:   " (this.Ny["KnappX"] != "" ? "lært" : "ingen"))
+            . "`nKontakt-felt:   " this.BeskrivFelt("Kontakt") "  ·  Tab + Enter")
         Skrift(tv, "s9 bold c" TEMA.dempet)
         tv.AddText("x20 y132 w520 Background" TEMA.bg, att ? "BRUKERNAVN FRA TRIO" : "LESER " StrUpper(this.VerdiNavn(this.LaerKilde)) " FRA TRIO NÅ")
         Skrift(tv, "s18 bold c" (lest.bruker != "" ? TEMA.paa : TEMA.dempet))
