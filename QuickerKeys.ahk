@@ -4993,6 +4993,13 @@ class TrioOppgaveloggDiagnose {
                 return rad
             }
         }
+        celler := this.Barn(el, out, slutt)
+        strukturRad := this.LesRadceller(celler, schema)
+        if IsObject(strukturRad) {
+            this.Tell(out.former, "celler=" celler.Length)
+            this.Tell(out.metoder, "kolonnejusterte radceller")
+            return strukturRad
+        }
         ko := [{el:el, d:0}], i := 1, blad := 0
         while (i <= ko.Length && i <= 64 && A_TickCount < slutt) {
             post := ko[i], i++
@@ -5024,6 +5031,48 @@ class TrioOppgaveloggDiagnose {
             out.begrenset := true
         this.Tell(out.former, "blad=" Min(blad, 64))
         this.Tell(out.metoder, "celleplassering")
+        return rad
+    }
+
+    ; Win32's UIA provider exposes the first Text cell with a rectangle
+    ; spanning the WHOLE row. Require a complete one-to-one set of direct
+    ; row cells and align their left edges to headers before using it.
+    ; This is also independent of provider enumeration/display order.
+    LesRadceller(celler, schema) {
+        if (celler.Length != schema.kolonner.Length || celler.Length < 3)
+            return ""
+        koblinger := [], brukt := Map()
+        for el in celler {
+            type := UiaTall(el, 30003)
+            if !(type = 50020 || type = 50007 || type = 50029)
+                return ""
+            rekt := this.Rektangel(el)
+            if !IsObject(rekt)
+                return ""
+            matchIndex := 0
+            for i, kol in schema.kolonner {
+                if (Abs(rekt.l - kol.l) <= 2) {
+                    if matchIndex
+                        return ""
+                    matchIndex := i
+                }
+            }
+            if (!matchIndex || brukt.Has(matchIndex)
+                || rekt.r > schema.kolonner[-1].r + 2)
+                return ""
+            brukt[matchIndex] := true
+            koblinger.Push({el:el, kol:schema.kolonner[matchIndex]})
+        }
+        rad := {felt:Map(), konflikt:false}
+        for kobling in koblinger {
+            key := kobling.kol.key
+            if (key = "" || !schema.kart.Has(key))
+                continue
+            verdi := UiaStreng(kobling.el, 30045)
+            if (verdi = "")
+                verdi := UiaStreng(kobling.el, 30005)
+            this.SettFelt(rad,key,Trim(verdi))
+        }
         return rad
     }
 

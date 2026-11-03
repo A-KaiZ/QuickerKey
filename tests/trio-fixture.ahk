@@ -10,3 +10,10 @@ for i, width in [120,30,130,190,220,70,90]
     lv.ModifyCol(i,width)
 v.OnEvent("Close", (*) => ExitApp())
 v.Show()
+
+if (A_Args.Length && A_Args[1] = "reordered") {
+    order := Buffer(28,0)
+    for i, value in [3,0,1,2,4,5,6]
+        NumPut("Int",value,order,(i-1)*4)
+    SendMessage 0x103A, 7, order.Ptr, lv.Hwnd ; LVM_SETCOLUMNORDERARRAY, synthetic only
+}

@@ -65,7 +65,6 @@ RunTrioTests() {
         FileAppend(native.status "`n" native.detaljer "`n", "*", "UTF-8")
         TrioAssert(native.ok && native.sett.Count = 2 && native.andreDager = 1
             && InStr(native.kilde,"Win32"), "native non-13-column named mapping")
-        DumpSyntheticTrio(r,hwnd)
         uia := r.HentDagensData(hwnd,true)
         FileAppend(uia.status "`n" uia.detaljer "`n", "*", "UTF-8")
         TrioAssert(uia.ok && uia.sett.Count = 2 && InStr(uia.kilde,"UIA"), "real UIA ListItem cell mapping")
@@ -79,6 +78,20 @@ RunTrioTests() {
         WinMinimize "ahk_id " hwnd
         minimized := r.HentDagensData(hwnd)
         TrioAssert(!minimized.ok && InStr(minimized.status,"minimert"),"minimized window is not read")
+        ProcessClose fixturePid
+        ProcessWaitClose fixturePid, 5
+        Run('"' A_AhkPath '" /ErrorStdOut=UTF-8 "' A_ScriptDir '\trio-fixture.ahk" reordered',,, &fixturePid)
+        hwnd := WinWait("QuickerKeys synthetic Trio fixture ahk_pid " fixturePid,,10)
+        TrioAssert(hwnd != 0,"reordered fixture opened")
+        Sleep 500
+        native := r.HentDagensData(hwnd)
+        uia := r.HentDagensData(hwnd,true)
+        FileAppend(uia.status "`n" uia.detaljer "`n", "*", "UTF-8")
+        TrioAssert(native.ok && uia.ok && native.sett.Count = 2 && uia.sett.Count = 2,
+            "visual column reorder supported by both backends")
+        for key, post in native.sett
+            TrioAssert(uia.sett.Has(key) && uia.sett[key].sek = post.sek,
+                "native/UIA agree after visual reorder")
         FileAppend("ALL TRIO TESTS PASSED`n", "*", "UTF-8")
     } catch as err {
         FileAppend("FAIL " err.Message " (line " err.Line ")`n", "**", "UTF-8")
@@ -90,24 +103,4 @@ RunTrioTests() {
         }
     }
     ExitApp exitCode
-}
-
-; Coordinates/types only, from the synthetic process, to make CI failures actionable.
-DumpSyntheticTrio(r,hwnd) {
-    root := UiaFraVindu(hwnd)
-    schema := r.LesKolonner(root)
-    for kol in schema.kolonner
-        FileAppend("SYNTH HEADER " kol.key " rect=" kol.l "," kol.r "`n","*","UTF-8")
-    out := r.NyLesing(), deadline := A_TickCount + 4000
-    for listEl in UiaFinnAlle(root,50008) {
-        rows := UiaFinnAlle(listEl,50007)
-        if !rows.Length
-            continue
-        for el in r.Barn(rows[1],out,deadline) {
-            rect := r.Rektangel(el)
-            if IsObject(rect)
-                FileAppend("SYNTH CELL type=" UiaTall(el,30003) " rect=" rect.l "," rect.r
-                    " mapped=" r.CelleKolonne(rect,schema) " name-length=" StrLen(UiaStreng(el,30005)) "`n","*","UTF-8")
-        }
-    }
 }
