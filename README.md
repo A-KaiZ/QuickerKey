@@ -11,7 +11,7 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 - **Statistikk (PR #9):** Automatisk, foreløpig innlesing fra Trio Oppgavelogg til eget dashboard, manuell skriftlig tid og UIA-diagnostikk.
 
-## v3.12-rc10 – Statistikk + Trio Oppgavelogg (PR #9)
+## v3.12-rc11 – Statistikk + Trio Oppgavelogg (PR #9)
 
 En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **Siste registreringer i dag** er det en liten rød **🗑**-knapp med bekreftelse. Den sletter kun dagens fullførte manuelle CSV-statistikk etter eksplisitt Ja, og blokkeres hvis en samtale eller skriftlig tid fortsatt pågår. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for automatisk innlesing og skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
 
@@ -26,7 +26,11 @@ En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **
 
 Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller vinduet ikke gjenkjennes, vises status. For å unngå gjentatte popup-vinduer blir et mislykket automatisk åpningsforsøk ikke gjentatt i samme Trio-prosess før omstart.
 
-**Innlesing og diagnose (RC10):** Hvert 30. sekund leses tilgjengelige oppgaver. Oppgaver identifiseres fra **Tidspunkt** og **Oppgave / Oppgave-ID**. Behandlingstid er en separat, valgfri måling. Ingen fast antakelse om 13 kolonner eller behandlingstid i kolonne 9. Standard Win32 ListView leses kolonnevis med kobling mellom vist og logisk kolonnerekkefølge; egendefinert UIA-liste leses via HeaderItem og cellenes plassering. Tomme felt bevarer sin plass. Nested ListItem-celler behandles innen raden; ListItem-per-celle kan samles når de har identisk vertikal radplassering. Ingen glidende sammenslåing på tvers av rader. Tvetydig kolonnemapping eller motstridende celleverdier avvises.
+**Innlesing og diagnose (RC11):** Hvert 30. sekund leses tilgjengelige oppgaver. Oppgaver identifiseres fra **Tidspunkt** og **Oppgave / Oppgave-ID**. Behandlingstid er en separat, valgfri måling. Ingen fast antakelse om 13 kolonner eller behandlingstid i kolonne 9. Standard Win32 ListView leses kolonnevis med kobling mellom vist og logisk kolonnerekkefølge; egendefinert UIA-liste leses via HeaderItem og cellenes plassering. Tomme felt bevarer sin plass. Nested ListItem-celler behandles innen raden; ListItem-per-celle kan samles når de har identisk vertikal radplassering. Ingen glidende sammenslåing på tvers av rader. Tvetydig kolonnemapping eller motstridende celleverdier avvises.
+
+**RC11 – kun dagens dato:** Datofilteret hentes automatisk fra Windows ved hver skanning, f.eks. `03.11.2026` denne dagen. UIA-leseren leser tidspunktet før oppgave-ID og øvrige målinger når en full rad kan identifiseres. Gyldige datoer fra andre dager utelates uten å kreve resten av feltene; ukjent/ugyldig dato telles separat og blir aldri antatt å være i dag. Dagsskifte håndteres automatisk og dagsbufferen nullstilles som før.
+
+**Tidscellen og lange logger:** Kjent `Tidspunkt:`-etikett, Unicode-formattegn og alternative mellomrom normaliseres. En gyldig UIA Name-verdi kan brukes når Value ikke inneholder et gyldig tidspunkt; to forskjellige gyldige datoer avvises som tvetydige. Diagnosen viser **maskerte** Name-/Value-formater og valg av kilde, ikke rå tidsverdier. Rader som fortsatt finnes i UIA-treet, men mangler skjermkoordinater, kan leses fra et kolonneoppsett bekreftet fra komplette rader med samme bladstruktur. Alle observerte kart må være enige; ellers avvises denne metoden. Ingen automatisk scrolling eller Realize-kall. Hvis Trio faktisk virtualiserer bort radene, kan dette fortsatt ikke garantere hele dagen.
 
 **RC10 etter brukertest:** RC9 fant 13 kolonner, men behandlingstid var den eneste ukoblede nøkkelkolonnen. Den tidlige sperren ga derfor 0 kandidatrader. RC10 normaliserer usynlige Unicode-formateringstegn (inkludert myk bindestrek og nullbredde), NBSP, linjeskift og `&` i overskrifter, og støtter de eksakte forkortelsene «Behandl. tid» og «Beh. tid». Ingen generell/fuzzy tolkning av «Tid» som behandlingstid.
 

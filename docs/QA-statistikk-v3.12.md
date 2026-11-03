@@ -1,6 +1,23 @@
 # QuickerKeys Statistikk v3.12 — QA og avgrensninger
 
 
+## RC11 – dagens dato først, tidskilde og rader uten plassering
+
+Brukeren bekreftet at Oppgavelogg har historikk tilbake til 12.10.2026 og ba om fokus på kun dagens dato, 03.11.2026. RC10-rapporten viste 52 kandidater med tidsfelt som alle ble avvist på dato/tid; 116 manglet felter. Dermed var historikk alene ikke en forklaring: «Andre dager» var fortsatt 0. Den nøyaktige UIA-tidsverdien er ikke gitt i rapporten.
+
+- **Dagens dato er dynamisk:** nytt filter per lesing fra Windows, ikke hardkodet til 03.11.2026. Ved identifiserbare UIA-rader leses tidspunkt først. Gyldig annen dato krever ingen øvrige data og hopper over resten. Ulesbar dato avvises; den gjøres aldri om til dagens dato.
+- **Tidsrepresentasjon:** normalisering av formattegn/mellomrom og eksakt `Tidspunkt:`-etikett. Kildevalg mellom Name og Value baseres på gyldig dato. To forskjellige gyldige datoer avvises. Diagnose viser maskerte formatstrenger som `dd.dd.dddd dd:dd:dd`, og antall valg fra hver kilde.
+- **Eksponerte rader uten koordinater:** et cellekart kan utledes fra komplette rader med gyldig tidsfelt og entydig geometri for alle kjente kolonner. Samme antall, relative bladbaner og kontrolltyper kreves, og motstridende kart sperres. Kartet gjelder bare den aktuelle skanningen. Kun allerede eksponert tekst leses; ingen scrolling, tastetrykk eller VirtualizedItem.Realize.
+- **Full historikk garanteres ikke:** UIA-kontrollen kan skjule helt urealiserte rader. Tid-/nodegrenser gjelder fortsatt og rapporteres. Dagens tall er observerte oppgaver, ikke attestert samtalestatistikk.
+
+### Tester
+
+Eksakt tidligere observert tidsformat `02.11.2026 09:40:38`, etikett/Unicode-format, Name mot ugyldig Value, motstridende tidsverdier og maskering. Datofilteret testes med 12.10, 02.11, 03.11 og 04.11, samt overgang til ny datodag. Motstridende strukturelle cellekart skal aldri brukes. En syntetisk lang Windows-logg med 178 historiske og to dagens oppgaver prøves gjennom UIA; cellekoordinater fjernes etter de to første radene. Leseren skal hente dagens to oppgaver uten å endre listescrollingen. Dette bekrefter eksponert tekst uten koordinater, ikke ekte leverandørvirtualisering.
+
+### Trio-test
+
+Start **3.12-rc11**, vent én automatisk syklus, og sjekk at «Dagens datofilter» viser dagens faktiske dato. Sammenlign observerte oppgaver med dagens synlige Trio-oppgaver. Hvis «dato/tid» fortsatt øker uten validerte rader, del **Kopier diagnose** med de maskerte tidsformatene. Ingen rå tids-, kunde- eller telefonverdier behøves. **Draft beholdes; faktisk Trio er ikke tilgjengelig i utviklingsmiljøet.**
+
 ## RC10 – behandlingstidskolonnen skal ikke stoppe oppgavetelling
 
 **Brukerrapport 03.11.2026:** 13 HeaderItem med lesbar plassering. Tidspunkt, Oppgave-ID, Køtid, Koblet og Kommentar/IM koblet; bare Behandlingstid manglet/var tvetydig. 0 kandidatrader og 0 UIA-noder fordi RC9 avbrøt før radlesingen. Dette beviser en sperre i skjemaet, ikke manglende oppgaver. Den eksakte UIA-overskriften er ennå ikke sett.

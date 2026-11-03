@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc10"
+global APP_VERSJON := "3.12-rc11"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4756,6 +4756,8 @@ class TrioOppgaveloggDiagnose {
         return {ok:false, status:"", kilde:"", sett:Map(), kandidater:0, avvist:0
             , andreDager:0, begrenset:false, detaljer:"", noder:0, lesefeil:0
             , behandlingMangler:0, behandlingUgyldig:0
+            , tidsformer:Map(), tidFraName:0, tidFraValue:0, tidskonflikt:0
+            , utenPlassering:0, bekreftedeKart:0, datoIDag:FormatTime(,"yyyyMMdd")
             , grunner:Map("felt",0,"dato",0,"id",0,"konflikt",0)
             , former:Map(), funnfelt:Map(), kolonner:[], kart:Map(), metoder:Map()}
     }
@@ -4806,8 +4808,14 @@ class TrioOppgaveloggDiagnose {
                     }
                     loop Min(maks, 2000) {
                         nr := A_Index, felt := Map()
-                        for key, verdier in kolonneData
-                            felt[key] := nr <= verdier.Length ? Trim(verdier[nr]) : ""
+                        if !kolonneData.Has("tidspunkt")
+                            continue
+                        tider := kolonneData["tidspunkt"]
+                        felt["tidspunkt"] := nr <= tider.Length ? Trim(tider[nr]) : ""
+                        if this.ErDagensTid(felt["tidspunkt"],out) {
+                            for key, verdier in kolonneData
+                                felt[key] := nr <= verdier.Length ? Trim(verdier[nr]) : ""
+                        }
                         ; Empty native text is common in owner-drawn controls;
                         ; it must not suppress the UIA fallback.
                         if (felt.Has("tidspunkt") && felt["tidspunkt"] != "")
@@ -4952,7 +4960,9 @@ class TrioOppgaveloggDiagnose {
             if (post.d > 0 && (type = 50007 || type = 50029)) {
                 rekt := this.Rektangel(post.el)
                 rad := this.LesUiaRad(post.el, schema, out, slutt)
-                if IsObject(rekt) {
+                if (rad.HasOwnProp("blader") && rad.blader.Length > 1) {
+                    utenRekt.Push(rad)
+                } else if IsObject(rekt) {
                     ; For ListItem-per-cell providers, cells on the exact same
                     ; row band are merged by geometry, never by a rolling offset.
                     key := rekt.t ":" rekt.b
@@ -4982,13 +4992,12 @@ class TrioOppgaveloggDiagnose {
             resultat.Push(rad)
         for rad in utenRekt
             resultat.Push(rad)
+        this.SupplerUtenPlassering(resultat,schema,out,slutt)
         return resultat
     }
 
     LesUiaRad(el, schema, out, slutt) {
-        rad := {felt:Map(), konflikt:false}
-        ; Tab-separated row Names have explicit empty slots. Never remove
-        ; empty entries, since that would shift the following columns.
+        rad := {felt:Map(), konflikt:false, blader:[], feltindeks:Map(), form:""}
         navn := UiaStreng(el, 30005)
         if InStr(navn, A_Tab) {
             felt := StrSplit(navn, A_Tab)
@@ -5002,55 +5011,107 @@ class TrioOppgaveloggDiagnose {
             }
         }
         celler := this.Barn(el, out, slutt)
-        strukturRad := this.LesRadceller(celler, schema)
+        strukturRad := this.LesRadceller(celler, schema, out)
         if IsObject(strukturRad) {
             this.Tell(out.former, "celler=" celler.Length)
             this.Tell(out.metoder, "kolonnejusterte radceller")
             return strukturRad
         }
-        ko := [{el:el, d:0}], i := 1, blad := 0
+        ko := [{el:el, d:0, sti:""}], i := 1, form := ""
         while (i <= ko.Length && i <= 64 && A_TickCount < slutt) {
             post := ko[i], i++
-            barnListe := this.Barn(post.el, out, slutt)
+            barnListe := post.d = 0 ? celler : this.Barn(post.el, out, slutt)
             if barnListe.Length {
                 if (post.d >= 4) {
                     out.begrenset := true
                     continue
                 }
-                for barnEl in barnListe
-                    ko.Push({el:barnEl, d:post.d+1})
+                for nr, barnEl in barnListe
+                    ko.Push({el:barnEl, d:post.d+1, sti:post.sti "." nr})
                 continue
             }
-            blad++
+            rad.blader.Push(post.el)
+            form .= post.sti ":" UiaTall(post.el,30003) "|"
             rekt := this.Rektangel(post.el)
             if !IsObject(rekt)
                 continue
-            ; Only read text after the cell has been aligned to a known field.
-            ; A whole-row rectangle spans headers and is deliberately rejected.
             key := this.CelleKolonne(rekt, schema)
             if (key = "")
                 continue
-            verdi := UiaStreng(post.el, 30045) ; Value if exposed, else Name
-            if (verdi = "")
-                verdi := UiaStreng(post.el, 30005)
-            this.SettFelt(rad, key, Trim(verdi))
+            rad.feltindeks[rad.blader.Length] := key
         }
         if (i <= ko.Length)
             out.begrenset := true
-        this.Tell(out.former, "blad=" Min(blad, 64))
+        else
+            rad.form := form ; Only complete traversals may teach a layout.
+        this.Tell(out.former, "blad=" Min(rad.blader.Length,64))
         this.Tell(out.metoder, "celleplassering")
+        this.LesKartlagteFelt(rad,rad.feltindeks,out)
         return rad
+    }
+
+    ; Learn a slot map only from a complete, geometrically aligned row
+    ; with valid identity. Require the same leaf paths/types/column count
+    ; and no contradictory maps before reading cells without rectangles.
+    SupplerUtenPlassering(rader, schema, out, slutt) {
+        kart := Map(), sperret := Map()
+        for rad in rader {
+            if (!rad.HasOwnProp("form") || rad.form = "" || rad.konflikt
+                || rad.blader.Length != schema.kolonner.Length
+                || !rad.felt.Has("tidspunkt") || !this.Tidsstempel(rad.felt["tidspunkt"]))
+                continue
+            alle := true, sett := Map()
+            for indeks, key in rad.feltindeks {
+                if sett.Has(key)
+                    alle := false
+                sett[key] := true
+            }
+            for key in schema.kart {
+                if !sett.Has(key)
+                    alle := false
+            }
+            if !alle
+                continue
+            if kart.Has(rad.form) {
+                for indeks, key in rad.feltindeks {
+                    if (!kart[rad.form].Has(indeks) || kart[rad.form][indeks] != key)
+                        sperret[rad.form] := true
+                }
+            } else
+                kart[rad.form] := rad.feltindeks
+        }
+        out.bekreftedeKart := kart.Count - sperret.Count
+        for rad in rader {
+            if (A_TickCount >= slutt) {
+                out.begrenset := true
+                break
+            }
+            if (!rad.HasOwnProp("form") || rad.form = "" || !kart.Has(rad.form)
+                || sperret.Has(rad.form) || rad.konflikt)
+                continue
+            if (rad.felt.Has("tidspunkt") && !this.ErDagensTid(rad.felt["tidspunkt"],out))
+                continue
+            mangler := false
+            for indeks, key in kart[rad.form] {
+                if !rad.felt.Has(key)
+                    mangler := true
+            }
+            if !mangler
+                continue
+            this.LesKartlagteFelt(rad,kart[rad.form],out)
+            out.utenPlassering++
+        }
     }
 
     ; Win32's UIA provider exposes the first Text cell with a rectangle
     ; spanning the WHOLE row. Require a complete one-to-one set of direct
     ; row cells and align their left edges to headers before using it.
     ; This is also independent of provider enumeration/display order.
-    LesRadceller(celler, schema) {
+    LesRadceller(celler, schema, out) {
         if (celler.Length != schema.kolonner.Length || celler.Length < 3)
             return ""
         koblinger := [], brukt := Map(), helradCelle := ""
-        for el in celler {
+        for celleIndex, el in celler {
             type := UiaTall(el, 30003)
             if !(type = 50020 || type = 50007 || type = 50029)
                 return ""
@@ -5064,7 +5125,7 @@ class TrioOppgaveloggDiagnose {
                 && Abs(rekt.r - schema.kolonner[-1].r) <= 2) {
                 if IsObject(helradCelle)
                     return ""
-                helradCelle := el
+                helradCelle := {el:el,indeks:celleIndex}
                 continue
             }
             matchIndex := 0
@@ -5079,7 +5140,7 @@ class TrioOppgaveloggDiagnose {
                 || rekt.r > schema.kolonner[-1].r + 2)
                 return ""
             brukt[matchIndex] := true
-            koblinger.Push({el:el, kol:schema.kolonner[matchIndex]})
+            koblinger.Push({el:el, kol:schema.kolonner[matchIndex], indeks:celleIndex})
         }
         if IsObject(helradCelle) {
             mangler := 0
@@ -5092,21 +5153,47 @@ class TrioOppgaveloggDiagnose {
             }
             if !mangler
                 return ""
-            koblinger.Push({el:helradCelle,kol:schema.kolonner[mangler]})
+            koblinger.Push({el:helradCelle.el,kol:schema.kolonner[mangler],indeks:helradCelle.indeks})
         }
         if (koblinger.Length != schema.kolonner.Length)
             return ""
-        rad := {felt:Map(), konflikt:false}
+        rad := {felt:Map(), konflikt:false, blader:celler, feltindeks:Map(), form:""}
+        for i, el in celler
+            rad.form .= "." i ":" UiaTall(el,30003) "|"
         for kobling in koblinger {
             key := kobling.kol.key
             if (key = "" || !schema.kart.Has(key))
                 continue
-            verdi := UiaStreng(kobling.el, 30045)
-            if (verdi = "")
-                verdi := UiaStreng(kobling.el, 30005)
-            this.SettFelt(rad,key,Trim(verdi))
+            rad.feltindeks[kobling.indeks] := key
         }
+        this.LesKartlagteFelt(rad,rad.feltindeks,out)
         return rad
+    }
+
+    ErDagensTid(tekst, out) {
+        stamp := this.Tidsstempel(tekst)
+        return stamp != "" && SubStr(stamp,1,8) = out.datoIDag
+    }
+
+    LesKartlagteFelt(rad, kart, out) {
+        ; A ListItem-per-cell layout has no complete row context yet;
+        ; retain its one known field for later same-row geometry merging.
+        if (rad.blader.Length = 1) {
+            for indeks, key in kart
+                this.SettFelt(rad,key,this.LesCelleVerdi(rad.blader[indeks],key,out))
+            return
+        }
+        ; Read the timestamp FIRST, irrespective of visual column order.
+        for indeks, key in kart {
+            if (key = "tidspunkt" && !rad.felt.Has(key))
+                this.SettFelt(rad,key,this.LesCelleVerdi(rad.blader[indeks],key,out))
+        }
+        if (!rad.felt.Has("tidspunkt") || !this.ErDagensTid(rad.felt["tidspunkt"],out))
+            return
+        for indeks, key in kart {
+            if !rad.felt.Has(key)
+                this.SettFelt(rad,key,this.LesCelleVerdi(rad.blader[indeks],key,out))
+        }
     }
 
     CelleKolonne(rekt, schema) {
@@ -5137,6 +5224,7 @@ class TrioOppgaveloggDiagnose {
     VurderRader(kandidater, out, idag := "") {
         if (idag = "")
             idag := FormatTime(, "yyyyMMdd")
+        out.datoIDag := idag
         out.kandidater := kandidater.Length
         for rad in kandidater {
             felt := rad.felt
@@ -5145,18 +5233,19 @@ class TrioOppgaveloggDiagnose {
             grunn := ""
             if rad.konflikt
                 grunn := "konflikt"
-            else if !this.HarIdentitetsfelt(felt)
+            else if !felt.Has("tidspunkt")
                 grunn := "felt"
             else if !(stamp := this.Tidsstempel(felt["tidspunkt"]))
                 grunn := "dato"
+            else if (SubStr(stamp,1,8) != idag) {
+                out.andreDager++
+                continue ; No ID or other metrics needed for historical rows.
+            } else if !felt.Has("oppgave")
+                grunn := "felt"
             else if !RegExMatch(felt["oppgave"], "^\d{1,15}$")
                 grunn := "id"
             if (grunn != "") {
                 out.avvist++, out.grunner[grunn]++
-                continue
-            }
-            if (SubStr(stamp, 1, 8) != idag) {
-                out.andreDager++
                 continue
             }
             behandlingSek := felt.Has("behandling") ? this.VarighetSekunder(felt["behandling"]) : -1
@@ -5175,17 +5264,25 @@ class TrioOppgaveloggDiagnose {
         }
         out.ok := out.sett.Count > 0
         if out.ok {
-            out.status := "Leste " out.sett.Count " validerte oppgaver fra tilgjengelig liste."
+            out.status := "Leste " out.sett.Count " validerte oppgaver fra dagens dato."
             if (out.behandlingMangler || out.behandlingUgyldig)
                 out.status .= " Behandlingstid er delvis eller helt ukjent."
         } else if (out.andreDager > 0 && out.avvist = 0)
-            out.status := "Lesbare oppgaver funnet, men ingen fra i dag."
+            out.status := "Lesbare historiske oppgaver funnet, men ingen fra dagens dato i utvalget."
         else
             out.status := "Ingen dagens oppgaver kunne leses. Se feltdiagnosen nedenfor."
     }
 
+    NormaliserTid(tekst) {
+        tekst := RegExReplace(tekst, "\p{Cf}", "")
+        tekst := Trim(RegExReplace(tekst, "[\s\p{Z}]+", " "))
+        ; Only strip the known field label, never search arbitrary text for
+        ; any date substring or guess a day from the current clock.
+        return RegExReplace(tekst, "i)^tidspunkt\s*[:=]\s*", "")
+    }
+
     Tidsstempel(tekst) {
-        tekst := Trim(tekst)
+        tekst := this.NormaliserTid(tekst)
         if RegExMatch(tekst, "^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$", &m)
             stamp := m[3] Format("{:02}{:02}{:02}", Integer(m[2]), Integer(m[1]), Integer(m[4])) m[5] (m[6] != "" ? m[6] : "00")
         else if RegExMatch(tekst, "^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):([0-5]\d)(?::([0-5]\d))?$", &m)
@@ -5193,11 +5290,45 @@ class TrioOppgaveloggDiagnose {
         else
             return ""
         try {
-            ; DateAdd validates actual dates and the hour, not only punctuation.
             if (DateAdd(stamp, 0, "Seconds") = stamp)
                 return stamp
         }
         return ""
+    }
+
+    MaskertFormat(tekst) {
+        if (tekst = "")
+            return "(tom)"
+        ; All letters and numbers are masked BEFORE exporting any signature.
+        ; Escaped Unicode format/space codes reveal representation, not data.
+        tekst := RegExReplace(SubStr(tekst, 1, 80), "\p{N}", "d")
+        tekst := RegExReplace(tekst, "\p{L}", "x")
+        return this.OverskriftTilDiagnose(tekst)
+    }
+
+    VelgTidsverdi(navn, verdi, out) {
+        this.Tell(out.tidsformer,"Name=" this.MaskertFormat(navn) " | Value=" this.MaskertFormat(verdi))
+        n := this.Tidsstempel(navn), v := this.Tidsstempel(verdi)
+        if (n != "" && v != "" && n != v) {
+            out.tidskonflikt++
+            return "" ; Never silently choose between different valid dates.
+        }
+        if (v != "") {
+            out.tidFraValue++
+            return this.NormaliserTid(verdi)
+        }
+        if (n != "") {
+            out.tidFraName++
+            return this.NormaliserTid(navn)
+        }
+        return verdi != "" ? verdi : navn
+    }
+
+    LesCelleVerdi(el, key, out) {
+        verdi := UiaStreng(el, 30045)
+        if (key = "tidspunkt")
+            return this.VelgTidsverdi(UiaStreng(el,30005),verdi,out)
+        return Trim(verdi != "" ? verdi : UiaStreng(el,30005))
     }
 
     OverskriftTilDiagnose(navn) {
@@ -5215,7 +5346,8 @@ class TrioOppgaveloggDiagnose {
     AvsluttLesing(out) {
         feltNavn := Map("tidspunkt","Tidspunkt", "oppgave","Oppgave-ID", "behandling","Behandlingstid"
             , "ko","Køtid", "koblet","Koblet", "kommentar","Kommentar/IM")
-        tekst := "Kolonner med lesbar plassering: " out.kolonner.Length
+        tekst := "Dagens datofilter: " SubStr(out.datoIDag,7,2) "." SubStr(out.datoIDag,5,2) "." SubStr(out.datoIDag,1,4)
+            . "`nKolonner med lesbar plassering: " out.kolonner.Length
         for key, navn in feltNavn
             tekst .= "`n" navn ": " (out.kart.Has(key) ? "koblet" : "mangler eller tvetydig plassering")
                 . " | celler lest: " (out.funnfelt.Has(key) ? out.funnfelt[key] : 0)
@@ -5226,9 +5358,14 @@ class TrioOppgaveloggDiagnose {
             . "`nBehandlingstid – mangler: " out.behandlingMangler ", ugyldig/ukjent: " out.behandlingUgyldig
             . " (stopper ikke oppgavetelling)"
             . "`nUIA-noder lest: " out.noder " | Lesefeil: " out.lesefeil
+            . "`nBekreftede cellekart: " out.bekreftedeKart " | Rader supplert uten plassering: " out.utenPlassering
+            . "`nGyldig tid fra Name: " out.tidFraName " | Value: " out.tidFraValue
+            . " | Motstridende tidsverdier: " out.tidskonflikt
         for i, kol in out.kolonner
             tekst .= "`nOverskrift " i ": " kol.navn " -> " (kol.key != "" && out.kart.Has(kol.key)
                 ? kol.key : kol.key != "" ? "tvetydig " kol.key : "ikke koblet")
+        for form, ant in out.tidsformer
+            tekst .= "`nMaskert tidscelle " form " | lest " ant " ganger"
         for key, ant in out.former
             tekst .= "`nRadstruktur " key ": " ant " elementer"
         for key, ant in out.metoder

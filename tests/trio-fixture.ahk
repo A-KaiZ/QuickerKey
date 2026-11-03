@@ -8,9 +8,16 @@ if (A_Args.Length && A_Args[1] = "reordered")
 if (A_Args.Length && A_Args[1] = "missing-duration")
     durationHeader := "Ukjent varighet"
 lv := v.AddListView("w950 h220", ["Oppgave-ID","",durationHeader,"Tidspunkt","Kommentar (IM)","Køtid","Koblet"])
-lv.Add(,"9876543210","","02:30",FormatTime(,"dd.MM.yyyy") " 09:12:34","Synthetic-private-text IM99887766","00:10","")
-lv.Add(,"9876543211","","01:00",FormatTime(,"dd.MM.yyyy") " 10:00:00","","","")
-lv.Add(,"9876543212","","01:00",FormatTime(DateAdd(A_Now,-1,"Days"),"dd.MM.yyyy") " 10:00:00","","","")
+if (A_Args.Length && A_Args[1] = "long-history") {
+    loop 180 {
+        day := A_Index > 178 ? A_Now : DateAdd(A_Now,-1,"Days")
+        lv.Add(,"98765" Format("{:05}",A_Index),"","02:30",FormatTime(day,"dd.MM.yyyy") " 09:40:38","","00:10","")
+    }
+} else {
+    lv.Add(,"9876543210","","02:30",FormatTime(,"dd.MM.yyyy") " 09:12:34","Synthetic-private-text IM99887766","00:10","")
+    lv.Add(,"9876543211","","01:00",FormatTime(,"dd.MM.yyyy") " 10:00:00","","","")
+    lv.Add(,"9876543212","","01:00",FormatTime(DateAdd(A_Now,-1,"Days"),"dd.MM.yyyy") " 10:00:00","","","")
+}
 for i, width in [120,30,130,190,220,70,90]
     lv.ModifyCol(i,width)
 v.OnEvent("Close", (*) => ExitApp())

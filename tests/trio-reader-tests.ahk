@@ -10,6 +10,20 @@ TrioTestRad(dato := "03.11.2026 09:12:34", id := "9876543210", tid := "02:30") {
     return {felt:Map("tidspunkt",dato,"oppgave",id,"behandling",tid), konflikt:false}
 }
 
+; Remove cell rectangles after the first two complete rows. The source
+; still exposes their text, mirroring offscreen-but-realized provider items.
+class TrioOffscreenTestLeser extends TrioOppgaveloggDiagnose {
+    TextBesok := 0
+    Rektangel(el) {
+        if (UiaTall(el,30003) = 50020) {
+            this.TextBesok++
+            if (this.TextBesok > 14)
+                return ""
+        }
+        return super.Rektangel(el)
+    }
+}
+
 RunTrioTests() {
     fixturePid := 0, exitCode := 0
     try {
@@ -23,6 +37,32 @@ RunTrioTests() {
         TrioAssert(r.OverskriftTilDiagnose("Behand" Chr(0xAD) "lingstid") = "Behand[U+00AD]lingstid", "diagnostic exposes invisible header characters")
         TrioAssert(r.KolonneKey("Kundenummer") = "", "customer column is not an ID source")
         TrioAssert(r.Tidsstempel("3.11.2026 9:12") = "20261103091200", "Norwegian minute precision")
+        TrioAssert(r.Tidsstempel("02.11.2026 09:40:38") = "20261102094038", "observed Trio timestamp example")
+        TrioAssert(r.Tidsstempel("Tidspunkt: " Chr(0x200E) "03.11.2026" Chr(0xA0) "09:40:38") = "20261103094038", "timestamp label and invisible characters")
+        timeOut := r.NyLesing()
+        chosen := r.VelgTidsverdi("03.11.2026 09:40:38","unparseable-provider-value",timeOut)
+        TrioAssert(chosen = "03.11.2026 09:40:38" && timeOut.tidFraName = 1, "valid Name beats unusable Value")
+        TrioAssert(r.VelgTidsverdi("03.11.2026 09:40:38","02.11.2026 09:40:38",timeOut) = "", "conflicting valid dates rejected")
+        TrioAssert(!InStr(r.MaskertFormat("03.11.2026 09:40:38"),"2026") && r.MaskertFormat("03.11.2026 09:40:38") = "dd.dd.dddd dd:dd:dd", "timestamp diagnostic contains format only")
+        days := r.NyLesing()
+        r.VurderRader([{felt:Map("tidspunkt","12.10.2026 09:00:00"),konflikt:false}
+            ,{felt:Map("tidspunkt","02.11.2026 09:00:00"),konflikt:false}
+            ,TrioTestRad(),TrioTestRad("04.11.2026 09:00:00")],days,"20261103")
+        TrioAssert(days.sett.Count = 1 && days.andreDager = 3 && days.avvist = 0, "only 03.11.2026 retained across multi-day history")
+        nextDay := r.NyLesing()
+        r.VurderRader([TrioTestRad(),TrioTestRad("04.11.2026 09:00:00")],nextDay,"20261104")
+        TrioAssert(nextDay.sett.Count = 1 && nextDay.andreDager = 1, "date filter advances without a hardcoded date")
+        proofSchema := {kolonner:[1,2,3],kart:Map("tidspunkt",true,"oppgave",true)}
+        proofA := {felt:Map("tidspunkt",FormatTime(,"dd.MM.yyyy") " 09:00:00"),konflikt:false
+            ,blader:[1,2,3],form:"same-shape",feltindeks:Map(1,"tidspunkt",2,"oppgave")}
+        proofB := {felt:Map("tidspunkt",FormatTime(,"dd.MM.yyyy") " 10:00:00"),konflikt:false
+            ,blader:[1,2,3],form:"same-shape",feltindeks:Map(1,"oppgave",2,"tidspunkt")}
+        unmapped := {felt:Map(),konflikt:false,blader:[1,2,3],form:"same-shape",feltindeks:Map()}
+        proofOut := r.NyLesing()
+        r.SupplerUtenPlassering([proofA,proofB,unmapped],proofSchema,proofOut,A_TickCount+1000)
+        TrioAssert(proofOut.bekreftedeKart = 0 && unmapped.felt.Count = 0, "contradictory observed cell maps never used")
+
+
         TrioAssert(r.Tidsstempel("2026-11-03T09:12:34") = "20261103091234", "ISO timestamp")
         TrioAssert(r.Tidsstempel("31.02.2026 09:12:34") = "", "impossible date rejected")
         TrioAssert(r.Tidsstempel("03.11.2026 24:00:00") = "", "invalid hour rejected")
@@ -128,6 +168,24 @@ RunTrioTests() {
             TrioAssert(InStr(missing.detaljer,"Ukjent varighet") && !InStr(missing.detaljer,"IM99887766"),
                 "unknown header label reported without row values")
         }
+        ProcessClose fixturePid
+        ProcessWaitClose fixturePid, 5
+        Run('"' A_AhkPath '" /ErrorStdOut=UTF-8 "' A_ScriptDir '\trio-fixture.ahk" long-history',,, &fixturePid)
+        hwnd := WinWait("QuickerKeys synthetic Trio fixture ahk_pid " fixturePid,,10)
+        TrioAssert(hwnd != 0,"long multi-day log fixture opened")
+        Sleep 500
+        lvHwnd := ControlGetHwnd("SysListView321","ahk_id " hwnd)
+        topBefore := SendMessage(0x1027,0,0,lvHwnd)
+        longReader := TrioOffscreenTestLeser()
+        longResult := longReader.HentDagensData(hwnd,true)
+        FileAppend(longResult.status "`n" longResult.detaljer "`n","*","UTF-8")
+        TrioAssert(longResult.ok && longResult.sett.Count = 2 && longResult.andreDager = 178,
+            "today found beyond visible rows in long history")
+        TrioAssert(longResult.utenPlassering > 0 && longResult.bekreftedeKart > 0,
+            "offscreen exposed text uses verified structural map")
+        TrioAssert(SendMessage(0x1027,0,0,lvHwnd) = topBefore,"long-log read does not scroll")
+        TrioAssert(!InStr(longResult.detaljer,"9876543210") && !InStr(longResult.detaljer,"09:40:38"),
+            "long-log diagnostic masks row data except explicit daily filter")
         FileAppend("ALL TRIO TESTS PASSED`n", "*", "UTF-8")
     } catch as err {
         FileAppend("FAIL " err.Message " (line " err.Line ")`n", "**", "UTF-8")
