@@ -4267,29 +4267,29 @@ class VT_TrioSnarveier extends VT_Base {
         if (!win || WinGetPID("ahk_id " win) = ProcessExist())
             return
         if (!ErNettleser(win) || !NettleserFaneBekreftet(win, "Service Manager")) {
-            ToolTip "Dette var ikke Service Manager." Chr(10)
-                . "Åpne Search i Service Manager og klikk i Search-feltet." Chr(10) "(Esc = avbryt)"
+            ToolTip("Dette var ikke Service Manager. Åpne Search i Service Manager. (Esc = avbryt)")
             return
         }
-        t := 0, n := ""
-        try {
-            el := UiaFraPunkt(sx, sy)
-            if IsObject(el) {
-                t := UiaTall(el, 30003)
-                n := UiaStreng(el, 30005)
-            }
-        }
+        el := ""
+        try el := UiaFraPunkt(sx, sy)
+        t := 0, n := "", id := "", klasse := ""
+        try t := UiaTall(el, 30003)
+        try n := UiaStreng(el, 30005)
+        try id := UiaStreng(el, 30011)
+        try klasse := UiaStreng(el, 30012)
         if (t != 50004) {
-            ToolTip "Dette var ikke et tekstfelt." Chr(10)
-                . "Klikk i Search-feltet til venstre for Smart Search." Chr(10) "(Esc = avbryt)"
+            ToolTip("Dette var ikke et tekstfelt. Klikk i Search-feltet. (Esc = avbryt)")
             return
         }
         if InStr(n, "Smart") {
-            ToolTip "Du klikket i Smart Search." Chr(10)
-                . "Klikk i Search-feltet til venstre for ikonet." Chr(10) "(Esc = avbryt)"
+            ToolTip("Du valgte Smart Search. Klikk i Search-feltet. (Esc = avbryt)")
             return
         }
+        somFelt := Trim(n) != "" || id != ""
         WinGetClientPos &cx, &cy, &cw, , "ahk_id " win
+        this.Lagre("IMId", id)
+        this.Lagre("IMKlasse", klasse)
+        this.Lagre("IMModus", somFelt ? "felt" : "")
         this.Lagre("IMVindu", "Service Manager ahk_exe " WinGetProcessName("ahk_id " win))
         this.Lagre("IMX", cw - (sx - cx))
         this.Lagre("IMY", sy - cy)
@@ -4298,8 +4298,8 @@ class VT_TrioSnarveier extends VT_Base {
         this.ImLaerStopp()
         try this.ImSjekkK.Value := 1
         this.ImVisStatus()
-        this.Melding("Search-feltet er lært. IM-en åpnes etter kopiering.")
-        Logg("Trio Snarveier: Search-feltet i Service Manager lært (navn " n ")")
+        this.Melding(somFelt ? "Search-feltet er lært med UIA-signatur ✓" : "Search-feltet er lært som klikkposisjon")
+        Logg("Trio Snarveier: Search lært med UIA " (somFelt ? "signatur" : "koordinat"))
     }
 
     ; Lagre avstand fra høyre klientkant for bedre toleranse ved vindusendring.
@@ -4308,20 +4308,24 @@ class VT_TrioSnarveier extends VT_Base {
         return {x: cx + cw - this.Hent("IMX", 0), y: cy + this.Hent("IMY", 0)}
     }
 
-    ; Bare les målpunktet. Klikk aldri hvis en annen fane eller kontroll er der.
+    ; Search må finnes i rett, aktiv Service Manager-fane.
+    ImSignatur() => {type:50004, navn:this.Hent("IMNavn",""), id:this.Hent("IMId",""), klasse:this.Hent("IMKlasse","")}
+
     ImSearchApent(h) {
         if (!h || !WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
             return false
+        if (this.Hent("IMModus","") = "felt")
+            return IsObject(UiaFinnFelt(h, this.ImSignatur()))
         p := this.ImPunkt(h)
-        under := DllCall("WindowFromPoint", "Int64", (p.y << 32) | (p.x & 0xFFFFFFFF), "Ptr")
-        if (!under || DllCall("GetAncestor", "Ptr", under, "UInt", 2, "Ptr") != h)
+        under := DllCall("WindowFromPoint","Int64",(p.y << 32) | (p.x & 0xFFFFFFFF),"Ptr")
+        if (!under || DllCall("GetAncestor","Ptr",under,"UInt",2,"Ptr") != h)
             return false
         try {
-            el := UiaFraPunkt(p.x, p.y)
+            el := UiaFraPunkt(p.x,p.y)
             if !IsObject(el)
                 return false
-            navn := this.Hent("IMNavn", "")
-            return UiaTall(el, 30003) = 50004 && (navn = "" || UiaStreng(el, 30005) = navn)
+            navn := this.Hent("IMNavn","")
+            return UiaTall(el,30003) = 50004 && (navn = "" || UiaStreng(el,30005) = navn)
         }
         return false
     }
@@ -4387,6 +4391,8 @@ class VT_TrioSnarveier extends VT_Base {
 
     ; Klikker i verifisert Search, skriver IM og Enter. Bevarer museposisjon.
     ImSkriv(h, im) {
+        if (this.Hent("IMModus","") = "felt")
+            return this.ImSkrivFelt(h, im)
         if !this.ImSearchApent(h) {
             this.Melding("Search-feltet er ikke tilgjengelig – " im " ble ikke skrevet", false)
             return false
@@ -4412,6 +4418,47 @@ class VT_TrioSnarveier extends VT_Base {
             Send "{Enter}"
             this.Melding(im " ble skrevet i Search og Enter trykket")
             Logg("Trio Snarveier: søkte etter " im " i Service Manager")
+            Varsel("Service Manager", im, "IM-søk startet i Service Manager")
+            return true
+        } finally {
+            MouseMove mx, my, 0
+        }
+    }
+
+    ; For UIA-opplært Search: finn det nåværende synlige feltet, ikke gamle koordinater.
+    ImSkrivFelt(h, im) {
+        if (!h || !WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
+            return false
+        felt := UiaFinnFelt(h, this.ImSignatur(), &grunn)
+        p := IsObject(felt) ? UiaSenter(felt) : ""
+        if !IsObject(p) {
+            this.Melding("Fant ikke Search-feltet (" grunn ") – " im " ble ikke søkt", false)
+            Logg("Trio Snarveier: Search UIA ikke funnet: " grunn)
+            return false
+        }
+        under := DllCall("WindowFromPoint","Int64",(p.y << 32) | (p.x & 0xFFFFFFFF),"Ptr")
+        if (!under || DllCall("GetAncestor","Ptr",under,"UInt",2,"Ptr") != h) {
+            this.Melding("Et annet vindu ligger over Search – " im " ble ikke søkt", false)
+            return false
+        }
+        CoordMode "Mouse", "Screen"
+        MouseGetPos &mx, &my
+        try {
+            Click p.x, p.y
+            Sleep 80
+            if (!WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
+                return false
+            ; Samme felt skal fortsatt finnes etter klikk.
+            if !IsObject(UiaFinnFelt(h, this.ImSignatur()))
+                return false
+            Send "^a"
+            SendText im
+            Sleep 30
+            if (!WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
+                return false
+            Send "{Enter}"
+            this.Melding(im " ble skrevet i Search og Enter trykket ✓")
+            Logg("Trio Snarveier: IM-søk startet med UIA Search – " im)
             Varsel("Service Manager", im, "IM-søk startet i Service Manager")
             return true
         } finally {
