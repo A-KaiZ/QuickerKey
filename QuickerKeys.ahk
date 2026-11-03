@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc4"
+global APP_VERSJON := "3.12-rc5"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4671,7 +4671,7 @@ class TrioOppgaveloggDiagnose {
     ; Ingen WinActivate, Send, klikk eller endring av aktiv fane.
     ; MenuSelect mot Trio-vinduets standard Win32-meny, også når Trio
     ; ligger i bakgrunnen. Forsøkes først etter fysisk inaktivitet.
-    ApneVedBehov(autoMinimer := true) {
+    ApneVedBehov(leggBak := true) {
         trio := this.FinnTrio()
         if !trio
             return {kode:"trio-mangler", status:"Trio Attendant er ikke funnet.", logg:0}
@@ -4705,17 +4705,17 @@ class TrioOppgaveloggDiagnose {
             return {kode:"ikke-funnet", status:"Vis-menyen ble brukt, men Oppgavelogg ble ikke gjenkjent. Ingen flere automatiske forsøk i denne Trio-økten.", logg:0}
         }
 
-        if autoMinimer {
-            try WinMinimize "ahk_id " funnet
+        ; Trio 10.1.35 mister UIA-tabellen når Oppgavelogg minimeres.
+        ; Flytt derfor et NYTT loggvindu nederst i Z-rekkefølgen i stedet.
+        ; Manuelt åpnede vinduer røres ikke.
+        if leggBak {
+            try WinMoveBottom "ahk_id " funnet
             catch {
-                return {kode:"minimer-feil", status:"Oppgavelogg ble åpnet, men kunne ikke minimeres.", logg:funnet}
+                return {kode:"bakgrunn-feil", status:"Oppgavelogg åpnet, men kunne ikke legges bak andre vinduer.", logg:funnet}
             }
-            try {
-                if (WinGetMinMax("ahk_id " funnet) != -1)
-                    return {kode:"minimer-feil", status:"Oppgavelogg ble åpnet, men minimert tilstand kunne ikke bekreftes.", logg:funnet}
-            }
+            return {kode:"opprettet", status:"Oppgavelogg åpnet og lagt bak andre vinduer (ikke minimert).", logg:funnet}
         }
-        return {kode:"opprettet", status:autoMinimer ? "Oppgavelogg åpnet og minimert automatisk." : "Oppgavelogg åpnet automatisk.", logg:funnet}
+        return {kode:"opprettet", status:"Oppgavelogg åpnet uten minimering.", logg:funnet}
     }
 
     KortTekniskFeil(steg, feil) {
@@ -4837,7 +4837,7 @@ class StatistikkModul {
     TrioGui := ""
     TrioInfoK := ""
     TrioAutoK := ""
-    TrioMinK := ""
+    TrioBakgrunnK := ""
     TrioIntervallK := ""
     TrioFeilK := ""
 
@@ -4848,7 +4848,7 @@ class StatistikkModul {
         this.TrioOpenCb := ObjBindMethod(this, "TrioApneTimer")
         this.TrioLeser := TrioOppgaveloggDiagnose()
         this.TrioAutoApne := Innst("Statistikk", "TrioAutoApne", "1") = "1"
-        this.TrioAutoMinimer := Innst("Statistikk", "TrioAutoMinimer", "1") = "1"
+        this.TrioBakgrunn := Innst("Statistikk", "TrioBakgrunn", "1") = "1"
         intervallVerdi := Innst("Statistikk", "TrioIntervallSek", "30")
         this.TrioIntervall := RegExMatch(intervallVerdi, "^(15|30|60)$") ? Integer(intervallVerdi) : 30
         this.TrioVisFeil := Innst("Statistikk", "TrioVisFeil", "1") = "1"
@@ -5126,9 +5126,9 @@ class StatistikkModul {
                 return
             if (A_TimeIdlePhysical < 4000)
                 return
-            resultat := this.TrioLeser.ApneVedBehov(this.TrioAutoMinimer)
+            resultat := this.TrioLeser.ApneVedBehov(this.TrioBakgrunn)
             this.TrioStatusTekst := resultat.status
-            this.TrioFeil := InStr("|menyfeil|ikke-funnet|sperret|minimer-feil|",
+            this.TrioFeil := InStr("|menyfeil|ikke-funnet|sperret|bakgrunn-feil|",
                 "|" resultat.kode "|") > 0
             this.TrioDetaljer := "Trio Oppgavelogg: " resultat.status
                 . "`nNeste UIA-diagnose: inntil " this.TrioIntervall " sekunder."
