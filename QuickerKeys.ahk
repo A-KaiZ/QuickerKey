@@ -943,6 +943,351 @@ Tip(melding, ms := 1800) {
 
 
 ; =====================================================================
+;  NETTVERK – egne verktøy. Av som standard; aktiveres via Innstillinger.
+;  MAC Import genererer bare en importfil; ingen Cisco ISE-endringer.
+; =====================================================================
+
+; Header tilsvarende Ren_mal.csv: 31 kolonner.
+NettHeader() => "MACAddress,EndPointPolicy,IdentityGroup,PortalUser.GuestType,Description,PortalUser.Location,PortalUser.GuestStatus,StaticAssignment,User-Name,DeviceRegistrationStatus,PortalUser.CreationType,AUPAccepted,PortalUser.EmailAddress,PortalUser.PhoneNumber,FirstName,ip,Device Type,host-name,StaticGroupAssignment,MDMEnrolled,MDMOSVersion,PortalUser.LastName,PortalUser.GuestSponsor,EmailAddress,PortalUser,PortalUser.FirstName,BYODRegistration,MDMServerName,LastName,MDMServerID,Location"
+
+NettFarge(type) {
+    lys := Innst("App", "Tema", "Midnatt") = "Lys"
+    switch type {
+        case "ok":   return lys ? "1E7B4A" : "4FD6A0"
+        case "feil": return lys ? "B3261E" : "FF8A80"
+    }
+    return TEMA.dempet
+}
+
+; Flere verktøy legges til her, sammen med en Bygg…Panel-funksjon.
+NettverkVerktoy() => [
+    {navn: "MAC Import", beskrivelse: "Lag importfil for endepunkter i Cisco ISE – MAC-adresser med Identity Group (VLAN / EPG).", bygg: ByggMacImportPanel}
+]
+
+ByggNettverkPanel() {
+    pn := "Nettverk", x := INNHOLD_X, b := INNHOLD_B
+    PanelTittel(pn, "Nettverk")
+    Skrift(HOVED, "s10 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y124 w" b " h40 Background" TEMA.bg
+        , "Verktøy for oss som jobber med nettverk. Velg et verktøy under – flere kan legges til etter hvert."))
+    for i, nv in NettverkVerktoy() {
+        y := 172 + (i - 1) * 96
+        Skrift(HOVED, "s12 bold c" TEMA.tekst)
+        navnK := Reg(pn, HOVED.AddText("x" x " y" y " w" (b - 140) " h26 Background" TEMA.bg, nv.navn))
+        navnK.OnEvent("Click", VisPanel.Bind(nv.navn))
+        Skrift(HOVED, "s9 norm c" TEMA.dempet)
+        Reg(pn, HOVED.AddText("x" x " y" (y + 28) " w" (b - 140) " h56 Background" TEMA.bg, nv.beskrivelse))
+        Skrift(HOVED, "s10 norm c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" (x + b - 116) " y" (y + 20) " w116 h34", "Åpne  →", VisPanel.Bind(nv.navn), TEMA.aksent2))
+        Reg(pn, HOVED.AddText("x" x " y" (y + 88) " w" b " h1 Background" TEMA.linje))
+        NAV_FOR[nv.navn] := "Nettverk"
+        try nv.bygg.Call(nv.navn)
+        catch as feil
+            Logg("Klarte ikke å bygge siden for " nv.navn ": " feil.Message)
+    }
+}
+
+ByggMacImportPanel(pn) {
+    x := INNHOLD_X, b := INNHOLD_B
+    PanelTittel(pn, "MAC Import")
+    Skrift(HOVED, "s10 norm c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x+b-164) " y86 w120 h30", "←  Nettverk", VisPanel.Bind("Nettverk"), TEMA.aksent2))
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y124 w" b " h18 Background" TEMA.bg, "LAG IMPORTFIL FOR CISCO ISE"))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y144 w" b " h34 Background" TEMA.bg
+        , "Lim inn MAC-adresser – skilt med komma, linjeskift, mellomrom eller helt uten skilletegn. Duplikater fjernes automatisk."))
+    Skrift(HOVED, "s10 norm c" TEMA.tekst, "Consolas")
+    NETT["Macs"] := Reg(pn, HOVED.AddEdit("x" x " y182 w" b " h118 Multi VScroll -E0x200 Background" TEMA.kort))
+    NETT["Macs"].OnEvent("Change", (*) => SetTimer(NettOppdaterStatus, -300))
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    NETT["Status"] := Reg(pn, HOVED.AddText("x" x " y304 w" b " h32 Background" TEMA.bg, "Ingen MAC-adresser lagt inn."))
+
+    Skrift(HOVED, "s9 norm c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y340 w128 h28", "Formater liste", NettFormater, TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" (x+136) " y340 w72 h28", "Tøm", NettTom, TEMA.aksent2))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" (x+216) " y340 w116 h28 +0x200 Right Background" TEMA.bg, "Skilletegn i fila  "))
+    Skrift(HOVED, "s9 bold c" TEMA.tekst, "Consolas")
+    NETT["Kolon"] := Reg(pn, Knapp(HOVED, "x" (x+340) " y340 w74 h28", "AA:BB", NettVelgSkille.Bind(":")))
+    NETT["Strek"] := Reg(pn, Knapp(HOVED, "x" (x+418) " y340 w74 h28", "AA-BB", NettVelgSkille.Bind("-")))
+
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y382 w" b " h18 Background" TEMA.bg, "IDENTITY GROUP  (VLAN / EPG)"))
+    Skrift(HOVED, "s11 norm c" TEMA.tekst)
+    NETT["Gruppe"] := Reg(pn, HOVED.AddEdit("x" x " y402 w" b " h28 -E0x200 Background" TEMA.kort))
+    Reg(pn, HOVED.AddText("x" x " y440 w4 h52 BackgroundC0392B"))
+    Reg(pn, HOVED.AddText("x" (x+4) " y440 w12 h52 BackgroundFCE8E6"))
+    Reg(pn, HOVED.AddText("x" (x+16) " y440 w" (b-16) " h8 BackgroundFCE8E6"))
+    Reg(pn, HOVED.AddText("x" (x+b-8) " y448 w8 h44 BackgroundFCE8E6"))
+    Skrift(HOVED, "s9 bold c8B1A1A")
+    Reg(pn, HOVED.AddText("x" (x+16) " y448 w" (b-24) " h44 BackgroundFCE8E6"
+        , "VIKTIG: Navnet må være NØYAKTIG likt Identity Group i ISE – store/små bokstaver, "
+        . "mellomrom og tegn. Feil navn gir feil VLAN / EPG for enhetene."))
+    Skrift(HOVED, "s11 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y504 w" b " h40", "Generer importfil (CSV)", NettGenerer))
+    NettVelgSkille(Innst("Nettverk", "Skilletegn", ":"))
+}
+
+NettVelgSkille(sep, *) {
+    NETT["Skille"] := sep = "-" ? "-" : ":"
+    for navn, verdi in Map("Kolon", ":", "Strek", "-") {
+        k := NETT[navn]
+        k.Opt("Background" (NETT["Skille"] = verdi ? TEMA.aksent : TEMA.aksent2))
+        k.Redraw()
+    }
+    SettInnst("Nettverk", "Skilletegn", NETT["Skille"])
+}
+
+; Parser: 12 hextegn, store bokstaver, uten duplikater.
+NettParse(tekst) {
+    gyldige := [], ugyldige := [], sett := Map(), duplikater := 0
+    for bit in StrSplit(RegExReplace(tekst, "[,;\s]+", ","), ",") {
+        bit := Trim(bit)
+        if (bit = "")
+            continue
+        hex := StrUpper(RegExReplace(bit, "[:\-.]"))
+        if !RegExMatch(hex, "^[0-9A-F]+$") || Mod(StrLen(hex), 12) != 0 {
+            ugyldige.Push(bit)
+            continue
+        }
+        loop StrLen(hex) // 12 {
+            mac := SubStr(hex, (A_Index-1)*12+1, 12)
+            if sett.Has(mac) {
+                duplikater++
+                continue
+            }
+            sett[mac] := true
+            gyldige.Push(mac)
+        }
+    }
+    return {gyldige:gyldige, ugyldige:ugyldige, duplikater:duplikater}
+}
+
+NettMac(hex, sep) {
+    ut := ""
+    loop 6
+        ut .= (A_Index > 1 ? sep : "") SubStr(hex, A_Index*2-1, 2)
+    return ut
+}
+
+NettJoin(liste, sep, maks := 0) {
+    ut := ""
+    for i, v in liste {
+        if (maks && i > maks) {
+            ut .= sep "… (+" (liste.Length - maks) " til)"
+            break
+        }
+        ut .= (i > 1 ? sep : "") v
+    }
+    return ut
+}
+
+NettOppdaterStatus(*) {
+    r := NettParse(NETT["Macs"].Value)
+    k := NETT["Status"]
+    if (r.gyldige.Length = 0 && r.ugyldige.Length = 0) {
+        k.SetFont("c" TEMA.dempet)
+        k.Text := "Ingen MAC-adresser lagt inn."
+        return
+    }
+    s := "Gyldige: " r.gyldige.Length "      Duplikater fjernet: " r.duplikater "      Ugyldige: " r.ugyldige.Length
+    if r.ugyldige.Length {
+        s .= "`nUgyldig: " NettJoin(r.ugyldige, ",  ", 4)
+        k.SetFont("c" NettFarge("feil"))
+    } else
+        k.SetFont("c" NettFarge("ok"))
+    k.Text := s
+}
+
+NettFormater(*) {
+    r := NettParse(NETT["Macs"].Value)
+    linjer := []
+    for mac in r.gyldige
+        linjer.Push(NettMac(mac, NETT["Skille"]))
+    for feil in r.ugyldige
+        linjer.Push(feil)
+    NETT["Macs"].Value := NettJoin(linjer, ",`r`n")
+    NettOppdaterStatus()
+}
+
+NettTom(*) {
+    NETT["Macs"].Value := ""
+    NettOppdaterStatus()
+    NETT["Macs"].Focus()
+}
+
+NettGenerer(*) {
+    tittel := "MAC Import – " APP_NAVN
+    HOVED.Opt("+OwnDialogs")
+    r := NettParse(NETT["Macs"].Value)
+    if (r.gyldige.Length = 0) {
+        MsgBox("Fant ingen gyldige MAC-adresser.", tittel, "Icon!")
+        NETT["Macs"].Focus()
+        return
+    }
+    if r.ugyldige.Length {
+        melding := r.ugyldige.Length " oppføring(er) er ikke gyldige MAC-adresser og blir IKKE tatt med:`n`n"
+            . NettJoin(r.ugyldige, "`n", 15) . "`n`nVil du fortsette uten disse?"
+        if (MsgBox(melding, tittel, "YesNo Icon! Default2") != "Yes")
+            return
+    }
+    gruppe := Trim(NETT["Gruppe"].Value)
+    if (gruppe = "") {
+        MsgBox("Fyll inn Identity Group (VLAN / EPG).", tittel, "Icon!")
+        NETT["Gruppe"].Focus()
+        return
+    }
+    if RegExMatch(gruppe, '[,"\r\n]') {
+        MsgBox("Identity Group kan ikke inneholde komma, anførselstegn eller linjeskift.", tittel, "Icon!")
+        NETT["Gruppe"].Focus()
+        return
+    }
+    if (gruppe != NETT["Gruppe"].Value)
+        NETT["Gruppe"].Value := gruppe
+
+    bekreft := "Identity Group (VLAN / EPG):`n`n          " gruppe
+        . "`n`nAntall MAC-adresser: " r.gyldige.Length
+        . "`n`nNavnet må være NØYAKTIG likt Identity Group-navnet i ISE – samme store/små bokstaver, mellomrom og tegn."
+        . "`n`nDu er selv ansvarlig for at VLAN / EPG er korrekt før filen importeres."
+        . "`n`nStemmer dette, og vil du lage filen?"
+    if (MsgBox(bekreft, "Bekreft VLAN / EPG – " APP_NAVN, "YesNo Icon! Default2") != "Yes")
+        return
+
+    trygg := RegExReplace(gruppe, '[\\/:*?"<>|\s]+', "_")
+    forslag := EnvGet("USERPROFILE") "\Downloads\MAC_Import_" trygg "_" FormatTime(, "yyyyMMdd_HHmm") ".csv"
+    fil := FileSelect("S16", forslag, "Lagre importfil – " APP_NAVN, "CSV-fil (*.csv)")
+    if (fil = "")
+        return
+    if !RegExMatch(fil, "i)\.csv$")
+        fil .= ".csv"
+
+    kolonner := StrSplit(NettHeader(), ",")
+    kolMac := 0, kolGruppe := 0
+    for i, navn in kolonner {
+        if (navn = "MACAddress")
+            kolMac := i
+        else if (navn = "IdentityGroup")
+            kolGruppe := i
+    }
+    ut := NettHeader() "`n"
+    for mac in r.gyldige {
+        loop kolonner.Length {
+            if (A_Index > 1)
+                ut .= ","
+            if (A_Index = kolMac)
+                ut .= NettMac(mac, NETT["Skille"])
+            else if (A_Index = kolGruppe)
+                ut .= gruppe
+        }
+        ut .= "`n"
+    }
+    try {
+        f := FileOpen(fil, "w", "UTF-8-RAW")
+        f.Write(ut)
+        f.Close()
+    } catch as feil {
+        Logg("FEIL: MAC Import kunne ikke lagre " fil ": " feil.Message)
+        MsgBox("Kunne ikke lagre filen:`n`n" feil.Message, tittel, "Iconx")
+        return
+    }
+    Logg("MAC Import: " r.gyldige.Length " MAC-adresser i Identity Group «" gruppe "» → " fil)
+    ferdig := "Filen er lagret:`n" fil
+        . "`n`n" r.gyldige.Length " MAC-adresser i Identity Group «" gruppe "»."
+        . "`n`nÅpne mappen?"
+    if (MsgBox(ferdig, tittel, "YesNo Iconi") = "Yes")
+        Run('explorer.exe /select,"' fil '"')
+}
+
+VekslNettverk(*) {
+    if NETT_PAA {
+        SettInnst("App", "Nettverk", "0")
+        Logg("Nettverk-siden slått av")
+        Reload()
+        return
+    }
+    SettInnst("App", "Nettverk", "1")
+    SettInnst("App", "NettverkApne", "1")
+    Logg("Nettverksgeni aktivert – Nettverk-siden slått på")
+    try NettFyrverkeri()
+    Reload()
+}
+
+; Lite fyrverkeri over hovedvinduet, deretter åpnes Nettverk-siden.
+NettFyrverkeri() {
+    try {
+        WinGetClientPos(&wx, &wy, &ww, &wh, "ahk_id " HOVED.Hwnd)
+    } catch {
+        return
+    }
+    fw := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +Owner" HOVED.Hwnd)
+    fw.BackColor := "010101"
+    fw.MarginX := 0, fw.MarginY := 0
+    farger := [TEMA.aksent, "FFD447", "FF6B6B", "7CF0B4", "FFFFFF", "C792EA", "6EC6FF"]
+    oppsett := [[0.20, 0.30, 0], [0.80, 0.26, 14], [0.50, 0.12, 28]]
+    raketter := []
+    for o in oppsett {
+        mx := Round(ww * o[1]), my := Round(wh * o[2])
+        Skrift(fw, "s12 bold cFFFFFF")
+        rk := fw.AddText("x" mx " y" wh " w16 h18 Center Hidden", "●")
+        gnister := []
+        loop 18 {
+            vinkel := (A_Index / 18) * 6.2832 + Random(-0.15, 0.15)
+            fart := Random(3.5, 6.5)
+            Skrift(fw, "s11 bold c" farger[Random(1, farger.Length)])
+            k := fw.AddText("x" mx " y" my " w16 h18 Center Hidden", "●")
+            gnister.Push({k:k, x:mx+0.0, y:my+0.0, vx:Cos(vinkel)*fart, vy:Sin(vinkel)*fart, smaa:false})
+        }
+        raketter.Push({rk:rk, mx:mx, my:my, start:o[3], gnister:gnister})
+    }
+    ikonSkrift := FileExist(A_WinDir "\Fonts\SegoeIcons.ttf") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets"
+    ikonFarge := "4DA3FF"
+    fw.SetFont("s20 norm c" ikonFarge, ikonSkrift)
+    ikon := fw.AddText("x0 y" (wh//2-170) " w" ww " h170 Center +0x200 Hidden", Chr(0xE968))
+    storrelser := [20,34,48,62,76,90,104,98,94]
+    Skrift(fw, "s22 bold cFFFFFF")
+    tekst := fw.AddText("x0 y" (wh//2+8) " w" ww " h40 Center Hidden", "Nettverksmodus aktivert!")
+    fw.Show("x" wx " y" wy " w" ww " h" wh " NoActivate")
+    WinSetTransColor("010101", fw)
+    stig := 16, levetid := 46
+    loop 110 {
+        f := A_Index
+        for r in raketter {
+            t := f - r.start
+            if (t >= 1 && t <= stig) {
+                r.rk.Visible := true
+                r.rk.Move(r.mx, Round(wh - (wh-r.my)*(t/stig)))
+            } else if (t = stig+1) {
+                r.rk.Visible := false
+                for g in r.gnister
+                    g.k.Visible := true
+            } else if (t > stig+1 && t <= stig+levetid) {
+                for g in r.gnister {
+                    g.x += g.vx, g.y += g.vy
+                    g.vy += 0.22, g.vx *= 0.97
+                    g.k.Move(Round(g.x), Round(g.y))
+                    if (!g.smaa && t > stig+levetid-14) {
+                        g.smaa := true
+                        g.k.Text := "·"
+                    }
+                }
+            } else if (t = stig+levetid+1) {
+                for g in r.gnister
+                    g.k.Visible := false
+            }
+        }
+        if (f >= 4 && f < 4+storrelser.Length) {
+            ikon.SetFont("s" storrelser[f-3] " c" ikonFarge, ikonSkrift)
+            ikon.Visible := true
+        }
+        if (f = 16)
+            tekst.Visible := true
+        Sleep 16
+    }
+    fw.Destroy()
+}
+
+; =====================================================================
 ;  VERKTØY: TEKSTFLYT
 ; =====================================================================
 class VT_Tekstflyt extends VT_Base {
