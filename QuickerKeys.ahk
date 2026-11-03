@@ -3463,6 +3463,202 @@ AktiverChromiumTilgjengelighet(hwnd) {
     try SendMessage(0x3D, 0, 1, "Chrome_RenderWidgetHostHWND1", "ahk_id " hwnd, , , , 500)      ; WM_GETOBJECT
 }
 
+; ---------------- Felt i nettsider – signaturer framfor faste koordinater ----------------
+; signatur: ControlType, Name, AutomationId og ClassName fra UI Automation.
+
+UiaStrengBetingelse(egenskap, tekst) {
+    variant := Buffer(24, 0)
+    NumPut("UShort", 8, variant, 0)
+    NumPut("Ptr", DllCall("oleaut32\SysAllocString", "WStr", tekst, "Ptr"), variant, 8)
+    p := 0
+    try {
+        if (A_PtrSize = 8)
+            ComCall(23, Uia().uia, "Int", egenskap, "Ptr", variant, "Ptr*", &p)
+        else
+            ComCall(23, Uia().uia, "Int", egenskap, "Int64", NumGet(variant, 0, "Int64"), "Int64", NumGet(variant, 8, "Int64"), "Ptr*", &p)
+    } finally {
+        DllCall("oleaut32\VariantClear", "Ptr", variant)
+    }
+    return p ? ComValue(13, p) : ""
+}
+
+UiaOg(a, b) {
+    p := 0
+    ComCall(25, Uia().uia, "Ptr", a, "Ptr", b, "Ptr*", &p)
+    return p ? ComValue(13, p) : ""
+}
+
+UiaFinnAlleMed(element, betingelse) {
+    resultat := []
+    p := 0
+    ComCall(6, element, "Int", 4, "Ptr", betingelse, "Ptr*", &p)
+    if !p
+        return resultat
+    liste := ComValue(13, p)
+    antall := 0
+    ComCall(3, liste, "Int*", &antall)
+    loop antall {
+        e := 0
+        ComCall(4, liste, "Int", A_Index-1, "Ptr*", &e)
+        if e
+            resultat.Push(ComValue(13, e))
+    }
+    return resultat
+}
+
+UiaUnike(doker, betingelse, filter := "") {
+    treff := []
+    for dok in doker {
+        for e in UiaFinnAlleMed(dok, betingelse) {
+            if (IsObject(filter) && !filter(e))
+                continue
+            if (doker.Length = 1) {
+                treff.Push(e)
+                continue
+            }
+            kjent := false
+            for t in treff
+                if UiaSamme(t, e) {
+                    kjent := true
+                    break
+                }
+            if !kjent
+                treff.Push(e)
+        }
+    }
+    return treff
+}
+
+UiaNavnLik(e, navn) {
+    try return Trim(UiaStreng(e, 30005)) = Trim(navn)
+    return false
+}
+
+UiaSamme(a, b) {
+    lik := 0
+    try ComCall(3, Uia().uia, "Ptr", a, "Ptr", b, "Int*", &lik)
+    return lik != 0
+}
+
+UiaForelder(element) {
+    static vandrer := ""
+    if !IsObject(vandrer) {
+        p := 0
+        ComCall(14, Uia().uia, "Ptr*", &p)
+        vandrer := ComValue(13, p)
+    }
+    p := 0
+    try ComCall(3, vandrer, "Ptr", element, "Ptr*", &p)
+    return p ? ComValue(13, p) : ""
+}
+
+UiaSignatur(el) {
+    sig := {type:0, navn:"", id:"", klasse:""}
+    if !IsObject(el)
+        return sig
+    try sig.type := UiaTall(el, 30003)
+    try sig.navn := UiaStreng(el, 30005)
+    try sig.id := UiaStreng(el, 30011)
+    try sig.klasse := UiaStreng(el, 30012)
+    return sig
+}
+
+UiaFeltFraPunkt(sx, sy, typer) {
+    el := UiaFraPunkt(sx, sy)
+    if !IsObject(el)
+        return ""
+    kandidat := el
+    loop 4 {
+        t := 0
+        try t := UiaTall(kandidat, 30003)
+        for ok in typer
+            if (t = ok)
+                return kandidat
+        kandidat := UiaForelder(kandidat)
+        if !IsObject(kandidat)
+            break
+    }
+    return el
+}
+
+UiaFeltTyper() => [50004,50003]  ; Edit, ComboBox
+UiaKanGjenkjennes(sig) => IsObject(sig) && sig.type && (Trim(sig.navn) != "" || sig.id != "")
+
+UiaBeskriv(sig) {
+    typer := Map(50004,"tekstfelt",50003,"nedtrekksliste",50000,"knapp",50005,"lenke",50011,"menyvalg")
+    t := typer.Has(Integer(sig.type)) ? typer[Integer(sig.type)] : "element"
+    if (sig.navn != "")
+        return "«" KortVerdi(sig.navn, 40) "» (" t ")"
+    return "ID «" KortVerdi(sig.id, 30) "» (" t ") – uten navn, ID-en kan endre seg"
+}
+
+; Returnerer unikt, synlig felt fra AKTIV Service Manager-side.
+UiaFinnFelt(hwnd, sig, &grunn := "") {
+    grunn := ""
+    if !UiaKanGjenkjennes(sig) {
+        grunn := "feltet er ikke lært"
+        return ""
+    }
+    try {
+        AktiverChromiumTilgjengelighet(hwnd)
+        rot := UiaFraVindu(hwnd)
+        if !IsObject(rot) {
+            grunn := "fikk ikke lest siden"
+            return ""
+        }
+        typeBet := UiaTypeBetingelse(Integer(sig.type))
+        medNavn := Trim(sig.navn) != ""
+        betingelse := UiaOg(typeBet, medNavn ? UiaStrengBetingelse(30005, sig.navn) : UiaStrengBetingelse(30011, sig.id))
+        doker := UiaFinnAlle(rot, 50030)
+        treff := UiaUnike(doker, betingelse)
+        if (!treff.Length && medNavn)
+            treff := UiaUnike(doker, typeBet, (e) => UiaNavnLik(e, sig.navn))
+    } catch as feil {
+        grunn := "feil ved lesing av siden: " feil.Message
+        return ""
+    }
+    synlige := []
+    for e in treff {
+        skjult := true
+        try skjult := UiaBool(e, 30022) ; IsOffscreen
+        if !skjult
+            synlige.Push(e)
+    }
+    if !synlige.Length {
+        grunn := "fant ikke feltet i siden"
+        return ""
+    }
+    if (synlige.Length = 1)
+        return synlige[1]
+    beste := [], topp := -1
+    for e in synlige {
+        poeng := 0
+        try poeng += (sig.id != "" && UiaStreng(e, 30011) = sig.id) ? 2 : 0
+        try poeng += (sig.klasse != "" && UiaStreng(e, 30012) = sig.klasse) ? 1 : 0
+        if (poeng > topp) {
+            topp := poeng
+            beste := [e]
+        } else if (poeng = topp)
+            beste.Push(e)
+    }
+    if (beste.Length = 1)
+        return beste[1]
+    grunn := "fant " synlige.Length " like felt og vet ikke hvilket"
+    return ""
+}
+
+; Midtpunkt fra UIA-bounding rectangle i skjermkoordinater.
+UiaSenter(el) {
+    r := Buffer(16, 0)
+    try ComCall(43, el, "Ptr", r)
+    catch
+        return ""
+    v := NumGet(r,0,"Int"), t := NumGet(r,4,"Int"), h := NumGet(r,8,"Int"), b := NumGet(r,12,"Int")
+    if (h <= v || b <= t)
+        return ""
+    return {x:(v+h)//2, y:(t+b)//2}
+}
+
 LagGuid(tekst) {
     buf := Buffer(16)
     DllCall("ole32\CLSIDFromString", "WStr", tekst, "Ptr", buf)
