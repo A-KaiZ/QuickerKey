@@ -153,3 +153,25 @@ Brukeren ønsker at QuickerKeys alltid skal drifte Oppgavelogg i bakgrunnen, men
 - [ ] Feiltest: hvis Trio-vinduet ikke kan gjenopprettes, ikke gjør gjentatte raske forsøk; vis anonymisert status.
 
 **Kjent risiko:** Det er ikke utført Windows-runtime-test av RC6. `SW_SHOWNOACTIVATE` er dokumentert for ikke å aktivere vinduet, men applikasjonen selv kan reagere på Windows-hendelsen. Kontrollér faktisk fokusoppførsel før merge.
+
+## RC7 – Verifiser Trio-radstruktur fra dagens Oppgavelogg
+
+**Bakgrunn:** Brukeren har bekreftet at oppgaveloggen kan stå åpen bak andre vinduer med UIA-tilgang. Tidligere diagnostikk viste `List: 1`, 68 ListItem/DataItem-elementer og åtte gjenkjente kolonneoverskrifter. Det **beviser ikke** at alle 68 er samtaler.
+
+**Implementert:** En ny «Visualiseringer»-knapp i Statistikk åpner et separat GUI med fire nøkkeltall og horisontale timegrafer hentet utelukkende fra lokale **manuelle** CSV-hendelser. Nederst finnes «Test Trio-rader (uten lagring)» og «Kopier testresultat». Ingen rå data legges i clipboard, programlogg, QA eller GitHub.
+
+### Windows-test med faktiske Trio-oppgaver
+- [ ] Åpne QuickerKeys RC7 og sjekk at Visualiseringer åpner uten AHK-feil. Dersom ingen manuelle registreringer finnes, skal dashboardet vise 0 – ikke diktede Trio-tall.
+- [ ] Registrer én manuell testsamtale; åpne Visualiseringer på nytt. Totaltall og timegraf for riktig klokkeslett skal øke med én. Slett dagens manuelle tester med eksisterende søppelknapp etterpå hvis ønskelig.
+- [ ] Med Trio Oppgavelogg åpen i bakgrunnen og dagens faktiske oppgaver tilgjengelige: Visualiseringer → «Test Trio-rader (uten lagring)». Se etter «ListItem tilgjengelig», «Text-kontroller per rad», «Rader med 13 Text-felter», «Dato/tid i kolonne 1» og «Komplett validerte rader». Testen undersøker maks 12 elementer.
+- [ ] Kopier den anonymiserte rapporten og kontroller selv at ingen rå telefonnummer, kundenummer, IM-nummer, oppgave-ID eller kommentar følger med før den deles.
+- [ ] Test på nytt med Oppgavelogg manuelt minimert. Den skal avvise lesing fremfor å aktivere vinduet.
+- [ ] Dersom Text-kontrollene ikke er nøyaktig 13, skal testen melde «Radformat er ennå ikke verifisert», ikke telle noe som samtale eller endre dagens CSV.
+- [ ] Med mange historiske oppgaver, sammenlign tilgjengelige ListItem-tall med synlige rader. Eventuell virtualisering må håndteres separat etter godkjenning.
+- [ ] Bekreft at 30-sekunders UIA-status, automatisk vindushåndtering, SM Kontakt og manuelt CSV-oppsett fungerer uendret.
+
+### Begrensninger
+1. UIA-prøven kan se rå tekst i minne under validering, men eksporterer kun formatstatistikk og gjenkjenningsantall.
+2. 12 rader er bare et begrenset utvalg; ikke bruk dette som faktisk dagsstatistikk.
+3. Ikke ta i bruk automatisk registrering, IM-telling, overføringsklassifisering eller diagrammer basert på Trio før kolonneindekser og oppgave-ID-deduplisering er validert.
+4. Ingen Windows-runtime-test er utført av utviklingsmiljøet; RC7 må prøves i faktisk Trio 10.1.35.
