@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc3"
+global APP_VERSJON := "3.12-rc4"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -469,8 +469,9 @@ HjelpTekst(side) {
                 . "•  Alt kjører i bakgrunnen. Åpne vinduet igjen fra ikonet ved klokka."
         case "Statistikk":
             return "•  Manuell statistikk for mottatte/utgående samtaler, viderekobling og skriftlig tid.`n"
+                . "•  Rød søppelknapp tømmer kun dagens fullførte manuelle registreringer, etter bekreftelse.`n"
                 . "•  «Trio Oppgavelogg / UIA» styrer automatisk åpning, minimering og skrivebeskyttet diagnostikk.`n"
-                . "•  Automatisk åpning prøves bare når Trio er i forgrunnen og tastatur/mus er i ro.`n"
+                . "•  Automatisk åpning prøves uten fokusbytte når tastatur/mus er i ro.`n"
                 . "•  UIA-diagnosen leser bare struktur, ikke oppgave- eller kundeinnhold.`n"
                 . "•  Ingen samtaler importeres automatisk før UIA og samtaletolkning er testet."
         case "Logg":
@@ -4668,8 +4669,8 @@ class TrioOppgaveloggDiagnose {
     }
 
     ; Ingen WinActivate, Send, klikk eller endring av aktiv fane.
-    ; MenuSelect virker mot standard Win32-meny uten aktivering.
-    ; Stopp når Trio ikke er aktivt; unngå at loggen dukker opp over SM.
+    ; MenuSelect mot Trio-vinduets standard Win32-meny, også når Trio
+    ; ligger i bakgrunnen. Forsøkes først etter fysisk inaktivitet.
     ApneVedBehov(autoMinimer := true) {
         trio := this.FinnTrio()
         if !trio
@@ -4682,10 +4683,6 @@ class TrioOppgaveloggDiagnose {
         pid := WinGetPID("ahk_id " trio)
         if (this.SperretPid = pid)
             return {kode:"sperret", status:"Automatisk åpning ble forsøkt uten bekreftet loggvindu. Åpne manuelt eller start QuickerKeys på nytt.", logg:0}
-        if (WinGetMinMax("ahk_id " trio) = -1)
-            return {kode:"venter", status:"Trio er minimert – venter før åpning av Oppgavelogg.", logg:0}
-        if !WinActive("ahk_id " trio)
-            return {kode:"venter", status:"Venter til Trio er i forgrunnen før første åpning.", logg:0}
         if (A_TimeIdlePhysical < 4000)
             return {kode:"venter", status:"Venter til tastatur og mus har vært i ro i 4 sekunder.", logg:0}
 
@@ -4915,10 +4912,13 @@ class StatistikkModul {
         Skrift(HOVED, "s9 norm c" TEMA.dempet)
         this.TrioStatusK := Reg(pn, HOVED.AddText("x" x " y434 w" b " h20 Background" TEMA.bg,
             "Trio: Venter på første UIA-diagnose."))
-        Reg(pn, HOVED.AddText("x" x " y454 w" b " h15 Background" TEMA.bg,
+        Reg(pn, HOVED.AddText("x" x " y457 w" (b - 56) " h18 Background" TEMA.bg,
             "SISTE REGISTRERINGER I DAG (uten kundeinformasjon)"))
+        Skrift(HOVED, "s12 bold cFFFFFF")
+        Reg(pn, Knapp(HOVED, "x" (x + b - 38) " y453 w36 h24", "🗑",
+            ObjBindMethod(this, "TomDagensRegistreringer"), "B63B43"))
         Skrift(HOVED, "s9 norm c" TEMA.tekst)
-        this.Liste := Reg(pn, HOVED.AddListView("x" x " y472 w" b " h76 -Multi -Sort Background" TEMA.kort,
+        this.Liste := Reg(pn, HOVED.AddListView("x" x " y480 w" b " h68 -Multi -Sort Background" TEMA.kort,
             ["Tid", "Type", "Varighet", "Videre"]))
         this.Liste.ModifyCol(1, 100), this.Liste.ModifyCol(2, 153)
         this.Liste.ModifyCol(3, 122), this.Liste.ModifyCol(4, 92)
@@ -4978,6 +4978,37 @@ class StatistikkModul {
         this.SisteBeskjed := ""
         this.Oppdater()
         Logg("Statistikk: samtale registrert (" sek " sekunder)")
+    }
+
+    ; Delete only today's manual CSV entries, not active session INI/history/Trio.
+    TomDagensRegistreringer(*) {
+        if (this.SamtaleType != "" || this.SkriftStart != "") {
+            MsgBox "Avslutt eller forkast pågående samtale/skriftlig tid før dagens registreringer tømmes.",
+                APP_NAVN " – Statistikk", "Icon!"
+            return
+        }
+        fil := STATS_MAPPE "\" FormatTime(, "yyyy-MM-dd") ".csv"
+        if !FileExist(fil) {
+            this.Melding("Ingen registreringer i dag å slette.")
+            return
+        }
+        valg := MsgBox("Er du sikker på at du vil slette ALLE manuelt registrerte hendelser for i dag?"
+            . "`n`nDato: " FormatTime(, "dd.MM.yyyy")
+            . "`nDette sletter dagens CSV-statistikk (mottatt, ring ut, videresendt og skriftlig tid)."
+            . "`nDet påvirker ikke tidligere dager eller Trio sin Oppgavelogg."
+            . "`n`nSlettingen kan ikke angres.",
+            APP_NAVN " – Tøm dagens registreringer", "YesNo Icon! Default2")
+        if (valg != "Yes")
+            return
+        try {
+            FileDelete fil
+            this.SisteBeskjed := "Dagens manuelle registreringer er slettet."
+            Logg("Statistikk: dagens manuelle registreringer slettet av bruker")
+            this.Oppdater()
+        } catch as feil {
+            MsgBox "Kunne ikke slette dagens statistikkfil:`n" feil.Message,
+                APP_NAVN " – Statistikk", "Icon!"
+        }
     }
 
     SkriftToggle(*) {
@@ -5081,7 +5112,8 @@ class StatistikkModul {
 
 
     ; Check initial opening every 2.5 sec, independent of the 30 sec UIA.
-    ; No input or focus changes; existing log windows are left alone.
+    ; Does not require Trio to be foreground, and does not send user input.
+    ; Existing log windows are left alone.
     TrioApneTimer(*) {
         if (!this.TrioAutoApne || this.TrioApneOpptatt || this.TrioOpptatt)
             return
@@ -5091,8 +5123,6 @@ class StatistikkModul {
             if !trio
                 return
             if this.TrioLeser.FinnLoggvindu(trio)
-                return
-            if !WinActive("ahk_id " trio)
                 return
             if (A_TimeIdlePhysical < 4000)
                 return
@@ -5135,8 +5165,8 @@ class StatistikkModul {
                 this.TrioFeil := true
             } else {
                 steg := "Finn Oppgavelogg"
-                logg := this.TrioLeser.FinnLoggvindu(trio)
-                if !logg {
+                loggHwnd := this.TrioLeser.FinnLoggvindu(trio)
+                if !loggHwnd {
                     this.TrioStatusTekst := "Trio funnet, men Oppgavelogg ble ikke gjenkjent."
                     this.TrioDetaljer := "Steg: Finn Oppgavelogg"
                         . "`nÅpne Vis > Oppgavelogg manuelt én gang og trykk Kjør UIA-test nå igjen."
@@ -5144,7 +5174,7 @@ class StatistikkModul {
                     this.TrioFeil := true
                 } else {
                     steg := "UIA: ElementFromHandle / ControlViewWalker"
-                    r := this.TrioLeser.Kartlegg(logg)
+                    r := this.TrioLeser.Kartlegg(loggHwnd)
                     this.TrioStatusTekst := r.status
                     this.TrioDetaljer := "Steg: " steg "`n" r.detaljer
                     this.TrioFeil := !r.ok
@@ -5229,7 +5259,7 @@ class StatistikkModul {
         Knapp(v, "x355 y386 w185 h35", "Kopier diagnose", ObjBindMethod(this, "KopierTrioDiagnose"), TEMA.aksent2)
         Skrift(v, "s9 norm c" TEMA.dempet)
         v.AddText("x20 y429 w520 h36 Background" TEMA.bg,
-            "Automatisk åpning gjøres bare når Trio er aktivt og tastatur/mus har vært i ro i minst 4 sekunder.")
+            "Autoåpning krever ikke aktivt Trio-vindu. Mus og tastatur må ha vært i ro minst 4 sekunder.")
         v.OnEvent("Close", (*) => v.Hide())
         v.OnEvent("Escape", (*) => v.Hide())
         v.Show("w560 h475")
