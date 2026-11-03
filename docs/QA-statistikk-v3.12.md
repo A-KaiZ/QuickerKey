@@ -37,3 +37,33 @@
 
 ## Avklaring med Trio-ansvarlig
 Enghouse Trio har egne statistikk-/rapporteringsfunksjoner. Produktdokumentasjon for Trio 9.3 beskriver også en valgfri, lisensiert modul **Enterprise Call Data Export** (P005110) som eksporterer Agent/Attendant-data med blant annet samtalestart, svar og viderekobling. Avklar først hvilken Trio-versjon og rapport-/eksporttilgang organisasjonen har. En godkjent eksport kan gi mer presise tall enn polling av UIA.
+
+## v3.12-rc2: Trio Oppgavelogg – skrivebeskyttet diagnostikk
+
+**Standardoppsett:** `TrioAutoApne=1`, `TrioAutoMinimer=1`, `TrioIntervallSek=30`, `TrioVisFeil=1` i seksjon `[Statistikk]`.
+
+**Sikkerhetsgrenser:** Ingen automatisk oppgaveimport, ingen lagring av radtekst eller UIA Value. Det er ikke bevist at Oppgavelogg kan leses minimert. Den gjenkjennes kun i **samme PID som Trio Attendant** med vindustittel som inneholder `Oppgavelogg`. Hvis Trio bruker en annen prosess eller ikke-standard menylinje, rapporteres dette som en begrensning, ikke omgås med tastetrykk.
+
+**Fokus:** Ved ny åpning brukes `MenuSelect` direkte mot Trio bare når Trio er aktivt og mus/tastatur har vært i ro i minst 4 sekunder. `WinActivate`, `Send`, `Click` og gjenoppretting av andres vinduer er bevisst utelatt. Trio kan selv vise et kort vindusglimt. Bare et *nyopprettet* loggvindu minimeres. Ved mislykket åpning gjøres bare ett automatisk forsøk for samme Trio-prosess; etterpå må brukeren åpne loggen manuelt eller starte QuickerKeys på nytt.
+
+### Test i Trio Attendant 10.1.35
+- [ ] Start med Trio lukket: ingen åpning eller fokusbytte, «Trio er ikke startet» i status.
+- [ ] Åpne Trio, la det være aktivt og la tastatur/mus være i ro i minst fire sekunder, til neste 30-sekunders kontroll. Oppgavelogg bør åpnes **én** gang og minimeres.
+- [ ] Test samtidig arbeid i SM eller annet vindu: QuickerKeys skal **ikke** hente Trio frem eller åpne nytt Oppgavelogg-vindu mens brukeren arbeider.
+- [ ] Hvis Oppgavelogg er åpnet manuelt, skal QuickerKeys **ikke** minimere eller flytte det.
+- [ ] Test ikke-standard Vis-meny eller ukjent loggvindutittel: feilstatus vises, ingen gjentatte åpninger for samme Trio-PID.
+- [ ] Trykk «Trio Oppgavelogg / UIA…» → «Kjør UIA-test nå». Bekreft at rapporten bare inneholder struktur og kjente kolonneoverskrifter, ikke samtale- eller kundeinnhold.
+- [ ] Sammenlign diagnose med Oppgavelogg åpen normalt, deretter minimert. Noter DataGrid/Table/List-tilgang, radtypeforekomster og tidsforbruk. **Ikke anta fullstendig radinnhenting** ut fra et ikke-null antall.
+- [ ] Hvis minimert vindu returnerer 0 tabeller eller rader: vis tydelig status, ikke restore eller scroll automatisk.
+- [ ] «Kopier diagnose» gir bare aggregerte felter og sikker tekst. Kontroller manuelt at person-, telefon-, kundenummer og IM ikke finnes.
+- [ ] Endre intervall 15 → 30 → 60 og feilstatus på/av, lagre og restart; innstillingene må beholdes.
+- [ ] Legg inn ugyldig `TrioIntervallSek=abc` i INI: ingen oppstartskrasj; fallback skal være 30.
+- [ ] Test at SM Kontakt, Trio Snarveier, Tekstflyt, Vindusbytter og MAC Import fungerer uendret mens diagnosetimeren er aktiv.
+- [ ] Feilsøk UIA-treghet / vinduer med mange oppgaver; automatisk skanning er begrenset til 140 kontrollnoder.
+
+### Akseptkriterier før automatisk import
+1. Bekreftet UIA-struktur både i normal og minimert tilstand, eller dokumentert fallback til rapport/eksport.
+2. Bekreftet at radene inneholder **oppgave-ID, tidspunkt, behandlingstid, køtid, tjeneste, Koblet og Kommentar** som egne lesbare felter.
+3. Bekreftet semantikk for telefonsymbol/retning og at `Koblet` betyr faktisk viderekobling.
+4. Deduplisering på oppgave-ID og oppdatering ved endret Koblet/Kommentar – **først da** automatisk beregning av statistikk.
+5. Godkjent lokal dataminimering og personvern – ikke logg rå telefonnumre eller IM-kommentarer i det offentlige repoet.
