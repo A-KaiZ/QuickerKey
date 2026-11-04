@@ -106,7 +106,8 @@ public static class CaptureTests
                 WithFixture(fixture, "blank", delegate(Process owner, Target target)
                 {
                     CaptureResult blank = Capture(target, 3500);
-                    Require(blank.Status == CaptureStatus.Image && !blank.Varied, "successful blank rendering is not classified as varied content (status=" + blank.Status + ", varied=" + blank.Varied + ")"); blank.ClearPixels();
+                    Require(blank.Status == CaptureStatus.Image && !blank.Varied, "successful blank client rendering is not classified as varied content (status=" + blank.Status + ", varied=" + blank.Varied
+                        + ", client=" + blank.ClientX + "," + blank.ClientY + "," + blank.ClientWidth + "," + blank.ClientHeight + ")"); blank.ClearPixels();
                 });
                 WithFixture(fixture, "hang", delegate(Process owner, Target target)
                 {

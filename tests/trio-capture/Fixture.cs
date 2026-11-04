@@ -19,6 +19,13 @@ public sealed class FixtureForm : Form
         for (int i = 0; i < 8; i++) List.Items.Add(new ListViewItem(new string[] {
             DateTime.Today.ToString("dd.MM.yyyy") + " 09:10:11", "90000000" + i, "", "", "", "", "", "", "02:30", "00:10", "", "", "" }));
         Controls.Add(List);
+        if (mode == "blank")
+        {
+            // Keep a real native handle/metadata, but genuinely render no list content.
+            // A blank parent alone is insufficient: PrintWindow also renders visible children.
+            List.Handle.ToInt64();
+            List.Hide();
+        }
         Shown += delegate { List.Items[2].Selected = true; List.Focus(); };
         if (mode == "native") List.Dock = DockStyle.Fill;
     }
