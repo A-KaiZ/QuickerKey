@@ -75,6 +75,26 @@ namespace QuickerKeys.Ocr
             return Rectangle.FromLTRB((int)Math.Round(bounds.Left - window.Left), (int)Math.Round(bounds.Top - window.Top),
                 (int)Math.Round(bounds.Right - window.Left), (int)Math.Round(bounds.Bottom - window.Top));
         }
+        private static List<Rectangle> NativeColumns(IntPtr list, IntPtr header, Native.Rect window, Rectangle body)
+        {
+            // UIA HeaderItem rectangles can describe only the padded caption, not the column.
+            // These scalar messages need no cross-process pointers and read geometry only.
+            int count = (int)Native.Message(header, 0x1200, 0, 0);
+            Native.Point origin = new Native.Point();
+            if (count < 1 || count > 100 || !Native.ClientToScreen(header, ref origin)) return null;
+            int x = origin.X - window.Left;
+            HashSet<int> indexes = new HashSet<int>(); List<Rectangle> columns = new List<Rectangle>();
+            for (int order = 0; order < count; order++)
+            {
+                int index = (int)Native.Message(header, 0x120F, order, 0); // HDM_ORDERTOINDEX
+                if (index < 0 || index >= count || !indexes.Add(index)) return null;
+                int width = (int)Native.Message(list, 0x101D, index, 0); // LVM_GETCOLUMNWIDTH
+                if (width < 0 || width > 32768 || Math.Abs((long)x) > 1000000) return null;
+                if (width > 0) columns.Add(new Rectangle(x, body.Y, width, body.Height));
+                x += width;
+            }
+            return columns;
+        }
         // Called only on the bounded worker's MTA thread. Only header Names and row rectangles are requested.
         public static Layout Read(IntPtr list, Native.Rect window)
         {
@@ -87,6 +107,8 @@ namespace QuickerKeys.Ocr
                 Math.Max(origin.Y, headerBounds.Bottom) - window.Top, origin.X + client.Right - window.Left,
                 origin.Y + client.Bottom - window.Top) };
             if (layout.Body.Width < 1 || layout.Body.Height < 1) return null;
+            List<Rectangle> nativeColumns = NativeColumns(list, new IntPtr(header), window, layout.Body);
+            if (nativeColumns == null) return null;
             HashSet<Field> duplicates = new HashSet<Field>();
             AutomationElement root = AutomationElement.FromHandle(new IntPtr(header));
             AutomationElementCollection headings = root.FindAll(TreeScope.Descendants,
@@ -97,8 +119,11 @@ namespace QuickerKeys.Ocr
                 Field? key = HeaderKey(heading.Current.Name);
                 if (!key.HasValue) continue;
                 Rectangle bounds = RectangleOf(heading.Current.BoundingRectangle, window);
-                Rectangle column = new Rectangle(bounds.X, layout.Body.Y, bounds.Width, layout.Body.Height);
-                if (bounds.Width < 4 || !layout.Body.Contains(column)) continue; // Hidden/clipped columns stay unknown.
+                Rectangle[] matched = nativeColumns.Where(c => bounds.Width > 0 && bounds.Left + bounds.Width / 2 >= c.Left
+                    && bounds.Left + bounds.Width / 2 < c.Right).ToArray();
+                if (matched.Length != 1) continue;
+                Rectangle column = matched[0];
+                if (column.Width < 4 || !layout.Body.Contains(column)) continue; // Hidden/clipped columns stay unknown.
                 if (layout.Columns.ContainsKey(key.Value)) duplicates.Add(key.Value);
                 else layout.Columns.Add(key.Value, column);
             }
@@ -361,10 +386,14 @@ namespace QuickerKeys.Ocr
                     {
                         if (selected != null && !selected.Contains(rowIndex)) continue;
                         Rectangle row = layout.Rows[rowIndex];
-                        int[] samples = { Light(image, column.Left + 1, row.Top + 1), Light(image, column.Right - 2, row.Top + 1),
-                            Light(image, column.Left + 1, row.Bottom - 2), Light(image, column.Right - 2, row.Bottom - 2) };
-                        Array.Sort(samples); int background = Math.Max(1, Math.Min(254, (samples[1] + samples[2]) / 2));
-                        for (int y = row.Top; y < row.Bottom; y++) for (int x = column.Left + 1; x < column.Right - 1; x++)
+                        int[] histogram = new int[256];
+                        for (int y = row.Top + 1; y < row.Bottom - 1; y += 2)
+                            for (int x = column.Left + 1; x < column.Right - 1; x += 3) histogram[Light(image, x, y)]++;
+                        int background = 0;
+                        for (int level = 1; level < histogram.Length; level++) if (histogram[level] > histogram[background]) background = level;
+                        background = Math.Max(1, Math.Min(254, background));
+                        // Omit the one-pixel row outline (e.g. native keyboard-focus dots).
+                        for (int y = row.Top + 1; y < row.Bottom - 1; y++) for (int x = column.Left + 1; x < column.Right - 1; x++)
                         {
                             int light = Light(image, x, y);
                             int normalized = background < 128 ? 255 - Math.Max(0, light - background) * 255 / (255 - background) : light * 255 / background;

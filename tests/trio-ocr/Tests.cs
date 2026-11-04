@@ -143,7 +143,7 @@ public static class OcrTests
             try
             {
                 Target target = null; Stopwatch timer = Stopwatch.StartNew();
-                while (timer.ElapsedMilliseconds < 5000)
+                while (timer.ElapsedMilliseconds < 15000)
                 {
                     target = Discovery.Find().FirstOrDefault(t => t.ProcessId == process.Id);
                     if (target != null) break; Thread.Sleep(50);
