@@ -4760,7 +4760,7 @@ class TrioOppgaveloggDiagnose {
             , teksttilstand:Map(), valgteTidskilder:Map(), tommeTidsceller:0, radnavnFormer:Map()
             , utenPlassering:0, bekreftedeKart:0, datoIDag:FormatTime(,"yyyyMMdd")
             , grunner:Map("felt",0,"dato",0,"id",0,"konflikt",0)
-            , nativeForsok:[]
+            , nativeForsok:[], listeklasse:"", rammeverk:""
             , former:Map(), funnfelt:Map(), kolonner:[], kart:Map(), metoder:Map()}
     }
 
@@ -4860,6 +4860,9 @@ class TrioOppgaveloggDiagnose {
                     return this.AvsluttLesing(out)
                 }
                 out.kilde := "UIA List / kolonnenavn og celleplassering"
+                out.listeklasse := SubStr(RegExReplace(UiaStreng(lister[1],30012),"[^a-zA-Z0-9_.#-]","?"),1,120)
+                framework := UiaStreng(lister[1],30024)
+                out.rammeverk := InStr("|Win32|WinForm|WPF|XAML|Qt|Chrome|","|" framework "|") ? framework : "annet/ukjent"
                 schema := this.LesKolonner(rot)
                 out.kolonner := schema.kolonner, out.kart := schema.kart
                 if !this.HarIdentitetsfelt(out.kart) {
@@ -5586,6 +5589,8 @@ class TrioOppgaveloggDiagnose {
             . "`nBekreftede cellekart: " out.bekreftedeKart " | Rader supplert uten plassering: " out.utenPlassering
             . "`nGyldig tid fra Name: " out.tidFraName " | Value: " out.tidFraValue
             . " | Motstridende tidsverdier: " out.tidskonflikt
+        if (out.listeklasse != "")
+            tekst .= "`nUIA-listeklasse: " out.listeklasse " | rammeverk=" out.rammeverk
         tekst .= "`nNative listekandidater: " out.nativeForsok.Length
         for i, forsok in out.nativeForsok
             tekst .= "`nNative liste " i ": " forsok.klasse
