@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.11"
+global APP_VERSJON := "3.11.1"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -683,14 +683,15 @@ ImporterKonfigurasjon(*) {
         ImporterGammelQuickKey(fil)
         return
     }
-    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk)\]\s*$") {
+    if !RegExMatch(innhold, "im)^\s*\[(App|User|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk)\]\s*$") {
         MsgBox "Ukjent konfigurasjonsformat. Forventet QuickerKeys/MAAUNI eller gamle QuickKey [Shortcuts].", APP_NAVN, "Icon!"
         return
     }
     ; Kun anerkjente nøkkelverdier importeres: eksterne filstier og programmappe beholdes lokale.
     seksjoner := Map(
         "App", ["StartSkjult", "VisTast", "Tema", "Nettverk"],
-        "Tekstflyt", ["Aktiv"],
+        "Tekstflyt", ["Aktiv", "Initialer"],
+        "User", ["Username"],
         "SMKontakt", ["Aktiv", "TrioKilde", "WebVindu", "WebEtikett", "TrioVindu", "Etikett"
             , "AndreLinjeRegex", "ManuellTast", "TrioKontroll", "SMVindu"
             , "KontaktX", "KontaktY", "KnappX", "KnappY"
@@ -704,7 +705,7 @@ ImporterKonfigurasjon(*) {
         for k in ["Vindu", "Navn", "Tast"]
             seksjoner["Vindusbytter"].Push(k i)
     }
-    for k in ["HKAgentvindu", "HkTjenestevindu", "HKetterarbeid", "HKcopyIM", "HKcopyTLF"]
+    for k in ["HKAgentvindu", "HkTjenestevindu", "HKetterarbeid", "HKetterarbeid5", "HKcopyIM", "HKcopyTLF"]
         seksjoner["TrioSnarveier"].Push(k, "Enabled" k)
 
     endringer := []
@@ -1323,10 +1324,36 @@ class VT_Tekstflyt extends VT_Base {
         this.Leg(Knapp(gui, "x" (x + 2 * (kb + 12)) " y" (y + 28) " w" kb " h40", "Teksteditor", ObjBindMethod(this, "VisEditor")))
         Skrift(gui, "s9 c" TEMA.tekst)
         this.Leg(Knapp(gui, "x" x " y" (y + 80) " w" (kb + 90) " h32", "Importer / velg Excel…", ObjBindMethod(this, "VelgFil"), TEMA.aksent2))
+        Skrift(gui, "s9 c" TEMA.dempet)
+        this.Leg(gui.AddText("x" x " y" (y + 136) " w" b " h22 Background" TEMA.bg, "Initialer / signatur for #dwa og #dwr"))
+        Skrift(gui, "s10 c" TEMA.tekst)
+        this.InitialerK := this.Leg(gui.AddEdit("x" x " y" (y + 162) " w230 h28 Background" TEMA.kort, this.SignaturBruker()))
+        this.Leg(Knapp(gui, "x" (x + 242) " y" (y + 162) " w160 h28", "Lagre initialer", ObjBindMethod(this, "LagreInitialer")))
+        Skrift(gui, "s9 c" TEMA.dempet)
+        this.Leg(gui.AddText("x" x " y" (y + 204) " w" b " h54 Background" TEMA.bg
+            , "#dwa → (initialer) ddMMyy, med utklipp på nøyaktig 9 tegn.`n#dwr → (initialer) ddMMyy D2358. Bruk Mellomrom/Enter."))
+    }
+
+    SignaturBruker() => this.Hent("Initialer", Innst("User", "Username", A_UserName))
+
+    LagreInitialer(*) {
+        bruker := Trim(this.InitialerK.Value)
+        try {
+            TekstflytSignatur("#dwa", bruker, "") ; valider før lagring
+            this.Lagre("Initialer", bruker)
+            this.InitialerK.Value := bruker
+            Tip("Initialer lagret – #dwa og #dwr er klare", 2500)
+        } catch as feil {
+            MsgBox feil.Message, APP_NAVN, "Icon!"
+        }
     }
 
     Hjelp() {
         return "•  Skriv en kode, f.eks. #løst, og trykk Mellomrom eller Enter.`n"
+            . "•  #dwa og #dwr er innebygde signaturer med dagens dato (ddMMyy); krever ikke Excel.`n"
+            . "•  Endre «Initialer / signatur» her og trykk «Lagre initialer». Standard er Windows-brukernavnet.`n"
+            . "•  #dwa tar med utklipp på nøyaktig 9 tegn. #dwr tar alltid med D2358.`n"
+            . "•  Disse to kodene er reservert; eventuelle Excel-rader med samme kode overstyres uten å endre filen.`n"
             . "•  Ny kode: «Teksteditor» → skriv kode og tekst → «Lagre i Excel».`n"
             . "•  «Importer / velg Excel»: Ja = lag en lokal kopi, Nei = bruk filen der den ligger.`n"
             . "•  Valgt fil beholdes ved omstart. Mangler den, får du feilmelding i stedet for at en annen fil lastes.`n"
@@ -1335,6 +1362,14 @@ class VT_Tekstflyt extends VT_Base {
     }
 
     Start() {
+        ; Registreres også når valgt Excel-fil mangler eller ikke kan leses.
+        HotIf TekstflytKrit
+        try {
+            for kode in ["#dwa", "#dwr"]
+                Hotstring(":XC1:" kode, TekstflytSettInn, true)
+        } finally {
+            HotIf
+        }
         this.Sync(false)
         SetTimer this.SjekkCb, 5000
     }
@@ -1415,10 +1450,12 @@ class VT_Tekstflyt extends VT_Base {
 
         HotIf TekstflytKrit
         for kode in this.Koder
-            if !nye.Has(kode)
+            if (!nye.Has(kode) && !TekstflytErSignatur(kode))
                 try Hotstring(":XC1:" kode, , false)
         feilet := 0
         for kode, tekst in nye {
+            if TekstflytErSignatur(kode)
+                continue
             try Hotstring(":XC1:" kode, TekstflytSettInn, true)
             catch as feil {
                 feilet++
@@ -1494,6 +1531,8 @@ class VT_Tekstflyt extends VT_Base {
 
     ; Støtter redigering og omdøping av eksisterende koder.
     Endre(gammel, kode, tekst) {
+        if (TekstflytErSignatur(gammel) || TekstflytErSignatur(kode))
+            throw Error("#dwa og #dwr er innebygde signaturer. Endre initialer på Tekstflyt-siden.")
         if !this.SikreFil()
             throw Error("Excel-filen finnes ikke eller kunne ikke åpnes.")
         if (gammel != kode && this.Koder.Has(kode))
@@ -1698,9 +1737,37 @@ TekstflytSettInn(hotstringNavn) {
     Critical                                   ; ingen andre verktøy får avbryte innsettingen
     tf := VT_Tekstflyt.Instans
     kode := RegExReplace(hotstringNavn, "^:[^:]*:")
-    if !IsObject(tf) || !tf.Koder.Has(kode)
+    if !IsObject(tf)
+        return
+    if TekstflytErSignatur(kode) {
+        try tekst := TekstflytSignatur(kode, tf.SignaturBruker(), A_Clipboard)
+        catch as feil {
+            Tip(feil.Message, 3500)
+            return
+        }
+        LimInnTekst(tekst, WinExist("A"))
+        return
+    }
+    if !tf.Koder.Has(kode)
         return
     LimInnTekst(tf.Koder[kode], WinExist("A"))
+}
+
+TekstflytErSignatur(kode) => kode = "#dwa" || kode = "#dwr"
+
+TekstflytSignatur(kode, bruker, klipp, tidspunkt := "") {
+    bruker := Trim(bruker)
+    if !RegExMatch(bruker, "^[^\s()]{1,40}$")
+        throw Error("Fyll inn initialer på Tekstflyt-siden (1–40 tegn uten mellomrom eller parenteser).")
+    tekst := "(" bruker ") " FormatTime(tidspunkt, "ddMMyy")
+    switch StrLower(kode) {
+        case "#dwa":
+            return tekst (StrLen(klipp) = 9 ? " " klipp : "")
+        case "#dwr":
+            return tekst " D2358"
+        default:
+            throw Error("Ukjent signaturkode.")
+    }
 }
 
 LimInnTekst(tekst, hwnd) {
@@ -3725,6 +3792,7 @@ TrioOppgaver() => [
     {key:"HKAgentvindu", navn:"Vis Agentvindu", beskrivelse:"Trio → Vis → Agentvinduet"},
     {key:"HkTjenestevindu", navn:"Vis Tjenestevindu", beskrivelse:"Trio → Vis → Tjenestevindu"},
     {key:"HKetterarbeid", navn:"Legg til etterarbeid", beskrivelse:"Trio → Sett inn → Etterarbeid"},
+    {key:"HKetterarbeid5", navn:"Etterarbeid – 5 minutter", beskrivelse:"Trio → Sett inn → Etterarbeid → 5 minutter (Alt+F3)"},
     {key:"HKcopyIM", navn:"Kopier IM / Kommentar", beskrivelse:"Bytt kopifelt midlertidig til Kommentar"},
     {key:"HKcopyTLF", navn:"Kopier telefonnummer", beskrivelse:"Bytt kopifelt midlertidig til A-nr"}
 ]
@@ -3788,6 +3856,35 @@ TrioSnarveiKrit(*) {
     return hwnd && !ErNettleser(hwnd) && WinActive("ahk_id " hwnd)
 }
 
+; Ikke gjett antall piltasttrykk: rekkefølgen kan variere mellom Trio-oppsett.
+TrioErFemMinutter(tekst) {
+    tekst := Trim(StrReplace(tekst, "&"))
+    return RegExMatch(tekst, "i)^(?:Etterarbeid\s*[-:]?\s*)?(?:5\s*min(?:utt(?:er)?)?\.?|0?0:05:00|0?5:00)$") != 0
+}
+
+TrioVelgFemMinutter(hwnd) {
+    id := "ahk_id " hwnd
+    if !WinActive(id)
+        return false
+    treff := []
+    for kontroll in WinGetControlsHwnd(id) {
+        try {
+            klasse := WinGetClass("ahk_id " kontroll)
+            if !RegExMatch(klasse, "i)(?:^|\.)(?:ComboBox|ListBox)(?:$|\.)")
+                continue
+            for indeks, tekst in ControlGetItems(kontroll)
+                if TrioErFemMinutter(tekst)
+                    treff.Push({kontroll:kontroll, indeks:indeks, tekst:tekst})
+        }
+    }
+    if (treff.Length != 1 || !WinActive(id))
+        return false
+    valg := treff[1]
+    ControlChooseIndex valg.indeks, valg.kontroll
+    ControlFocus valg.kontroll
+    return WinActive(id) && ControlGetChoice(valg.kontroll) = valg.tekst
+}
+
 class VT_TrioSnarveier extends VT_Base {
     Navn := "Trio Snarveier"
     Beskrivelse := "QuickKey-funksjoner direkte i Trio Attendant, ikke bare vindusbytte."
@@ -3803,6 +3900,11 @@ class VT_TrioSnarveier extends VT_Base {
     __New() {
         this.Felt := Map()
         this.Registrerte := Map()
+        ; Sett standard kun én gang. Behold senere av/på-valg og egendefinert tast.
+        if (this.Hent("HKetterarbeid5", "{MANGLER}") = "{MANGLER}") {
+            this.Lagre("HKetterarbeid5", "!F3")
+            this.Lagre("EnabledHKetterarbeid5", this.Konflikt("!F3", "HKetterarbeid5") = "" ? "on" : "off")
+        }
         this.ImPollCb := ObjBindMethod(this, "ImSjekk")
         this.ImKlikkCb := ObjBindMethod(this, "ImLaerKlikk")
         this.ImEscCb := ObjBindMethod(this, "ImLaerAvbryt")
@@ -3811,6 +3913,8 @@ class VT_TrioSnarveier extends VT_Base {
     Hjelp() {
         return "•  Agentvindu og Tjenestevindu åpnes gjennom Vis-menyen i Trio Attendant.`n"
             . "•  Etterarbeid bruker den gamle Trio-menysekvensen.`n"
+            . "•  «Etterarbeid – 5 minutter» har standard Alt+F3. Velger en lesbar 5-minuttersverdi før bekreftelse.`n"
+            . "•  Hvis varigheten ikke kan bekreftes, blir dialogen stående åpen for manuelt valg.`n"
             . "•  IM og telefonnummer bytter Parameter midlertidig, kopierer og gjenoppretter innstillingene.`n"
             . "•  Kopitasten leses automatisk fra Hurtigkopiering i Trio (f.eks. Ctrl + |).`n"
             . "•  «Velg tast…» for kopitasten vises hvis automatisk lesing feiler.`n"
@@ -3829,7 +3933,7 @@ class VT_TrioSnarveier extends VT_Base {
         this.Leg(gui.AddText("x" (x+236) " y" y " w145 h22 Background" TEMA.bg, "HURTIGTAST"))
         this.Leg(gui.AddText("x" (x+422) " y" y " w60 h22 Background" TEMA.bg, "AKTIV"))
         for i, op in TrioOppgaver() {
-            ry := y + 28 + (i-1)*42
+            ry := y + 28 + (i-1)*36
             Skrift(gui, "s9 c" TEMA.tekst)
             this.Leg(gui.AddText("x" x " y" (ry+3) " w225 h28 +0x200 Background" TEMA.bg, op.navn))
             tastKnapp := this.Leg(Knapp(gui, "x" (x+236) " y" ry " w145 h29", "", ObjBindMethod(this, "TaOppTast", op.key), TEMA.aksent2))
@@ -3839,7 +3943,7 @@ class VT_TrioSnarveier extends VT_Base {
             this.Felt[op.key] := {knapp:tastKnapp, sjekk:sjekk, tast:this.Hent(op.key, ""), navn:op.navn}
             this.VisTast(op.key)
         }
-        yKnapp := y + 28 + TrioOppgaver().Length * 42 + 6
+        yKnapp := y + 28 + TrioOppgaver().Length * 36 + 6
         Skrift(gui, "s10 bold c" TEMA.tekst)
         this.Leg(Knapp(gui, "x" x " y" yKnapp " w175 h34", "Lagre snarveier", ObjBindMethod(this, "LagreSnarveier")))
         Skrift(gui, "s9 c" TEMA.dempet)
@@ -4032,6 +4136,8 @@ class VT_TrioSnarveier extends VT_Base {
                     if !WinWaitActive("Sett inn", , 2)
                         throw Error("Vinduet «Sett inn» åpnet seg ikke.")
                     Send "{Down 2}^{Enter}"
+                case "HKetterarbeid5":
+                    this.EtterarbeidFem(id)
                 case "HKcopyIM":
                     this.KopierMedFelt("Kommentar", id)
                 case "HKcopyTLF":
@@ -4040,7 +4146,12 @@ class VT_TrioSnarveier extends VT_Base {
             Logg("Trio Snarveier: utførte " nokkel)
         } catch as feil {
             Logg("Trio Snarveier: FEIL " nokkel " – " feil.Message)
-            Tip("Trio-snarvei feilet – se Logg", 2400)
+            if (nokkel = "HKetterarbeid5") {
+                if (IsSet(id) && WinActive("Sett inn ahk_pid " WinGetPID(id)))
+                    forrige := 0 ; la uavklart varighetsdialog bli stående fremst
+                Tip("5 minutter ble ikke bekreftet – velg manuelt i Trio. Se Logg.", 4000)
+            } else
+                Tip("Trio-snarvei feilet – se Logg", 2400)
         } finally {
             if (forrige && WinExist("ahk_id " forrige))
                 try WinActivate "ahk_id " forrige
@@ -4051,6 +4162,19 @@ class VT_TrioSnarveier extends VT_Base {
             catch as feil
                 Logg("Trio Snarveier: FEIL etter " nokkel " – " feil.Message)
         }
+    }
+
+    EtterarbeidFem(trioId) {
+        dlg := "Sett inn ahk_pid " WinGetPID(trioId)
+        MenuSelect trioId,, "Sett inn", "Etterarbeid"
+        if !WinWaitActive(dlg, , 2)
+            throw Error("Vinduet «Sett inn» åpnet seg ikke i Trio.")
+        hwnd := WinExist(dlg)
+        if !TrioVelgFemMinutter(hwnd)
+            throw Error("Fant ikke et entydig 5-minuttersvalg. Velg varighet manuelt i Trio-dialogen.")
+        if !WinActive("ahk_id " hwnd)
+            throw Error("Trio-dialogen mistet fokus før bekreftelse.")
+        Send "^{Enter}"
     }
 
 

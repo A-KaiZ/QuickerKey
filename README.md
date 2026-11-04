@@ -10,6 +10,17 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Vindusbytter:** Opptil fire vanlige programmer/vinduer og nettleserfaner.
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 
+## v3.11.1 – signaturer og fem minutter etterarbeid
+
+- **`#dwa` + Mellomrom/Enter:** `(initialer) ddMMyy`. Utklippstavlens tekst legges til når den inneholder nøyaktig ni tegn, som i den gamle egendefinerte koden.
+- **`#dwr` + Mellomrom/Enter:** `(initialer) ddMMyy D2358`.
+- Begge signaturer er innebygd i Tekstflyt og virker også når Excel-filen mangler. De følger Tekstflyt PÅ/AV. Excel-rader med samme navn overstyres uten å endre arbeidsboken.
+- Sett egne initialer under **Tekstflyt → Initialer / signatur → Lagre initialer**. Windows-brukernavnet brukes som standard. Eldre `[User] Username` støttes i aktiv INI og via **Importer konfigurasjon**; en eksplisitt `[Tekstflyt] Initialer` har prioritet.
+- **Alt+F3:** nytt alternativ **Etterarbeid – 5 minutter** under Trio Snarveier. Standardtasten er aktiv hvis den ikke har konflikt med andre lagrede QuickerKeys-snarveier. Eksisterende snarvei for etterarbeid beholdes. Tasten kan endres eller slås av.
+- Femminuttersvalget finner en entydig, lesbar varighet i en ComboBox/ListBox i Trios «Sett inn»-dialog, velger og verifiserer den før Ctrl+Enter. Uleselig eller tvetydig valg lar dialogen stå åpen for manuelt valg. Det brukes ingen antakelse om antall piltrykk.
+
+**Verifikasjon:** Windows-testene parser hele programmet og tester signaturer, faktiske tekstutvidelser i et separat testvindu, Excel-synkronisering, PÅ/AV, utklippstavle og varighetsvalg i native testkontroller. Faktisk Trio/Citrix må fortsatt prøves i jobbmiljøet. Hvis Trio bruker en annen kontrolltype, kan Alt+F3 åpne dialogen uten å bekrefte automatisk.
+
 ## v3.11 – Nettverk og UIA-feltgjenkjenning (feature branch)
 
 Denne oppdateringen bygger videre på v3.8 i `main`.
