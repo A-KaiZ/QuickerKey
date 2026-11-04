@@ -1,5 +1,13 @@
 # QuickerKeys Statistikk v3.12 — QA og avgrensninger
 
+## Status 04.11.2026: tekstinnlesing blokkert, OCR under utforming
+
+Den faktiske RC14-testen bekrefter at fire Unicode- og fire ANSI-prøver alle gir tomt svar uten registrerte API-feil. UIA-tekstkildene er også tomme. Flere like diagnoser eller parserendringer er ikke neste teststeg.
+
+En separat OCR-prøve på et direkte skjermbilde ga samsvar for dato/tid, oppgave-ID, behandlingstid og køtid på 12 synlige rader fra dagens dato (48 kontrollerte felt). Dette var Tesseract på Linux med manuelt avgrensede kolonner, ikke en implementert QuickerKeys-import. Windows-fangst bak andre vinduer og historikkdekning er uprøvd.
+
+[Løsningsutkast for lokal OCR, porter og implementeringsrekkefølge](Trio-OCR-utkast-v3.12.md). Appen forblir RC14; ingen ny fangst- eller OCR-rute er implementert. PR #9 forblir Draft.
+
 
 ## RC14 – sjekk feilstatus og ANSI/Unicode før flere parserendringer
 
@@ -21,7 +29,7 @@ Denne grenen er også oppdatert med main `e88e9ff` (personlige DIPS-innstillinge
 
 ### Faktisk Trio-test
 
-Start **3.12-rc14** og del ved fortsatt feil bare «Native protokollfeil» og «LVM_GETITEMTEXTW/A»-linjene samt «Native liste». Dette avklarer om anrop feiler, om ANSI gir tekst, eller om begge protokoller leveres og gir tomme svar. Ingen rå kundedata eller minnedump trengs. **Draft beholdes; ingen merge til main.**
+**Utført 04.11.2026:** Begge meldingsvarianter leveres uten registrerte API-feil og gir fire tomme svar hver; ingen native tidsverdier. UIA-kildene er også tomme. Denne leseruten er dermed blokkert i den faktiske testen. Det bes ikke om flere like RC14-utdrag. Neste selvstendige forsøk er lesbar bakgrunnsfangst som beskrevet i OCR-utkastet ovenfor. **Draft beholdes; ingen merge til main.**
 
 ## RC13 – klassefilter for direkte WinForms-ListView-lesing
 
