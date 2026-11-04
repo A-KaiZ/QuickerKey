@@ -177,25 +177,39 @@ HotfixCapture(hwnd, navn) {
 
 RunDipsUiTests() {
     global HOVED, TEMA := TemaPalett("Midnatt"), DATA_MAPPE := A_ScriptDir, INNST_MAPPE := A_ScriptDir
-    global APP_VERSJON := "3.11.3", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
+    global APP_VERSJON := "3.13-sandbox1", APP_B := 760, APP_H := 580, INNHOLD_X := 196, INNHOLD_B := 532
     global PANELER := Map(), NAVKNAPPER := Map(), VIS_VILKAR := Map(), NAV_FOR := Map(), NETT_PAA := false
+    global NAV_DEL := Map(), NAV_VALGT := "", NAV_HOVER := "", TOPP_STATUS := ""
+    global HOVER := Map(), HOVER_AKTIV := 0
     global VERKTOY_LISTE := VerktoyListe(), DIPS_INI_FIL
     ByggHovedvindu()
     VisPanel("Innstillinger")
     HOVED.Show("w" APP_B " h" APP_H)
     Sleep 200
-    dipsKnapp := "", nettKnapp := ""
+    avansertKnapp := ""
     for ctrl in PANELER["Innstillinger"] {
         ctrl.GetPos(&x, &y, &w, &h)
         HotfixAssert(y + h <= APP_H, "settings control remains inside window")
-        if (ctrl.Text = "DIPS-innstillinger")
-            dipsKnapp := ctrl
-        if (ctrl.Text = "Aktiver Nettverk")
-            nettKnapp := ctrl
+        if (ctrl.Text = "Avansert…")
+            avansertKnapp := ctrl
     }
-    HotfixAssert(IsObject(dipsKnapp) && IsObject(nettKnapp), "settings has DIPS and neutral network actions")
+    HotfixAssert(IsObject(avansertKnapp), "3.12 settings exposes advanced actions")
     HotfixAssert(!InStr(WinGetText("ahk_id " HOVED.Hwnd), "Nettverksgeni"), "professional settings labels")
     HotfixCapture(HOVED.Hwnd, "ui-settings")
+    VisAvansertApp()
+    Sleep 100
+    avansert := WinExist("Avansert – " APP_NAVN)
+    HotfixAssert(avansert && InStr(WinGetText("ahk_id " avansert), "DIPS-signatur") && InStr(WinGetText("ahk_id " avansert), "Nettverk"), "advanced settings retains DIPS and neutral network actions")
+    HotfixCapture(avansert, "ui-advanced")
+    WinClose "ahk_id " avansert
+    VisPanel("Trio OCR-test")
+    ocrKnapp := false
+    for ctrl in PANELER["Trio OCR-test"] {
+        if (ctrl.Text = "Åpne Trio OCR-test")
+            ocrKnapp := true
+    }
+    HotfixAssert(ocrKnapp, "sandbox OCR entry is reachable from QuickerKeys")
+    HotfixCapture(HOVED.Hwnd, "ui-trio-ocr")
     DipsLagreProfil("demobruker", "D2358")
     ui := DipsSignaturDialog()
     ui.Vindu.Show("w500 h528")
