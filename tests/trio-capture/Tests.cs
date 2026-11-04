@@ -106,7 +106,7 @@ public static class CaptureTests
                 WithFixture(fixture, "blank", delegate(Process owner, Target target)
                 {
                     CaptureResult blank = Capture(target, 3500);
-                    Require(blank.Status == CaptureStatus.Image && !blank.Varied, "successful blank rendering is not classified as varied content"); blank.ClearPixels();
+                    Require(blank.Status == CaptureStatus.Image && !blank.Varied, "successful blank rendering is not classified as varied content (status=" + blank.Status + ", varied=" + blank.Varied + ")"); blank.ClearPixels();
                 });
                 WithFixture(fixture, "hang", delegate(Process owner, Target target)
                 {
@@ -133,7 +133,7 @@ public static class CaptureTests
             Reject(delegate { CaptureWorker.Read(new MemoryStream(malformed)); }, "oversized frame is rejected before allocation");
             using (MemoryStream memory = new MemoryStream())
             {
-                CaptureWorker.Write(memory, new CaptureResult { Status = CaptureStatus.Image, Width = 16, Height = 16, Pixels = new byte[1024] });
+                CaptureWorker.Write(memory, new CaptureResult { Status = CaptureStatus.Image, Width = 16, Height = 16, ClientWidth = 16, ClientHeight = 16, Pixels = new byte[1024] });
                 byte[] complete = memory.ToArray();
                 malformed = complete.Take(complete.Length - 1).ToArray();
             }

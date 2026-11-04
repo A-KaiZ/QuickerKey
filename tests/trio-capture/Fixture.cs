@@ -36,7 +36,11 @@ public sealed class FixtureForm : Form
         if ((message.Msg == 0x317 || message.Msg == 0x318) && mode != "native")
         {
             if (mode == "hang") Thread.Sleep(10000);
-            if (mode != "blank") using (Graphics graphics = Graphics.FromHdc(message.WParam)) DrawPrivate(graphics);
+            using (Graphics graphics = Graphics.FromHdc(message.WParam))
+            {
+                if (mode == "blank") graphics.Clear(Color.White);
+                else DrawPrivate(graphics);
+            }
             message.Result = new IntPtr(1); return;
         }
         base.WndProc(ref message);

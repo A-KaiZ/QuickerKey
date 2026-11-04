@@ -25,8 +25,8 @@ Verktøyet tar ingen skjermbilder automatisk hvert 30. sekund. Hver knapp starte
 | Utfall | Betydning |
 | --- | --- |
 | Image | En komplett bildeflate ble mottatt. Det er ikke en automatisk bekreftelse på lesbar tabelltekst. |
-| Bildevariasjon: ja | Flere grove fargeverdier finnes. Dette beviser verken tekst eller riktig innhold. Lesbarhet vurderes i forhåndsvisningen. |
-| Bildevariasjon: nei | Bildet kan være tomt/ensartet. Det klassifiseres ikke som vellykket tekstlesing. |
+| Bildevariasjon i klientområdet: ja | Flere grove fargeverdier finnes innenfor vindusrammen. Dette beviser verken tekst eller riktig innhold. Lesbarhet vurderes i forhåndsvisningen. |
+| Bildevariasjon i klientområdet: nei | Innholdet kan være tomt/ensartet. Vindusrammen holdes utenfor denne kontrollen. Det klassifiseres ikke som vellykket tekstlesing. |
 | TargetChanged | HWND, prosessidentitet, tittel eller listestruktur passer ikke lenger. Finn vinduet på nytt. |
 | Minimized | Vinduet er minimert og ble hoppet over uten gjenoppretting. |
 | SessionUnavailable | Aktiv, tilgjengelig skrivebordsøkt kunne ikke bekreftes. Ingen fangst brukes. |

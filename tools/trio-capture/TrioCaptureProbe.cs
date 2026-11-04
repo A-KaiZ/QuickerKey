@@ -31,6 +31,7 @@ namespace QuickerKeys.CaptureProbe
     {
         public CaptureStatus Status;
         public int Width, Height, ErrorCode, Rows = -1, Columns = -1, Dpi;
+        public int ClientX, ClientY, ClientWidth, ClientHeight;
         public int FocusStable = -1, SelectionStable = -1, TopStable = -1;
         public long ElapsedMs;
         public byte[] Pixels;
@@ -65,6 +66,7 @@ namespace QuickerKeys.CaptureProbe
             public int Left, Top, Right, Bottom;
             public bool Same(Rect other) { return Left == other.Left && Top == other.Top && Right == other.Right && Bottom == other.Bottom; }
         }
+        [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
         [StructLayout(LayoutKind.Sequential)] public struct BitmapInfo
         {
             public uint Size; public int Width, Height; public ushort Planes, BitCount;
@@ -80,6 +82,8 @@ namespace QuickerKeys.CaptureProbe
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Rect rect);
+        [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr window, out Rect rect);
+        [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr window, ref Point point);
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr dc, uint flags);
         [DllImport("user32.dll", SetLastError = true)] public static extern IntPtr SendMessageTimeout(IntPtr window, uint message, IntPtr wp, IntPtr lp, uint flags, uint timeout, out IntPtr result);
@@ -228,6 +232,14 @@ namespace QuickerKeys.CaptureProbe
             int width = before.Right - before.Left, height = before.Bottom - before.Top;
             if (width < 16 || height < 16 || width > MaxSide || height > MaxSide || (long)width * height > MaxPixels)
             { result.Status = CaptureStatus.InvalidSize; return result; }
+            Native.Rect client;
+            Native.Point origin = new Native.Point();
+            if (!Native.GetClientRect(target.Window, out client) || !Native.ClientToScreen(target.Window, ref origin)) return result;
+            int clientX = origin.X - before.Left, clientY = origin.Y - before.Top;
+            int clientWidth = client.Right - client.Left, clientHeight = client.Bottom - client.Top;
+            if (clientX < 0 || clientY < 0 || clientWidth <= 0 || clientHeight <= 0
+                || clientX + clientWidth > width || clientY + clientHeight > height)
+            { result.Status = CaptureStatus.InvalidSize; return result; }
             ViewState view = ViewState.Read(list);
             IntPtr foreground = Native.GetForegroundWindow();
             IntPtr dc = IntPtr.Zero, dib = IntPtr.Zero, previous = IntPtr.Zero, memory = IntPtr.Zero;
@@ -266,9 +278,10 @@ namespace QuickerKeys.CaptureProbe
                     || view.Rows != current.Rows || view.Columns != current.Columns || result.TopStable == 0)
                 { result.Status = CaptureStatus.LayoutChanged; return result; }
                 result.Width = width; result.Height = height; result.Dpi = Native.Dpi(target.Window);
+                result.ClientX = clientX; result.ClientY = clientY; result.ClientWidth = clientWidth; result.ClientHeight = clientHeight;
                 result.Rows = current.Rows; result.Columns = current.Columns;
                 result.Pixels = pixels; pixels = null;
-                result.Varied = HasVariation(result.Pixels);
+                result.Varied = HasVariation(result);
                 result.Status = CaptureStatus.Image;
                 return result;
             }
@@ -280,13 +293,18 @@ namespace QuickerKeys.CaptureProbe
                 if (dc != IntPtr.Zero) Native.DeleteDC(dc);
             }
         }
-        public static bool HasVariation(byte[] pixels)
+        public static bool HasVariation(CaptureResult image)
         {
             HashSet<int> colors = new HashSet<int>();
-            for (int i = 0; i < pixels.Length; i += 4)
+            byte[] pixels = image.Pixels;
+            for (int y = image.ClientY; y < image.ClientY + image.ClientHeight; y++)
             {
-                colors.Add((pixels[i] >> 4) | ((pixels[i + 1] >> 4) << 4) | ((pixels[i + 2] >> 4) << 8));
-                if (colors.Count >= 4) return true;
+                for (int x = image.ClientX; x < image.ClientX + image.ClientWidth; x++)
+                {
+                    int i = (y * image.Width + x) * 4;
+                    colors.Add((pixels[i] >> 4) | ((pixels[i + 1] >> 4) << 4) | ((pixels[i + 2] >> 4) << 8));
+                    if (colors.Count >= 4) return true;
+                }
             }
             return false;
         }
@@ -294,9 +312,10 @@ namespace QuickerKeys.CaptureProbe
         {
             using (BinaryWriter writer = new BinaryWriter(output))
             {
-                writer.Write(0x50434B51); writer.Write(1); writer.Write((int)result.Status);
+                writer.Write(0x50434B51); writer.Write(2); writer.Write((int)result.Status);
                 writer.Write(result.Width); writer.Write(result.Height); writer.Write(result.ErrorCode);
                 writer.Write(result.Rows); writer.Write(result.Columns); writer.Write(result.Dpi);
+                writer.Write(result.ClientX); writer.Write(result.ClientY); writer.Write(result.ClientWidth); writer.Write(result.ClientHeight);
                 writer.Write(result.FocusStable); writer.Write(result.SelectionStable); writer.Write(result.TopStable);
                 writer.Write(result.ElapsedMs);
                 writer.Write(result.Pixels == null ? 0 : result.Pixels.Length);
@@ -307,23 +326,26 @@ namespace QuickerKeys.CaptureProbe
         {
             using (BinaryReader reader = new BinaryReader(input))
             {
-                if (reader.ReadInt32() != 0x50434B51 || reader.ReadInt32() != 1) throw new InvalidDataException();
+                if (reader.ReadInt32() != 0x50434B51 || reader.ReadInt32() != 2) throw new InvalidDataException();
                 int status = reader.ReadInt32();
                 if (!Enum.IsDefined(typeof(CaptureStatus), status)) throw new InvalidDataException();
                 CaptureResult result = new CaptureResult { Status = (CaptureStatus)status,
                     Width = reader.ReadInt32(), Height = reader.ReadInt32(), ErrorCode = reader.ReadInt32(),
                     Rows = reader.ReadInt32(), Columns = reader.ReadInt32(), Dpi = reader.ReadInt32(),
+                    ClientX = reader.ReadInt32(), ClientY = reader.ReadInt32(), ClientWidth = reader.ReadInt32(), ClientHeight = reader.ReadInt32(),
                     FocusStable = reader.ReadInt32(), SelectionStable = reader.ReadInt32(), TopStable = reader.ReadInt32(),
                     ElapsedMs = reader.ReadInt64() };
                 int length = reader.ReadInt32();
                 if (result.Status == CaptureStatus.Image)
                 {
                     if (result.Width < 16 || result.Height < 16 || result.Width > MaxSide || result.Height > MaxSide
-                        || (long)result.Width * result.Height > MaxPixels || length != (long)result.Width * result.Height * 4)
+                        || (long)result.Width * result.Height > MaxPixels || length != (long)result.Width * result.Height * 4
+                        || result.ClientX < 0 || result.ClientY < 0 || result.ClientWidth <= 0 || result.ClientHeight <= 0
+                        || (long)result.ClientX + result.ClientWidth > result.Width || (long)result.ClientY + result.ClientHeight > result.Height)
                         throw new InvalidDataException();
                     result.Pixels = reader.ReadBytes(length);
                     if (result.Pixels.Length != length) { result.ClearPixels(); throw new InvalidDataException(); }
-                    result.Varied = HasVariation(result.Pixels);
+                    result.Varied = HasVariation(result);
                 }
                 else if (length != 0) throw new InvalidDataException();
                 if (reader.Read() != -1) { result.ClearPixels(); throw new InvalidDataException(); }
@@ -493,6 +515,7 @@ namespace QuickerKeys.CaptureProbe
             if (busy) return;
             if (target == null) { status.Text = "Finn Oppgavelogg først."; return; }
             SetBusy(true); lastStage = -1; ClearPreview();
+            reports.Remove(stage);
             pending = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
             CaptureResult result = null;
             try
@@ -520,7 +543,7 @@ namespace QuickerKeys.CaptureProbe
                     + "\r\nUtfall: " + result.Status + "\r\nBilde: " + result.Width + " × " + result.Height + " | DPI: " + result.Dpi
                     + "\r\nRader: " + result.Rows + " | kolonner: " + result.Columns
                     + "\r\nPrintWindow-tid (ms): " + result.ElapsedMs + " | feilnummer: " + result.ErrorCode
-                    + "\r\nBildevariasjon: " + (result.Varied ? "ja (beviser ikke lesbar tekst)" : "nei/ikke målt")
+                    + "\r\nBildevariasjon i klientområdet: " + (result.Varied ? "ja (beviser ikke lesbar tekst)" : "nei/ikke målt")
                     + "\r\nForgrunnsvindu uendret: " + Stable(result.FocusStable)
                     + "\r\nAntall og første valgte rad uendret: " + Stable(result.SelectionStable)
                     + "\r\nØverste rad uendret: " + Stable(result.TopStable) + "\r\nBildeendring: " + sameImage;
@@ -530,8 +553,16 @@ namespace QuickerKeys.CaptureProbe
                     ? "Bilde mottatt. Kontroller tabellteksten i forhåndsvisningen og marker lesbarhet nederst."
                     : "Ingen godkjent bildefangst: " + result.Status + ". Tidligere bilde er fjernet.";
             }
-            catch (OperationCanceledException) { if (!IsDisposed) status.Text = "Prøven ble avbrutt."; }
-            catch { if (!IsDisposed) { ClearPreview(); status.Text = "Prøven feilet. Ingen rå feiltekst eller bilde er lagret."; } }
+            catch (OperationCanceledException)
+            {
+                reports[stage] = "Prøve: " + (stage + 1) + "\r\nUtfall: Cancelled\r\nIngen ny bildefangst godkjent.";
+                if (!IsDisposed) status.Text = "Prøven ble avbrutt.";
+            }
+            catch
+            {
+                reports[stage] = "Prøve: " + (stage + 1) + "\r\nUtfall: InternalError\r\nIngen ny bildefangst godkjent.";
+                if (!IsDisposed) { lastStage = -1; ClearPreview(); status.Text = "Prøven feilet. Ingen rå feiltekst eller bilde er lagret."; }
+            }
             finally
             {
                 if (result != null) result.ClearPixels();
