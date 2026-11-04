@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12-rc12"
+global APP_VERSJON := "3.12-rc13"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -4760,6 +4760,7 @@ class TrioOppgaveloggDiagnose {
             , teksttilstand:Map(), valgteTidskilder:Map(), tommeTidsceller:0, radnavnFormer:Map()
             , utenPlassering:0, bekreftedeKart:0, datoIDag:FormatTime(,"yyyyMMdd")
             , grunner:Map("felt",0,"dato",0,"id",0,"konflikt",0)
+            , nativeForsok:[]
             , former:Map(), funnfelt:Map(), kolonner:[], kart:Map(), metoder:Map()}
     }
 
@@ -4783,18 +4784,32 @@ class TrioOppgaveloggDiagnose {
             ; icon columns. HDM_ORDERTOINDEX maps displayed to logical columns.
             kandidater := []
             for ctrl in (kunUia ? [] : WinGetControlsHwnd("ahk_id " loggHwnd)) {
-                if (StrLower(WinGetClass("ahk_id " ctrl)) != "syslistview32")
+                klasse := WinGetClass("ahk_id " ctrl)
+                if !this.ErNativeListeklasse(klasse)
                     continue
+                forsok := {klasse:klasse,steg:"LVM_GETHEADER",rader:-1,kolonner:-1,tidsverdier:0
+                    ,ownerData:(WinGetStyle("ahk_id " ctrl) & 0x1000) != 0}
+                out.nativeForsok.Push(forsok)
                 try {
+                    forsok.rader := ListViewGetContent("Count",ctrl,"ahk_id " loggHwnd)
+                    forsok.kolonner := ListViewGetContent("Count Col",ctrl,"ahk_id " loggHwnd)
                     hdr := SendMessage(0x101F, 0, 0, ctrl) ; LVM_GETHEADER (read-only)
-                    if !hdr
+                    if !hdr {
+                        forsok.steg := "ingen native header"
                         continue
+                    }
+                    forsok.steg := "kolonneoverskrifter"
                     schema := this.LesKolonner(UiaFraVindu(hdr))
-                    if !this.HarIdentitetsfelt(schema.kart)
+                    if !this.HarIdentitetsfelt(schema.kart) {
+                        forsok.steg := "Tidspunkt/Oppgave-ID ikke koblet"
                         continue
-                    antKol := ListViewGetContent("Count Col", ctrl, "ahk_id " loggHwnd)
-                    if (antKol != schema.kolonner.Length)
+                    }
+                    antKol := forsok.kolonner
+                    if (antKol != schema.kolonner.Length) {
+                        forsok.steg := "native/UIA kolonneantall er ulike"
                         continue
+                    }
+                    forsok.steg := "ListViewGetContent"
                     kolonneData := Map(), maks := 0
                     for visIndex, kol in schema.kolonner {
                         if (kol.key = "")
@@ -4813,6 +4828,8 @@ class TrioOppgaveloggDiagnose {
                             continue
                         tider := kolonneData["tidspunkt"]
                         felt["tidspunkt"] := nr <= tider.Length ? Trim(tider[nr]) : ""
+                        if (felt["tidspunkt"] != "")
+                            forsok.tidsverdier++
                         if this.ErDagensTid(felt["tidspunkt"],out) {
                             for key, verdier in kolonneData
                                 felt[key] := nr <= verdier.Length ? Trim(verdier[nr]) : ""
@@ -4822,13 +4839,15 @@ class TrioOppgaveloggDiagnose {
                         if (felt.Has("tidspunkt") && felt["tidspunkt"] != "")
                             kandidater.Push({felt:felt, konflikt:false})
                     }
+                    forsok.steg := kandidater.Length ? "native tidsverdier lest" : "ingen native tidsverdier"
                     if kandidater.Length {
                         out.kilde := "Win32 ListView / kolonnenavn"
                         out.kolonner := schema.kolonner, out.kart := schema.kart
                         out.begrenset := maks > 2000
                         break
                     }
-                } catch {
+                } catch as feil {
+                    forsok.steg := "feil ved " forsok.steg " (" Type(feil) ", linje " feil.Line ")"
                     out.lesefeil++
                 }
             }
@@ -4854,6 +4873,12 @@ class TrioOppgaveloggDiagnose {
             out.status := "Feil under Trio-lesing: " Type(feil) " (linje " feil.Line ")."
         }
         return this.AvsluttLesing(out)
+    }
+
+    ErNativeListeklasse(klasse) {
+        ; WinForms superclasses the native common control and changes its
+        ; registered class name, while retaining the ListView messages.
+        return RegExMatch(klasse,"i)^(?:SysListView32|WindowsForms\d*\.SysListView32(?:\.[a-z0-9_]+)*)$") > 0
     }
 
     NormaliserOverskrift(navn) {
@@ -5523,6 +5548,12 @@ class TrioOppgaveloggDiagnose {
             . "`nBekreftede cellekart: " out.bekreftedeKart " | Rader supplert uten plassering: " out.utenPlassering
             . "`nGyldig tid fra Name: " out.tidFraName " | Value: " out.tidFraValue
             . " | Motstridende tidsverdier: " out.tidskonflikt
+        tekst .= "`nNative listekandidater: " out.nativeForsok.Length
+        for i, forsok in out.nativeForsok
+            tekst .= "`nNative liste " i ": " forsok.klasse
+                . " | rader=" forsok.rader " | kolonner=" forsok.kolonner
+                . " | OwnerData=" (forsok.ownerData ? "ja" : "nei")
+                . " | tidsverdier=" forsok.tidsverdier " | resultat=" forsok.steg
         for i, kol in out.kolonner
             tekst .= "`nOverskrift " i ": " kol.navn " -> " (kol.key != "" && out.kart.Has(kol.key)
                 ? kol.key : kol.key != "" ? "tvetydig " kol.key : "ikke koblet")

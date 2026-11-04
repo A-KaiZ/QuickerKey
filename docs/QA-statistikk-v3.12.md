@@ -1,6 +1,22 @@
 # QuickerKeys Statistikk v3.12 — QA og avgrensninger
 
 
+## RC13 – klassefilter for direkte WinForms-ListView-lesing
+
+**RC12 i faktisk Trio:** Name, Value, LegacyName, LegacyValue og radnavn er tomme BSTR-er; TextPattern er utilgjengelig. Dette bekrefter at de prøvde UIA-kildene ikke gir tidsverdier. Det beviser ikke at native ListView-meldinger er prøvd, fordi denne ruten tidligere krevde eksakt klassenavn `SysListView32`.
+
+**Konkret kodefeil:** Windows Forms superklasser ListView med et registrert navn som `WindowsForms10.SysListView32.app.0...`. Dette ble hoppet over. RC13 godtar det avgrensede klasseformatet og bruker eksisterende AutoHotkey `ListViewGetContent`, som sender ListView-meldinger mot HWND og støtter målprosessens bitbredde. Ingen egen minneskanner eller endring av Trios data.
+
+Native diagnose viser klasse, rad-/kolonneantall, OwnerData-flagg, antall tidsverdier og resultat/feilsteg. En korrekt klassegjenkjenning garanterer ikke at privat/virtuelt lagrede ListView-data kan hentes ut. Hvis ingen native kandidat finnes eller direkte lesing også er tom, må Trios faktiske kontroll undersøkes; flere datoformater hjelper ikke.
+
+### Windows-tester
+
+En faktisk .NET Framework Windows Forms-liste med de 13 observerte Trio-overskriftene kjøres i både 64- og 32-bits Windows PowerShell. Oppgave-ID-kolonnen flyttes visuelt. En testleser gjør alle UIA-cellekilder utilgjengelige. Den native ruten skal fortsatt gi to dagens oppgaver og én annen dag, uten å kalle UIA-celleleseren. Diagnosen skal oppgi WindowsForms-klassen og bare metadata. Tidligere kilde-, kalender-, langlogg- og fokustester beholdes.
+
+### Faktisk Trio-test
+
+Start **3.12-rc13**, vent en syklus og se etter «Native listekandidater» / «Native liste». Hvis dagens data fortsatt ikke leses, er disse linjene avgjørende. **Trios faktisk registrerte klasse og native teksttilgang er ikke bekreftet fra RC12-rapportene. Draft beholdes; ingen merge.**
+
 ## RC12 – prøv faktiske tekstkilder når Name/Value er tomme
 
 **Ny brukertest:** 200 kandidater med 13 bladkontroller. 52 hadde plassering for Tidspunkt, men både Name og Value var tomme; dermed ingen gyldige tidsverdier, ingen strukturelle kart og 0 dagens oppgaver. Resten manglet tidsfelt. Dette dokumenterer manglende tekst fra de prøvde egenskapene og avgjør ikke om tomheten skyldes kontrollvalg eller providerens teksteksponering.

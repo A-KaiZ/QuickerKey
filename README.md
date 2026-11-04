@@ -11,7 +11,7 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 - **Statistikk (PR #9):** Automatisk, foreløpig innlesing fra Trio Oppgavelogg til eget dashboard, manuell skriftlig tid og UIA-diagnostikk.
 
-## v3.12-rc12 – Statistikk + Trio Oppgavelogg (PR #9)
+## v3.12-rc13 – Statistikk + Trio Oppgavelogg (PR #9)
 
 En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **Siste registreringer i dag** er det en liten rød **🗑**-knapp med bekreftelse. Den sletter kun dagens fullførte manuelle CSV-statistikk etter eksplisitt Ja, og blokkeres hvis en samtale eller skriftlig tid fortsatt pågår. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for automatisk innlesing og skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
 
@@ -27,6 +27,10 @@ En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **
 Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller vinduet ikke gjenkjennes, vises status. For å unngå gjentatte popup-vinduer blir et mislykket automatisk åpningsforsøk ikke gjentatt i samme Trio-prosess før omstart.
 
 **Innlesing og diagnose (RC11):** Hvert 30. sekund leses tilgjengelige oppgaver. Oppgaver identifiseres fra **Tidspunkt** og **Oppgave / Oppgave-ID**. Behandlingstid er en separat, valgfri måling. Ingen fast antakelse om 13 kolonner eller behandlingstid i kolonne 9. Standard Win32 ListView leses kolonnevis med kobling mellom vist og logisk kolonnerekkefølge; egendefinert UIA-liste leses via HeaderItem og cellenes plassering. Tomme felt bevarer sin plass. Nested ListItem-celler behandles innen raden; ListItem-per-celle kan samles når de har identisk vertikal radplassering. Ingen glidende sammenslåing på tvers av rader. Tvetydig kolonnemapping eller motstridende celleverdier avvises.
+
+**RC13 – direkte lesing av Windows Forms-lister:** Den native leseren godtok tidligere bare det eksakte klassenavnet `SysListView32`. Den forsøker nå også `WindowsForms10.SysListView32.app...` og tilsvarende registrerte Windows Forms-varianter via samme `ListViewGetContent`-backend. Ingen UIA-celletekst er nødvendig for denne ruten; overskriftskoblingen brukes som før. Dagens datofilter og vist/logisk kolonnerekkefølge beholdes. Dette retter en konkret klassefilterfeil, men Trios faktiske HWND-klasse er ennå ikke bekreftet.
+
+**Native diagnose:** Rapporten viser antall native listekandidater, faktisk registrert klasse, rad-/kolonneantall, OwnerData-flagg, antall ikke-tomme tidsverdier og hvilket lesesteg som lyktes eller stoppet. Ingen rå radverdier eksporteres. Dette skiller mellom «native lesing ble hoppet over», «direkte lesing ble forsøkt, men returnerte tomt» og faktisk lesbar tekst.
 
 **RC12 – tomme Name/Value er et tekstkildeproblem:** Brukertesten viste 52 tidskontroller med både Name og Value tomme, ikke et nytt datoformat. Celleleseren prøver nå LegacyIAccessible Name/Value og TextPattern DocumentRange/GetText når de vanlige egenskapene ikke gir en gyldig verdi. Det kan også leses fra opptil tre overordnede kontroller, men bare hvis kontrollen fortsatt ligger entydig i samme kolonne; hele rader/lister brukes ikke som celler. Dersom første kjente kolonne er Tidspunkt, kan et radnavn brukes kun når **hele** navnet er et gyldig tidspunkt. Ingen dato hentes ut av vilkårlig radtekst.
 

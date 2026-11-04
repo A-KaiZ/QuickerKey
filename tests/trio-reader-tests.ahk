@@ -44,10 +44,23 @@ class TrioLegacyOnlyLeser extends TrioOppgaveloggDiagnose {
     }
 }
 
+class TrioNativeOnlyTestLeser extends TrioOppgaveloggDiagnose {
+    UiaCelleKall := 0
+    LesCelleVerdi(el,key,out) {
+        this.UiaCelleKall++
+        return "" ; All UIA cell sources unavailable in this regression case.
+    }
+}
+
 RunTrioTests() {
     fixturePid := 0, exitCode := 0
     try {
         r := TrioOppgaveloggDiagnose()
+
+        TrioAssert(r.ErNativeListeklasse("SysListView32"), "native ListView class accepted")
+        TrioAssert(r.ErNativeListeklasse("WindowsForms10.SysListView32.app.0.141b42a_r8_ad1"), "WinForms native ListView class accepted")
+        TrioAssert(!r.ErNativeListeklasse("SysHeader32") && !r.ErNativeListeklasse("FakeSysListView32")
+            && !r.ErNativeListeklasse("WindowsForms10.EDIT.app.0.123"), "unrelated control classes rejected")
         sourceReader := TrioSourceTestLeser()
         sourceOut := sourceReader.NyLesing()
         datum := FormatTime(,"dd.MM.yyyy") " 09:40:38"
@@ -247,6 +260,27 @@ RunTrioTests() {
         TrioAssert(SendMessage(0x1027,0,0,lvHwnd) = topBefore,"long-log read does not scroll")
         TrioAssert(!InStr(longResult.detaljer,"9876543210") && !InStr(longResult.detaljer,"09:40:38"),
             "long-log diagnostic masks row data except explicit daily filter")
+        ProcessClose fixturePid
+        ProcessWaitClose fixturePid, 5
+        for host in [A_WinDir "\System32\WindowsPowerShell\v1.0\powershell.exe"
+            ,A_WinDir "\SysWOW64\WindowsPowerShell\v1.0\powershell.exe"] {
+            Run('"' host '" -NoProfile -STA -File "' A_ScriptDir '\trio-winforms-fixture.ps1"',,, &fixturePid)
+            hwnd := WinWait("QuickerKeys synthetic WinForms fixture ahk_pid " fixturePid,,15)
+            TrioAssert(hwnd != 0,"actual WinForms fixture opened")
+            Sleep 500
+            nativeReader := TrioNativeOnlyTestLeser()
+            winforms := nativeReader.HentDagensData(hwnd)
+            FileAppend(winforms.status "`n" winforms.detaljer "`n","*","UTF-8")
+            TrioAssert(winforms.ok && InStr(winforms.kilde,"Win32") && winforms.sett.Count = 2
+                && winforms.andreDager = 1, "WinForms direct read including moved columns and daily filter")
+            TrioAssert(nativeReader.UiaCelleKall = 0 && winforms.nativeForsok.Length = 1
+                && InStr(winforms.nativeForsok[1].klasse,"WindowsForms"), "WinForms native backend used without UIA cell text")
+            TrioAssert(!InStr(winforms.detaljer,"9876543210") && !InStr(winforms.detaljer,"09:40:38"),
+                "native diagnostics contain class and counts only")
+            ProcessClose fixturePid
+            ProcessWaitClose fixturePid, 5
+            fixturePid := 0
+        }
         FileAppend("ALL TRIO TESTS PASSED`n", "*", "UTF-8")
     } catch as err {
         FileAppend("FAIL " err.Message " (line " err.Line ")`n", "**", "UTF-8")
