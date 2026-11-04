@@ -4873,15 +4873,18 @@ class TrioOppgaveloggDiagnose {
     LesNativeKolonner(headerHwnd, antKol) {
         rot := UiaFraVindu(headerHwnd)
         kolonner := [], kart := Map(), indekser := Map(), duplikat := Map()
-        ; The native SysHeader32 accessibility proxy's child IDs correspond
-        ; to logical HDITEM indexes + 1. No screen rectangle is required.
+        ; SysHeader32 accessibility child IDs are display indexes + 1.
+        ; Translate with HDM_ORDERTOINDEX; no rectangle is required.
         for el in UiaFinnAlle(rot,50035) {
             id := UiaTall(el,30091) ; LegacyIAccessible.ChildId
             if (id < 1 || id > antKol || indekser.Has(id))
                 continue
+            logisk := SendMessage(0x120F,id-1,0,headerHwnd) ; HDM_ORDERTOINDEX
+            if (logisk < 0 || logisk >= antKol)
+                continue
             indekser[id] := true
             navn := UiaStreng(el,30005), key := this.KolonneKey(navn)
-            kolonner.Push({key:key,navn:this.OverskriftTilDiagnose(navn),nativeIndex:id-1})
+            kolonner.Push({key:key,navn:this.OverskriftTilDiagnose(navn),nativeIndex:logisk})
             if (key != "") {
                 if kart.Has(key)
                     duplikat[key] := true
