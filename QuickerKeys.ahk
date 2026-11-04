@@ -17,7 +17,7 @@ SendMode "Input"
 ;  • Nytt verktøy? Lag en klasse som «extends VT_Base» (se malen helt
 ;    nederst) og legg den til i VerktoyListe() rett under her.
 ;  • Nettverk-siden (Nettverk + MAC Import for Cisco ISE) er av som standard.
-;    Slås på under Innstillinger → «Nettverksgeni?».
+;    Slås på under Innstillinger → «Aktiver Nettverk».
 ; =====================================================================
 
 VerktoyListe() => [
@@ -30,13 +30,14 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.11.2"
+global APP_VERSJON := "3.11.3"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
 global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
 global LOGG_MAPPE  := DATA_MAPPE "\Logg"
 global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
+global DIPS_INI_FIL := INNST_MAPPE "\DIPS.ini"
 global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global VIS_VILKAR := Map()                   ; controls shown only when context needs them
@@ -220,6 +221,136 @@ SikreIni() {
 Innst(seksjon, nokkel, std := "") => IniRead(INI_FIL, seksjon, nokkel, std)
 SettInnst(seksjon, nokkel, verdi) => IniWrite(verdi, INI_FIL, seksjon, nokkel)
 
+; DIPS-profilen er personlig. Den leses aldri fra den delbare hovedkonfigurasjonen.
+DipsKonto() => StrLower(EnvGet("USERDOMAIN") "\" A_UserName)
+
+DipsHentProfil() {
+    profil := {bruker:StrLower(A_UserName), eget:"", tillegg:"D2358", fremmed:false}
+    if !FileExist(DIPS_INI_FIL)
+        return profil
+    if (IniRead(DIPS_INI_FIL, "Signatur", "Konto", "") != DipsKonto()) {
+        profil.fremmed := true
+        return profil
+    }
+    profil.eget := IniRead(DIPS_INI_FIL, "Signatur", "Brukernavn", "")
+    profil.bruker := profil.eget != "" ? StrLower(profil.eget) : StrLower(A_UserName)
+    profil.tillegg := IniRead(DIPS_INI_FIL, "Signatur", "Tillegg", "D2358")
+    return profil
+}
+
+DipsValiderTillegg(tillegg) {
+    if (StrLen(tillegg) > 80 || RegExMatch(tillegg, "[\x00-\x1F]"))
+        throw Error("Signaturtillegget kan ha opptil 80 tegn og må stå på én linje.")
+    return Trim(tillegg)
+}
+
+DipsLagreProfil(bruker, tillegg) {
+    bruker := StrLower(Trim(bruker)) ; tom verdi betyr automatisk Windows-brukernavn
+    tillegg := DipsValiderTillegg(tillegg)
+    TekstflytSignatur("#dwa", bruker != "" ? bruker : A_UserName, "")
+    temp := DIPS_INI_FIL ".tmp-" A_TickCount
+    try {
+        FileOpen(temp, "w", "UTF-16").Close()
+        IniWrite DipsKonto(), temp, "Signatur", "Konto"
+        IniWrite bruker, temp, "Signatur", "Brukernavn"
+        IniWrite tillegg, temp, "Signatur", "Tillegg"
+        FileMove temp, DIPS_INI_FIL, 1
+    } finally {
+        if FileExist(temp)
+            FileDelete temp
+    }
+}
+
+VisDipsInnstillinger(*) {
+    static dialog := ""
+    if IsObject(dialog) {
+        try {
+            dialog.Vindu.Show()
+            return
+        }
+    }
+    dialog := DipsSignaturDialog()
+    dialog.Vindu.Show("w500 h528")
+}
+
+class DipsSignaturDialog {
+    __New() {
+        profil := DipsHentProfil()
+        g := Gui("+Owner" HOVED.Hwnd " -MinimizeBox -MaximizeBox", "DIPS-innstillinger")
+        this.Vindu := g
+        g.BackColor := TEMA.bg
+        Skrift(g, "s14 bold c" TEMA.tekst)
+        g.AddText("x24 y20 w452 h28 Background" TEMA.bg, "DIPS-signatur")
+        Skrift(g, "s9 c" TEMA.dempet)
+        g.AddText("x24 y56 w452 h38 Background" TEMA.bg, "Velg brukernavn og tillegg for #dwa og #dwr.`nSignaturen bruker alltid små bokstaver i brukernavnet.")
+        Skrift(g, "s10 c" TEMA.tekst)
+        this.Auto := g.AddCheckBox("x24 y104 w452 h24" (profil.eget = "" ? " Checked" : ""), "Bruk Windows-brukernavn (automatisk)")
+        Skrift(g, "s9 c" TEMA.dempet)
+        g.AddText("x24 y140 w452 h20 Background" TEMA.bg, "Brukernavn i signaturen")
+        Skrift(g, "s10 c" TEMA.tekst)
+        this.Bruker := g.AddEdit("x24 y164 w452 h30 Background" TEMA.kort, profil.bruker)
+        Skrift(g, "s9 c" TEMA.dempet)
+        g.AddText("x24 y212 w452 h20 Background" TEMA.bg, "Tillegg for #dwr (valgfritt)")
+        Skrift(g, "s10 c" TEMA.tekst)
+        this.Tillegg := g.AddEdit("x24 y236 w452 h30 Background" TEMA.kort, profil.tillegg)
+        Skrift(g, "s10 bold c" TEMA.tekst)
+        g.AddText("x24 y288 w452 h22 Background" TEMA.bg, "Forhåndsvisning")
+        Skrift(g, "s10 c" TEMA.tekst, "Consolas")
+        this.Forhandsvisning := g.AddEdit("x24 y316 w452 h64 ReadOnly Multi -VScroll -E0x200 Background" TEMA.kort)
+        Skrift(g, "s9 c" TEMA.dempet)
+        g.AddText("x24 y392 w452 h30 Background" TEMA.bg, "#dwa legger også til utklipp på nøyaktig 9 tegn.`nSkriv koden og trykk Mellomrom eller Enter for å sette inn signaturen.")
+        this.Melding := g.AddText("x24 y434 w452 h30 Background" TEMA.bg)
+        Skrift(g, "s10 c000000")
+        this.LagreKnapp := g.AddButton("x204 y478 w130 h32 Default", "Lagre")
+        this.LagreKnapp.OnEvent("Click", ObjBindMethod(this, "Lagre"))
+        g.AddButton("x346 y478 w130 h32", "Avbryt").OnEvent("Click", (*) => g.Destroy())
+        g.OnEvent("Close", (*) => g.Destroy())
+        g.OnEvent("Escape", (*) => g.Destroy())
+        this.Auto.OnEvent("Click", ObjBindMethod(this, "VekslAutomatisk"))
+        this.Bruker.OnEvent("Change", ObjBindMethod(this, "OppdaterForhandsvisning"))
+        this.Tillegg.OnEvent("Change", ObjBindMethod(this, "OppdaterForhandsvisning"))
+        this.VekslAutomatisk()
+        if profil.fremmed
+            this.Melding.Text := "Profilen tilhører en annen Windows-konto. Din Windows-bruker er valgt."
+    }
+
+    VekslAutomatisk(*) {
+        if this.Auto.Value
+            this.Bruker.Value := StrLower(A_UserName)
+        this.Bruker.Enabled := !this.Auto.Value
+        this.OppdaterForhandsvisning()
+    }
+
+    ValgtBruker() => this.Auto.Value ? A_UserName : this.Bruker.Value
+
+    OppdaterForhandsvisning(*) {
+        try {
+            tillegg := DipsValiderTillegg(this.Tillegg.Value)
+            bruker := this.ValgtBruker()
+            dwa := TekstflytSignatur("#dwa", bruker, "")
+            dwr := TekstflytSignatur("#dwr", bruker, "", , tillegg)
+            this.Forhandsvisning.Value := "#dwa  " dwa "`r`n#dwr  " dwr
+            this.Melding.Text := ""
+        } catch as feil {
+            this.Forhandsvisning.Value := ""
+            this.Melding.SetFont("cFF6B6B")
+            this.Melding.Text := feil.Message
+        }
+    }
+
+    Lagre(*) {
+        try {
+            DipsLagreProfil(this.Auto.Value ? "" : this.Bruker.Value, this.Tillegg.Value)
+            this.Vindu.Destroy()
+            Logg("DIPS: personlige signaturinnstillinger lagret")
+            Tip("DIPS-innstillingene er lagret", 2000)
+        } catch as feil {
+            this.Melding.SetFont("cFF6B6B")
+            this.Melding.Text := feil.Message
+        }
+    }
+}
+
 LukkGamleSkript() {
     lukket := []
     forrige := A_DetectHiddenWindows
@@ -402,21 +533,23 @@ ByggInnstillingerPanel() {
     y += 52
     Skrift(HOVED, "s9 bold c" TEMA.tekst)
     Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", "Importer konfigurasjon…", ImporterKonfigurasjon, TEMA.aksent))
-    Reg(pn, Knapp(HOVED, "x" (x + 198) " y" y " w132 h34", "Themes…", VisTemaer, TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" (x + 198) " y" y " w132 h34", "Tema…", VisTemaer, TEMA.aksent2))
     Reg(pn, Knapp(HOVED, "x" (x + 340) " y" y " w152 h34", "Last inn på nytt", (*) => Reload(), TEMA.aksent2))
     y += 52
     Skrift(HOVED, "s10 bold c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", NETT_PAA ? "Skru av Nettverk" : "Nettverksgeni?"
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", NETT_PAA ? "Deaktiver Nettverk" : "Aktiver Nettverk"
         , VekslNettverk, NETT_PAA ? TEMA.av : TEMA.aksent))
     Skrift(HOVED, "s9 norm c" TEMA.dempet)
     Reg(pn, HOVED.AddText("x" (x + 198) " y" y " w" (b - 198) " h34 +0x200 Background" TEMA.bg
-        , NETT_PAA ? "Nettverk-siden er på (nede til venstre)." : "Egen side med MAC Import for Cisco ISE."))
+        , NETT_PAA ? "Nettverksverktøy er aktivert." : "MAC-import for Cisco ISE."))
 
-    ; Utviklerkreditering nederst på Innstillinger-siden.
-    Skrift(HOVED, "s9 bold c" TEMA.dempet)
-    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 108) " w" b " h22 Background" TEMA.bg, "Developers"))
-    Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 82) " w" b " h26 Background" TEMA.bg, "MAAUNI  ·  KAISAD"))
+    y += 48
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", "DIPS-innstillinger", VisDipsInnstillinger, TEMA.aksent2))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" (x + 198) " y" y " w" (b - 198) " h34 +0x200 Background" TEMA.bg
+        , "Personlig signatur og forhåndsvisning."))
+    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 38) " w" b " h22 Background" TEMA.bg, "Utviklere: MAUUNI  ·  KAISAD"))
 }
 
 ; Sidetittel med «?»-knapp. medToggle = siden har PÅ/AV-knapp oppe til høyre.
@@ -470,7 +603,9 @@ HjelpTekst(side) {
             return "•  Velg om programmet skal starte med Windows, og om det skal starte skjult.`n"
                 . "•  Hurtigtast: klikk i feltet, trykk tastene, trykk «Bruk».`n"
                 . "•  «Importer konfigurasjon» støtter ny INI og eldre QuickKey-vindussnarveier.`n"
-                . "•  «Themes» velger farger; programmet starter på nytt ved bytte.`n"
+                . "•  «Tema» velger farger; programmet starter på nytt ved bytte.`n"
+                . "•  «DIPS-innstillinger» viser personlig brukernavn, signaturtillegg og forhåndsvisning.`n"
+                . "•  DIPS-profilen beholdes ved import av vanlig konfigurasjon.`n"
                 . "•  «Last inn på nytt» aktiverer endringer du har gjort direkte i INI-filen.`n"
                 . "•  Data: " DATA_MAPPE
         case "Nettverk":
@@ -627,7 +762,7 @@ TemaPalett(navn) {
 }
 
 VisTemaer(*) {
-    g := Gui("+Owner" HOVED.Hwnd " -MinimizeBox", "Themes – " APP_NAVN)
+    g := Gui("+Owner" HOVED.Hwnd " -MinimizeBox", "Tema – " APP_NAVN)
     g.BackColor := TEMA.bg
     Skrift(g, "s13 bold c" TEMA.tekst)
     g.AddText("x20 y15 w360 h28 Background" TEMA.bg, "Velg tema")
@@ -683,15 +818,37 @@ ImporterKonfigurasjon(*) {
         ImporterGammelQuickKey(fil)
         return
     }
-    if !RegExMatch(innhold, "im)^\s*\[(App|User|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk)\]\s*$") {
-        MsgBox "Ukjent konfigurasjonsformat. Forventet QuickerKeys/MAAUNI eller gamle QuickKey [Shortcuts].", APP_NAVN, "Icon!"
+    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk)\]\s*$") {
+        MsgBox "Ingen støttet programkonfigurasjon ble funnet. Personlige DIPS-profiler importeres ikke her.", APP_NAVN, "Icon!"
         return
     }
-    ; Kun anerkjente nøkkelverdier importeres: eksterne filstier og programmappe beholdes lokale.
+    endringer := HentImporterbareEndringer(fil)
+    if !endringer.Length {
+        MsgBox "Ingen støttede innstillinger ble funnet.", APP_NAVN, "Icon!"
+        return
+    }
+    valg := MsgBox("Fant " endringer.Length " støttede innstillinger. Importere dem til QuickerKeys?"
+        . "`n`nAktiv datamappe beholdes: " DATA_MAPPE
+        . "`nExcelFil, eksterne filstier og personlig DIPS-profil endres ikke."
+        . "`nEksisterende INI sikkerhetskopieres før oppdatering.", APP_NAVN, "YesNo Icon?")
+    if (valg != "Yes")
+        return
+    try {
+        SikkerhetskopierIni()
+        for entry in endringer
+            SettInnst(entry.seksjon, entry.nokkel, entry.verdi)
+        Logg("Importerte " endringer.Length " INI-verdier fra ekstern fil")
+        Reload()
+    } catch as feil {
+        MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
+    }
+}
+
+HentImporterbareEndringer(fil) {
+    ; Personlige DIPS-verdier og eksterne filstier inngår aldri i vanlig import.
     seksjoner := Map(
         "App", ["StartSkjult", "VisTast", "Tema", "Nettverk"],
-        "Tekstflyt", ["Aktiv", "Initialer"],
-        "User", ["Username"],
+        "Tekstflyt", ["Aktiv"],
         "SMKontakt", ["Aktiv", "TrioKilde", "WebVindu", "WebEtikett", "TrioVindu", "Etikett"
             , "AndreLinjeRegex", "ManuellTast", "TrioKontroll", "SMVindu"
             , "KontaktX", "KontaktY", "KnappX", "KnappY"
@@ -715,25 +872,7 @@ ImporterKonfigurasjon(*) {
             if (verdi != "{QUICKERKEYS_MISSING}")
                 endringer.Push({seksjon:seksjon, nokkel:nokkel, verdi:verdi})
         }
-    if !endringer.Length {
-        MsgBox "Ingen støttede innstillinger ble funnet.", APP_NAVN, "Icon!"
-        return
-    }
-    valg := MsgBox("Fant " endringer.Length " støttede innstillinger. Importere dem til QuickerKeys?"
-        . "`n`nAktiv datamappe beholdes: " DATA_MAPPE
-        . "`nExcelFil og andre eksterne filstier endres ikke."
-        . "`nEksisterende INI sikkerhetskopieres før oppdatering.", APP_NAVN, "YesNo Icon?")
-    if (valg != "Yes")
-        return
-    try {
-        SikkerhetskopierIni()
-        for entry in endringer
-            SettInnst(entry.seksjon, entry.nokkel, entry.verdi)
-        Logg("Importerte " endringer.Length " INI-verdier fra ekstern fil")
-        Reload()
-    } catch as feil {
-        MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
-    }
+    return endringer
 }
 
 SikkerhetskopierIni() {
@@ -856,9 +995,9 @@ StartQuickerKeys(*) {
         aktive++
         if (vt is VT_Tekstflyt) {
             if vt.Sync(false)
-                meldinger.Push("Tekstflyt: " vt.Koder.Count " hurtigtekster importert og klare.")
+                meldinger.Push("Tekstflyt: " vt.Koder.Count " Excel-rader lest. DIPS-signaturene er klare.")
             else
-                meldinger.Push("Tekstflyt: feil ved lasting – se Logg.")
+                meldinger.Push("Tekstflyt: DIPS-signaturene er klare. Excel kunne ikke lastes – se Logg.")
         } else if (vt is VT_TrioSnarveier) {
             vt.Start()
             meldinger.Push("Trio Snarveier: " vt.Registrerte.Count " taster registrert.")
@@ -972,7 +1111,7 @@ ByggNettverkPanel() {
     PanelTittel(pn, "Nettverk")
     Skrift(HOVED, "s10 norm c" TEMA.dempet)
     Reg(pn, HOVED.AddText("x" x " y124 w" b " h40 Background" TEMA.bg
-        , "Verktøy for oss som jobber med nettverk. Velg et verktøy under – flere kan legges til etter hvert."))
+        , "Verktøy for nettverksadministrasjon. Velg et verktøy nedenfor."))
     for i, nv in NettverkVerktoy() {
         y := 172 + (i - 1) * 96
         Skrift(HOVED, "s12 bold c" TEMA.tekst)
@@ -1211,83 +1350,8 @@ VekslNettverk(*) {
     }
     SettInnst("App", "Nettverk", "1")
     SettInnst("App", "NettverkApne", "1")
-    Logg("Nettverksgeni aktivert – Nettverk-siden slått på")
-    try NettFyrverkeri()
+    Logg("Nettverk-siden slått på")
     Reload()
-}
-
-; Lite fyrverkeri over hovedvinduet, deretter åpnes Nettverk-siden.
-NettFyrverkeri() {
-    try {
-        WinGetClientPos(&wx, &wy, &ww, &wh, "ahk_id " HOVED.Hwnd)
-    } catch {
-        return
-    }
-    fw := Gui("+AlwaysOnTop -Caption +ToolWindow +E0x20 +Owner" HOVED.Hwnd)
-    fw.BackColor := "010101"
-    fw.MarginX := 0, fw.MarginY := 0
-    farger := [TEMA.aksent, "FFD447", "FF6B6B", "7CF0B4", "FFFFFF", "C792EA", "6EC6FF"]
-    oppsett := [[0.20, 0.30, 0], [0.80, 0.26, 14], [0.50, 0.12, 28]]
-    raketter := []
-    for o in oppsett {
-        mx := Round(ww * o[1]), my := Round(wh * o[2])
-        Skrift(fw, "s12 bold cFFFFFF")
-        rk := fw.AddText("x" mx " y" wh " w16 h18 Center Hidden", "●")
-        gnister := []
-        loop 18 {
-            vinkel := (A_Index / 18) * 6.2832 + Random(-0.15, 0.15)
-            fart := Random(3.5, 6.5)
-            Skrift(fw, "s11 bold c" farger[Random(1, farger.Length)])
-            k := fw.AddText("x" mx " y" my " w16 h18 Center Hidden", "●")
-            gnister.Push({k:k, x:mx+0.0, y:my+0.0, vx:Cos(vinkel)*fart, vy:Sin(vinkel)*fart, smaa:false})
-        }
-        raketter.Push({rk:rk, mx:mx, my:my, start:o[3], gnister:gnister})
-    }
-    ikonSkrift := FileExist(A_WinDir "\Fonts\SegoeIcons.ttf") ? "Segoe Fluent Icons" : "Segoe MDL2 Assets"
-    ikonFarge := "4DA3FF"
-    fw.SetFont("s20 norm c" ikonFarge, ikonSkrift)
-    ikon := fw.AddText("x0 y" (wh//2-170) " w" ww " h170 Center +0x200 Hidden", Chr(0xE968))
-    storrelser := [20,34,48,62,76,90,104,98,94]
-    Skrift(fw, "s22 bold cFFFFFF")
-    tekst := fw.AddText("x0 y" (wh//2+8) " w" ww " h40 Center Hidden", "Nettverksmodus aktivert!")
-    fw.Show("x" wx " y" wy " w" ww " h" wh " NoActivate")
-    WinSetTransColor("010101", fw)
-    stig := 16, levetid := 46
-    loop 110 {
-        f := A_Index
-        for r in raketter {
-            t := f - r.start
-            if (t >= 1 && t <= stig) {
-                r.rk.Visible := true
-                r.rk.Move(r.mx, Round(wh - (wh-r.my)*(t/stig)))
-            } else if (t = stig+1) {
-                r.rk.Visible := false
-                for g in r.gnister
-                    g.k.Visible := true
-            } else if (t > stig+1 && t <= stig+levetid) {
-                for g in r.gnister {
-                    g.x += g.vx, g.y += g.vy
-                    g.vy += 0.22, g.vx *= 0.97
-                    g.k.Move(Round(g.x), Round(g.y))
-                    if (!g.smaa && t > stig+levetid-14) {
-                        g.smaa := true
-                        g.k.Text := "·"
-                    }
-                }
-            } else if (t = stig+levetid+1) {
-                for g in r.gnister
-                    g.k.Visible := false
-            }
-        }
-        if (f >= 4 && f < 4+storrelser.Length) {
-            ikon.SetFont("s" storrelser[f-3] " c" ikonFarge, ikonSkrift)
-            ikon.Visible := true
-        }
-        if (f = 16)
-            tekst.Visible := true
-        Sleep 16
-    }
-    fw.Destroy()
 }
 
 ; =====================================================================
@@ -1324,35 +1388,20 @@ class VT_Tekstflyt extends VT_Base {
         this.Leg(Knapp(gui, "x" (x + 2 * (kb + 12)) " y" (y + 28) " w" kb " h40", "Teksteditor", ObjBindMethod(this, "VisEditor")))
         Skrift(gui, "s9 c" TEMA.tekst)
         this.Leg(Knapp(gui, "x" x " y" (y + 80) " w" (kb + 90) " h32", "Importer / velg Excel…", ObjBindMethod(this, "VelgFil"), TEMA.aksent2))
+        this.Leg(Knapp(gui, "x" x " y" (y + 136) " w" (kb + 90) " h32", "DIPS-innstillinger", VisDipsInnstillinger, TEMA.aksent2))
         Skrift(gui, "s9 c" TEMA.dempet)
-        this.Leg(gui.AddText("x" x " y" (y + 136) " w" b " h22 Background" TEMA.bg, "Initialer / signatur for #dwa og #dwr"))
-        Skrift(gui, "s10 c" TEMA.tekst)
-        this.InitialerK := this.Leg(gui.AddEdit("x" x " y" (y + 162) " w230 h28 Background" TEMA.kort, this.SignaturBruker()))
-        this.Leg(Knapp(gui, "x" (x + 242) " y" (y + 162) " w160 h28", "Lagre initialer", ObjBindMethod(this, "LagreInitialer")))
-        Skrift(gui, "s9 c" TEMA.dempet)
-        this.Leg(gui.AddText("x" x " y" (y + 204) " w" b " h54 Background" TEMA.bg
-            , "#dwa → (initialer) ddMMyy, med utklipp på nøyaktig 9 tegn.`n#dwr → (initialer) ddMMyy D2358. Bruk Mellomrom/Enter."))
+        this.Leg(gui.AddText("x" x " y" (y + 184) " w" b " h54 Background" TEMA.bg
+            , "#dwa og #dwr setter inn din personlige DIPS-signatur.`nBrukernavn og signaturtillegg endres i DIPS-innstillingene."))
     }
 
-    SignaturBruker() => this.Hent("Initialer", Innst("User", "Username", A_UserName))
-
-    LagreInitialer(*) {
-        bruker := Trim(this.InitialerK.Value)
-        try {
-            TekstflytSignatur("#dwa", bruker, "") ; valider før lagring
-            this.Lagre("Initialer", bruker)
-            this.InitialerK.Value := bruker
-            Tip("Initialer lagret – #dwa og #dwr er klare", 2500)
-        } catch as feil {
-            MsgBox feil.Message, APP_NAVN, "Icon!"
-        }
-    }
+    SignaturBruker() => DipsHentProfil().bruker
+    SignaturTillegg() => DipsHentProfil().tillegg
 
     Hjelp() {
         return "•  Skriv en kode, f.eks. #løst, og trykk Mellomrom eller Enter.`n"
             . "•  #dwa og #dwr er innebygde signaturer med dagens dato (ddMMyy); krever ikke Excel.`n"
-            . "•  Endre «Initialer / signatur» her og trykk «Lagre initialer». Standard er Windows-brukernavnet.`n"
-            . "•  #dwa tar med utklipp på nøyaktig 9 tegn. #dwr tar alltid med D2358.`n"
+            . "•  Endre brukernavn og signaturtillegg under «DIPS-innstillinger». Standard er Windows-brukernavnet.`n"
+            . "•  #dwa tar med utklipp på nøyaktig 9 tegn. Tillegget for #dwr velges i DIPS-innstillingene.`n"
             . "•  Disse to kodene er reservert; eventuelle Excel-rader med samme kode overstyres uten å endre filen.`n"
             . "•  Ny kode: «Teksteditor» → skriv kode og tekst → «Lagre i Excel».`n"
             . "•  «Importer / velg Excel»: Ja = lag en lokal kopi, Nei = bruk filen der den ligger.`n"
@@ -1465,11 +1514,11 @@ class VT_Tekstflyt extends VT_Base {
         HotIf
         this.Koder := nye
         try this.SistEndret := FileGetTime(this.ExcelFil, "M")
-        this.SettStatus(nye.Count " koder lastet  ·  synkronisert " FormatTime(, "HH:mm"))
+        this.SettStatus(nye.Count " Excel-rader · 2 DIPS-signaturer · synkronisert " FormatTime(, "HH:mm"))
         Logg("Tekstflyt: synkronisert " nye.Count " koder fra " this.ExcelFil (feilet ? " (" feilet " feilet)" : ""))
         if visMelding {
             knapp := this.SyncK
-            knapp.Text := "Synkronisert!"
+            knapp.Text := "Synkronisert"
             SetTimer () => knapp.Text := "Synkroniser", -1500
         }
         return feilet = 0
@@ -1520,7 +1569,7 @@ class VT_Tekstflyt extends VT_Base {
         }
         try {
             this.SettFil(maal)
-            Tip("Tekstflyt: " antall " koder lastet ✓", 2500)
+            Tip("Tekstflyt: " antall " koder lastet", 2500)
         } catch as feil {
             MsgBox "Filen ble ikke aktivert:`n" feil.Message, APP_NAVN, "Icon!"
         }
@@ -1532,7 +1581,7 @@ class VT_Tekstflyt extends VT_Base {
     ; Støtter redigering og omdøping av eksisterende koder.
     Endre(gammel, kode, tekst) {
         if (TekstflytErSignatur(gammel) || TekstflytErSignatur(kode))
-            throw Error("#dwa og #dwr er innebygde signaturer. Endre initialer på Tekstflyt-siden.")
+            throw Error("#dwa og #dwr er innebygde signaturer. Endre brukernavn i DIPS-innstillingene.")
         if !this.SikreFil()
             throw Error("Excel-filen finnes ikke eller kunne ikke åpnes.")
         if (gammel != kode && this.Koder.Has(kode))
@@ -1605,9 +1654,9 @@ class VT_Tekstflyt extends VT_Base {
         kode := Trim(this.EdKode.Value)
         tekst := StrReplace(this.EdTekst.Value, "`r`n", "`n")
         if (kode = "" || Trim(tekst) = "")
-            return this.EdMelding("✗  Fyll inn både kode og tekst.", false)
+            return this.EdMelding("Fyll inn både kode og tekst.", false)
         if RegExMatch(kode, "\s")
-            return this.EdMelding("✗  Koden kan ikke inneholde mellomrom.", false)
+            return this.EdMelding("Koden kan ikke inneholde mellomrom.", false)
         knapp := this.EdLagreK
         knapp.Text := "Lagrer…"
         this.EdMelding("")
@@ -1615,13 +1664,13 @@ class VT_Tekstflyt extends VT_Base {
             ny := this.LeggTil(kode, tekst)
         } catch as feil {
             knapp.Text := "Lagre i Excel"
-            return this.EdMelding("✗  Ble ikke lagret: " feil.Message " – er filen åpen i Excel? Lagre/lukk den og prøv igjen.", false)
+            return this.EdMelding("Ble ikke lagret: " feil.Message " – er filen åpen i Excel? Lagre/lukk den og prøv igjen.", false)
         }
         this.Sync(false)
-        knapp.Text := ny ? "✓  Lagt til" : "✓  Oppdatert"
+        knapp.Text := ny ? "Lagt til" : "Oppdatert"
         knapp.Opt("Background" TEMA.paa)
         knapp.Redraw()
-        this.EdMelding("✓  «" kode "» er " (ny ? "lagt til" : "oppdatert") " i Excel – klar til bruk.")
+        this.EdMelding("«" kode "» er " (ny ? "lagt til" : "oppdatert") " i Excel – klar til bruk.")
         SetTimer () => (knapp.Text := "Lagre i Excel", knapp.Opt("Background" TEMA.aksent), knapp.Redraw()), -2500
     }
 
@@ -1740,7 +1789,7 @@ TekstflytSettInn(hotstringNavn) {
     if !IsObject(tf)
         return
     if TekstflytErSignatur(kode) {
-        try tekst := TekstflytSignatur(kode, tf.SignaturBruker(), A_Clipboard)
+        try tekst := TekstflytSignatur(kode, tf.SignaturBruker(), A_Clipboard, , tf.SignaturTillegg())
         catch as feil {
             Tip(feil.Message, 3500)
             return
@@ -1755,16 +1804,16 @@ TekstflytSettInn(hotstringNavn) {
 
 TekstflytErSignatur(kode) => kode = "#dwa" || kode = "#dwr"
 
-TekstflytSignatur(kode, bruker, klipp, tidspunkt := "") {
+TekstflytSignatur(kode, bruker, klipp, tidspunkt := "", tillegg := "D2358") {
     bruker := Trim(bruker)
     if !RegExMatch(bruker, "^[^\s()]{1,40}$")
-        throw Error("Fyll inn initialer på Tekstflyt-siden (1–40 tegn uten mellomrom eller parenteser).")
+        throw Error("Brukernavnet må ha 1–40 tegn uten mellomrom eller parenteser. Endre det i DIPS-innstillingene.")
     tekst := "(" StrLower(bruker) ") " FormatTime(tidspunkt, "ddMMyy")
     switch StrLower(kode) {
         case "#dwa":
             return tekst (StrLen(klipp) = 9 ? " " klipp : "")
         case "#dwr":
-            return tekst " D2358"
+            return tekst (tillegg != "" ? " " tillegg : "")
         default:
             throw Error("Ukjent signaturkode.")
     }
@@ -2195,7 +2244,7 @@ class VT_SMKontakt extends VT_Base {
         Varsel("Trio Attendant", verdi, "→ fylles inn i Service Manager")
         ok := this.Fyll(verdi, "attendant")
         st.Fylt := ok
-        st.Tekst := ok ? "fylt inn i Service Manager " FormatTime(, "HH:mm:ss") " ✓" : "innfylling feilet – se Logg"
+        st.Tekst := ok ? "fylt inn i Service Manager " FormatTime(, "HH:mm:ss") "" : "innfylling feilet – se Logg"
         this.Sjekk()
     }
 
@@ -2365,7 +2414,7 @@ class VT_SMKontakt extends VT_Base {
                     this.VarselWeb(les.bruker)
                     ok := this.Fyll(les.bruker, kilde)
                     st.Fylt := ok
-                    st.Tekst := ok ? "fylt inn i Service Manager " FormatTime(, "HH:mm:ss") " ✓" : "innfylling feilet – se Logg"
+                    st.Tekst := ok ? "fylt inn i Service Manager " FormatTime(, "HH:mm:ss") "" : "innfylling feilet – se Logg"
                 } else {
                     st.Tekst := "lest – fylles ikke inn (" (this.Aktiv ? "Kontakt-feltet er ikke lært" : "SM Kontakt er AV") ")"
                 }
@@ -2634,7 +2683,7 @@ class VT_SMKontakt extends VT_Base {
             return Tip("Kontakt-feltet er ikke lært – trykk «Lær oppsett» først")
         if this.Fyll(bruker, kilde) && kilde != "" {
             this.Tilst[kilde].Fylt := true
-            this.Tilst[kilde].Tekst := "fylt inn manuelt " FormatTime(, "HH:mm:ss") " ✓"
+            this.Tilst[kilde].Tekst := "fylt inn manuelt " FormatTime(, "HH:mm:ss") ""
         }
     }
 
@@ -2829,10 +2878,10 @@ class VT_SMKontakt extends VT_Base {
             this.LagreK.Opt("Background" TEMA.paa)
             this.LagreK.Redraw()
             this.TestMeldingK.SetFont("c" TEMA.paa)
-            this.TestMeldingK.Text := "✓  Testen er kjørt. Står «" this.TestVerdi "» i Kontakt-feltet i Service Manager? Trykk «Lagre»."
+            this.TestMeldingK.Text := "Testen er kjørt. Står «" this.TestVerdi "» i Kontakt-feltet i Service Manager? Trykk «Lagre»."
         } else {
             this.TestMeldingK.SetFont("c" "FF6B6B")
-            this.TestMeldingK.Text := "✗  Fant ikke Service Manager-fanen. Er den åpen i Edge? Trykk «Test» igjen, eller «Avbryt» og lær på nytt."
+            this.TestMeldingK.Text := "Fant ikke Service Manager-fanen. Er den åpen i Edge? Trykk «Test» igjen, eller «Avbryt» og lær på nytt."
         }
     }
 
@@ -2852,7 +2901,7 @@ class VT_SMKontakt extends VT_Base {
         this.NullstillTilstand()
         this.OppdaterMusKrok()
         Logg("SM Kontakt: oppsett lært og lagret (SM: " this.Cfg["SMVindu"] ")")
-        Tip("Oppsettet er lagret ✓", 2500)
+        Tip("Oppsettet er lagret", 2500)
         this.Sjekk()
     }
 
@@ -4055,7 +4104,7 @@ class VT_TrioSnarveier extends VT_Base {
             this.Stopp()
             if this.Aktiv
                 this.Start()
-            this.Melding("Snarveiene er lagret ✓")
+            this.Melding("Snarveiene er lagret")
             Tip("Trio-snarveiene er lagret", 2000)
         } catch as feil {
             MsgBox "Kunne ikke lagre snarveiene:`n" feil.Message, APP_NAVN, "Icon!"
@@ -4431,7 +4480,7 @@ class VT_TrioSnarveier extends VT_Base {
         this.ImLaerStopp()
         try this.ImSjekkK.Value := 1
         this.ImVisStatus()
-        this.Melding(somFelt ? "Search-feltet er lært med UIA-signatur ✓" : "Search-feltet er lært som klikkposisjon")
+        this.Melding(somFelt ? "Search-feltet er lært med UIA-signatur" : "Search-feltet er lært som klikkposisjon")
         Logg("Trio Snarveier: Search lært med UIA " (somFelt ? "signatur" : "koordinat"))
     }
 
@@ -4590,7 +4639,7 @@ class VT_TrioSnarveier extends VT_Base {
             if (!WinActive("ahk_id " h) || !NettleserFaneBekreftet(h, "Service Manager"))
                 return false
             Send "{Enter}"
-            this.Melding(im " ble skrevet i Search og Enter trykket ✓")
+            this.Melding(im " ble skrevet i Search og Enter trykket")
             Logg("Trio Snarveier: IM-søk startet med UIA Search – " im)
             Varsel("Service Manager", im, "IM-søk startet i Service Manager")
             return true
@@ -4835,7 +4884,7 @@ class VT_Vindusbytter extends VT_Base {
         this.Lagre("Vindu" i, r.id), this.Lagre("Navn" i, r.navn)
         this.Registrer()
         Logg("Vindusbytter: vindu " i " = " (r.id = "" ? "(ingen)" : r.navn))
-        this.Melding(r.id = "" ? "Vindu " i " er fjernet" : "Vindu " i " lagret ✓" (r.tast = "" ? " – velg en hurtigtast" : ""))
+        this.Melding(r.id = "" ? "Vindu " i " er fjernet" : "Vindu " i " lagret" (r.tast = "" ? " – velg en hurtigtast" : ""))
     }
 
     ; Tar opp hvilken som helst tast/tastekombinasjon (Esc = avbryt)

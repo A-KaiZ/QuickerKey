@@ -10,11 +10,25 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Vindusbytter:** Opptil fire vanlige programmer/vinduer og nettleserfaner.
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 
-## v3.11.2 – små bokstaver i signaturen
+## v3.11.3 – personlige DIPS-innstillinger og ryddigere grensesnitt
+
+**Innstillinger → DIPS-innstillinger** samler brukernavn, valgfritt tillegg for `#dwr` og en forhåndsvisning av begge signaturene. Samme dialog kan åpnes fra Tekstflyt.
+
+- **Automatisk brukernavn:** bruker den innloggede Windows-kontoen, med små bokstaver.
+- **Eget brukernavn:** fjern krysset for automatisk brukernavn og lagre ønsket verdi.
+- **Tillegg for `#dwr`:** `D2358` er standard. Tillegget kan endres eller tømmes. Store/små bokstaver beholdes i tillegget og utklippstavleteksten.
+- **Personlig profil:** lagres separat i `Innstillinger\DIPS.ini` og knyttes til Windows-kontoen. En profil uten kontotilknytning eller fra en annen konto brukes ikke; standarden blir den innloggede Windows-brukeren.
+- **Konfigurasjonsimport:** importerer generelle programinnstillinger og snarveier. Den endrer ikke DIPS-profilen, og importerer verken eldre `[User] Username`, `[Tekstflyt] Initialer` eller nye personlige signaturverdier. Ved overgang fra v3.11.1/v3.11.2 brukes Windows-brukernavnet; et eventuelt eget signaturnavn settes på nytt i DIPS-innstillingene.
+
+«Aktiver Nettverk» / «Deaktiver Nettverk» erstatter «Nettverksgeni?». Fyrverkerianimasjonen er fjernet. Innstillinger har norsk temavelger, DIPS-knapp og samlet utviklerkreditering. Meldinger og statuslinjer bruker nøytral ordlyd uten dekorative bekreftelsessymboler.
+
+Windows-testene dekker full AHK-parsing, kontoavgrensning, importfiltrering, lagring, validering, faktiske tekstutvidelser med eget/tomt signaturtillegg og forhåndsvisning i den native DIPS-dialogen. Skjermbilder av Innstillinger og DIPS-dialogen lagres som CI-artefakter for visuell kontroll. Faktisk Trio/Citrix må fortsatt prøves i jobbmiljøet.
+
+## Historisk: v3.11.2 – små bokstaver i signaturen
 
 Initialene i `#dwa` og `#dwr` settes alltid inn med små bokstaver, også når de lagrede initialene eller Windows-brukernavnet har store bokstaver. Eksempel: `(TOENGV) 041126` blir `(toengv) 041126`. Utklippstavlens tekst og `D2358` beholder sin opprinnelige skrivemåte.
 
-## v3.11.1 – signaturer og fem minutter etterarbeid
+## Historisk: v3.11.1 – signaturer og fem minutter etterarbeid
 
 - **`#dwa` + Mellomrom/Enter:** `(initialer) ddMMyy`. Utklippstavlens tekst legges til når den inneholder nøyaktig ni tegn, som i den gamle egendefinerte koden.
 - **`#dwr` + Mellomrom/Enter:** `(initialer) ddMMyy D2358`.
@@ -29,7 +43,7 @@ Initialene i `#dwa` og `#dwr` settes alltid inn med små bokstaver, også når d
 
 Denne oppdateringen bygger videre på v3.8 i `main`.
 
-- **Nettverk:** Valgfri side via Innstillinger → «Nettverksgeni?», av som standard.
+- **Nettverk:** Valgfri side via Innstillinger → «Aktiver Nettverk», av som standard.
 - **MAC Import:** Bygger CSV for Cisco ISE-endepunkter med 31 kolonner, MAC-parsing, duplikatfjerning, validering og eksplisitt bekreftelse. Skriver fil lokalt; gjør ingen endringer i ISE.
 - **SM Kontakt:** Lærer UIA-signaturer for Kontakt-feltet (ControlType, Name, AutomationId og ClassName). Finner feltet på nytt ved kjøring og bruker Tab + Enter. Eldre oppsett med trygge koordinater beholdes.
 - **Trio Snarveier:** IM Search kan identifiseres med UIA-signatur, med koordinatfallback for eldre konfig.
@@ -48,7 +62,7 @@ Denne oppdateringen bygger videre på v3.8 i `main`.
 
 **Start QuickerKeys** på Oversikt bekrefter antall aktive verktøy, registrerte Trio-snarveier og lastede hurtigtekster. Programmet starter fortsatt tilgjengelige, aktiverte verktøy ved vanlig oppstart.
 
-**Themes…** tilbyr Midnatt, Grafitt, Skog og Lys. **Last inn på nytt** laster manuelt redigerte INI-verdier.
+**Tema…** tilbyr Midnatt, Grafitt, Skog og Lys. **Last inn på nytt** laster manuelt redigerte INI-verdier.
 
 **Edge/Service Manager:** UI Automation forsøker å aktivere riktig fane og verifiserer fanetittelen før innskriving. Ingen garanti mot alle UI-endringer; se QA-testene.
 
@@ -68,6 +82,7 @@ Denne oppdateringen bygger videre på v3.8 i `main`.
 
 QuickerKeys legger alltid egne data i `%AppData%\QuickerKeys` (normalt `C:\Users\<bruker>\AppData\Roaming\QuickerKeys`), med:
 - `Innstillinger\QuickerKeys.ini`
+- `Innstillinger\DIPS.ini` (personlig signaturprofil)
 - `Tekstflyt\Tekstflyt.xlsx`
 - `Logg\YYYY-MM-DD.log`
 
