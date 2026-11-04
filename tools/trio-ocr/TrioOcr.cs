@@ -401,6 +401,7 @@ namespace QuickerKeys.Ocr
                             int offset = (y - column.Y) * bits.Stride + (x - column.X) * 3;
                             data[offset] = value; data[offset + 1] = value; data[offset + 2] = value;
                         }
+                        ClearEdgeInk(data, bits.Stride, column.Width, row.Top + 1 - column.Y, row.Bottom - 1 - column.Y);
                     }
                     System.Runtime.InteropServices.Marshal.Copy(data, 0, bits.Scan0, data.Length);
                 }
@@ -415,6 +416,29 @@ namespace QuickerKeys.Ocr
                     }
                     using (MemoryStream memory = new MemoryStream()) { scaled.Save(memory, ImageFormat.Png); return memory.ToArray(); }
                 }
+            }
+        }
+        private static void ClearEdgeInk(byte[] pixels, int stride, int width, int top, int bottom)
+        {
+            // Remove decoration connected to a cell edge, including dotted focus outlines and
+            // the inverted white margin outside a blue selection. A glyph touching the edge is
+            // discarded with its component; it is never reconstructed into a guessed character.
+            Queue<Point> pending = new Queue<Point>();
+            Action<int, int> add = delegate(int x, int y) {
+                if (x < 1 || x >= width - 1 || y < top || y >= bottom) return;
+                int offset = y * stride + x * 3;
+                if (pixels[offset] >= 220) return;
+                pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 255;
+                pending.Enqueue(new Point(x, y));
+            };
+            for (int x = 1; x < width - 1; x++) { add(x, top); add(x, bottom - 1); }
+            for (int y = top; y < bottom; y++) { add(1, y); add(width - 2, y); }
+            while (pending.Count > 0)
+            {
+                Point point = pending.Dequeue();
+                for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++)
+                    if (dx != 0 || dy != 0) add(point.X + dx, point.Y + dy);
+                add(point.X, point.Y - 2); add(point.X, point.Y + 2); // Join the dots of a native focus border.
             }
         }
         private static int Light(CaptureResult image, int x, int y)
