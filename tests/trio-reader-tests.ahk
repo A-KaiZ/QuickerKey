@@ -278,11 +278,23 @@ RunTrioTests() {
             TrioAssert(winforms.ok && InStr(winforms.kilde,"Win32") && winforms.sett.Count = 2
                 && winforms.andreDager = 2050, "WinForms today found after 2050 older rows with moved columns")
             for taskKey, taskPost in winforms.sett
-                TrioAssert(taskPost.sek = 150,"WinForms treatment time uses correct logical column")
+                TrioAssert(taskPost.sek = 150 && taskPost.koHarVerdi && taskPost.koSek = 10,"WinForms treatment and queue times use correct logical columns")
             TrioAssert(nativeReader.UiaCelleKall = 0 && winforms.nativeForsok.Length = 1
                 && InStr(winforms.nativeForsok[1].klasse,"WindowsForms"), "WinForms native backend used without UIA cell text")
             TrioAssert(!InStr(winforms.detaljer,"9876543210") && !InStr(winforms.detaljer,"09:40:38"),
                 "native diagnostics contain class and counts only")
+            for nativeCtrl in WinGetControlsHwnd("ahk_id " hwnd) {
+                if !nativeReader.ErNativeListeklasse(WinGetClass("ahk_id " nativeCtrl))
+                    continue
+                checkedChannel := TrioNativeTekstKanal(nativeCtrl)
+                readW := checkedChannel.Les(0,0,"W")
+                TrioAssert(readW.ok && r.Tidsstempel(readW.tekst) != "","checked Unicode protocol reads real time across bitness")
+                checkedChannel.Lukk()
+                failedRead := checkedChannel.Les(0,0,"W")
+                TrioAssert(!failedRead.ok && failedRead.steg = "WriteProcessMemory" && failedRead.feil != 0,
+                    "checked protocol reports failed write separately from empty text")
+            }
+
             ProcessClose fixturePid
             ProcessWaitClose fixturePid, 5
             fixturePid := 0

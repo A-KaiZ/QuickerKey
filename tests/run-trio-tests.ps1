@@ -12,7 +12,7 @@ try {
     $script = Join-Path $temp 'trio-tests.ahk'
     [IO.File]::WriteAllText($script, $source, [Text.UTF8Encoding]::new($true))
     Copy-Item (Join-Path $PSScriptRoot 'trio-fixture.ahk') $temp
-    Copy-Item (Join-Path $PSScriptRoot 'trio-winforms-fixture.ps1') $temp
+    [IO.File]::WriteAllText((Join-Path $temp 'trio-winforms-fixture.ps1'), [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'trio-winforms-fixture.ps1')), [Text.UTF8Encoding]::new($true))
     $proc = Start-Process -FilePath $AutoHotkey -ArgumentList @('/ErrorStdOut=UTF-8', ('"' + $script + '"')) -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $temp 'stdout.txt') -RedirectStandardError (Join-Path $temp 'stderr.txt')
     if (!$proc.WaitForExit(90000)) { $proc.Kill(); throw 'AHK test timed out' }
     Get-Content (Join-Path $temp 'stdout.txt') -ErrorAction SilentlyContinue
