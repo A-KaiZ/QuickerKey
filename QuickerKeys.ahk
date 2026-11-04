@@ -4817,7 +4817,10 @@ class TrioOppgaveloggDiagnose {
                         kolonneData[kol.key] := verdier
                         maks := Max(maks, verdier.Length)
                     }
-                    loop Min(maks, 2000) {
+                    dagensKandidater := 0
+                    ; The date column is already loaded. Scan its entire
+                    ; history; the cap applies to today's tasks, not position.
+                    loop maks {
                         nr := A_Index, felt := Map()
                         if !kolonneData.Has("tidspunkt")
                             continue
@@ -4826,6 +4829,11 @@ class TrioOppgaveloggDiagnose {
                         if (felt["tidspunkt"] != "")
                             forsok.tidsverdier++
                         if this.ErDagensTid(felt["tidspunkt"],out) {
+                            if (dagensKandidater >= 2000) {
+                                out.begrenset := true
+                                continue
+                            }
+                            dagensKandidater++
                             for key, verdier in kolonneData
                                 felt[key] := nr <= verdier.Length ? Trim(verdier[nr]) : ""
                         }
@@ -4838,7 +4846,6 @@ class TrioOppgaveloggDiagnose {
                     if kandidater.Length {
                         out.kilde := "Win32 ListView / kolonnenavn"
                         out.kolonner := schema.kolonner, out.kart := schema.kart
-                        out.begrenset := maks > 2000
                         break
                     }
                 } catch as feil {

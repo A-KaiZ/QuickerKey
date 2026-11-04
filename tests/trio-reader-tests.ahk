@@ -272,7 +272,9 @@ RunTrioTests() {
             winforms := nativeReader.HentDagensData(hwnd)
             FileAppend(winforms.status "`n" winforms.detaljer "`n","*","UTF-8")
             TrioAssert(winforms.ok && InStr(winforms.kilde,"Win32") && winforms.sett.Count = 2
-                && winforms.andreDager = 1, "WinForms direct read including moved columns and daily filter")
+                && winforms.andreDager = 2050, "WinForms today found after 2050 older rows with moved columns")
+            for taskKey, taskPost in winforms.sett
+                TrioAssert(taskPost.sek = 150,"WinForms treatment time uses correct logical column")
             TrioAssert(nativeReader.UiaCelleKall = 0 && winforms.nativeForsok.Length = 1
                 && InStr(winforms.nativeForsok[1].klasse,"WindowsForms"), "WinForms native backend used without UIA cell text")
             TrioAssert(!InStr(winforms.detaljer,"9876543210") && !InStr(winforms.detaljer,"09:40:38"),

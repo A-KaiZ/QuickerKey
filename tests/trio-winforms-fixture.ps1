@@ -18,9 +18,9 @@ $widths = @(190,130,80,30,80,80,100,100,90,70,70,70,120)
 for ($i=0; $i -lt $names.Length; $i++) {
     [void]$list.Columns.Add($names[$i],$widths[$i])
 }
-for ($i=0; $i -lt 3; $i++) {
-    $day = if ($i -eq 2) { (Get-Date).AddDays(-1) } else { Get-Date }
-    $values = @(($day.ToString('dd.MM.yyyy') + ' 09:40:38'), ('987654321' + $i), '', '', '', '', '', '', '02:30', '00:10', '', '', '')
+for ($i=0; $i -lt 2052; $i++) {
+    $day = if ($i -lt 2050) { (Get-Date).AddDays(-1) } else { Get-Date }
+    $values = @(($day.ToString('dd.MM.yyyy') + ' 09:40:38'), ('98765' + $i.ToString('D5')), '', '', '', '', '', '', '02:30', '00:10', '', '', '')
     $item = [System.Windows.Forms.ListViewItem]::new([string[]]$values)
     [void]$list.Items.Add($item)
 }

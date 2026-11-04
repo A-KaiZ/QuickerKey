@@ -11,7 +11,7 @@ Native diagnose viser klasse, rad-/kolonneantall, OwnerData-flagg, antall tidsve
 
 ### Windows-tester
 
-En faktisk .NET Framework Windows Forms-liste med de 13 observerte Trio-overskriftene kjøres i både 64- og 32-bits Windows PowerShell. Oppgave-ID-kolonnen flyttes visuelt. En testleser gjør alle UIA-cellekilder utilgjengelige. Den native ruten skal fortsatt gi to dagens oppgaver og én annen dag, uten å kalle UIA-celleleseren. Diagnosen skal oppgi WindowsForms-klassen og bare metadata. Tidligere kilde-, kalender-, langlogg- og fokustester beholdes.
+En faktisk .NET Framework Windows Forms-liste med de 13 observerte Trio-overskriftene kjøres i både 64- og 32-bits Windows PowerShell. Oppgave-ID-kolonnen flyttes visuelt. En testleser gjør alle UIA-cellekilder utilgjengelige. Den native ruten skal fortsatt gi to dagens oppgaver etter 2 050 eldre rader, uten å kalle UIA-celleleseren. Behandlingstiden skal være 150 sekunder per oppgave også etter kolonneflytting. Native header-child-ID-er konverteres fra vist rekkefølge til logisk kolonne med `HDM_ORDERTOINDEX`, slik at lesingen ikke avhenger av at alle overskriftene har synlige rektangler. Den allerede innleste datokolonnen skannes gjennom hele historikken; 2 000-grensen gjelder dagens oppgaver. Diagnosen skal oppgi WindowsForms-klassen og bare metadata. Tidligere kilde-, kalender-, langlogg- og fokustester beholdes.
 
 ### Faktisk Trio-test
 
