@@ -11,8 +11,11 @@ HotfixType(tekst, hwnd, expected) {
     WinActivate "ahk_id " hwnd
     WinWaitActive "ahk_id " hwnd, , 2
     ControlFocus "Edit1", "ahk_id " hwnd
+    Hotstring("Reset")
     SendLevel 1
-    SendEvent tekst
+    SendEvent "{Text}" StrReplace(tekst, "{Enter}")
+    if InStr(tekst, "{Enter}")
+        SendEvent "{Enter}"
     SendLevel 0
     deadline := A_TickCount + 3000
     while (A_TickCount < deadline) {
@@ -20,6 +23,7 @@ HotfixType(tekst, hwnd, expected) {
         if (ControlGetText("Edit1", "ahk_id " hwnd) = expected)
             return true
     }
+    FileAppend("Expected [" expected "] actual [" ControlGetText("Edit1", "ahk_id " hwnd) "]`n", "*", "UTF-8")
     return false
 }
 
