@@ -45,9 +45,9 @@ public sealed class FixtureForm : Form
     protected override void WndProc(ref Message message)
     {
         if (message.Msg == 0x8015) { generation++; Invalidate(); message.Result = new IntPtr(1); return; }
+        if (message.Msg == 0x8016) { Thread.Sleep(10000); message.Result = new IntPtr(1); return; }
         if ((message.Msg == 0x317 || message.Msg == 0x318) && mode != "native")
         {
-            if (mode == "hang") Thread.Sleep(10000);
             using (Graphics graphics = Graphics.FromHdc(message.WParam))
             {
                 if (mode == "blank") graphics.Clear(Color.White);

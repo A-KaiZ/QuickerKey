@@ -18,7 +18,7 @@ using System.Windows.Forms;
 namespace QuickerKeys.CaptureProbe
 {
     public enum CaptureStatus { Image, TargetChanged, Minimized, SessionUnavailable, InvalidSize,
-        NativeFailure, LayoutChanged, Timeout, Cancelled, ProtocolError, InternalError }
+        NativeFailure, LayoutChanged, Timeout, Cancelled, ProtocolError, InternalError, MetadataUnavailable }
 
     public sealed class Target
     {
@@ -241,6 +241,7 @@ namespace QuickerKeys.CaptureProbe
                 || clientX + clientWidth > width || clientY + clientHeight > height)
             { result.Status = CaptureStatus.InvalidSize; return result; }
             ViewState view = ViewState.Read(list);
+            if (!ValidView(view)) { result.Status = CaptureStatus.MetadataUnavailable; return result; }
             IntPtr foreground = Native.GetForegroundWindow();
             IntPtr dc = IntPtr.Zero, dib = IntPtr.Zero, previous = IntPtr.Zero, memory = IntPtr.Zero;
             byte[] pixels = null;
@@ -270,6 +271,7 @@ namespace QuickerKeys.CaptureProbe
                 if (!Native.ActiveDesktop()) { result.Status = CaptureStatus.SessionUnavailable; return result; }
                 if (Native.IsIconic(target.Window)) { result.Status = CaptureStatus.Minimized; return result; }
                 ViewState current = ViewState.Read(list);
+                if (!ValidView(current)) { result.Status = CaptureStatus.MetadataUnavailable; return result; }
                 result.FocusStable = foreground == IntPtr.Zero ? -1 : (foreground == Native.GetForegroundWindow() ? 1 : 0);
                 result.SelectionStable = view.SelectedCount < 0 || current.SelectedCount < 0 || view.FirstSelected < -1 || current.FirstSelected < -1
                     ? -1 : (view.SelectedCount == current.SelectedCount && view.FirstSelected == current.FirstSelected ? 1 : 0);
@@ -292,6 +294,10 @@ namespace QuickerKeys.CaptureProbe
                 if (dib != IntPtr.Zero) Native.DeleteObject(dib);
                 if (dc != IntPtr.Zero) Native.DeleteDC(dc);
             }
+        }
+        private static bool ValidView(ViewState view)
+        {
+            return view.Rows >= 0 && view.Columns > 0 && view.FirstSelected >= -1 && view.SelectedCount >= 0 && view.Top >= 0;
         }
         public static bool HasVariation(CaptureResult image)
         {

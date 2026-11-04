@@ -58,13 +58,24 @@ public static class CaptureTests
         try { read(); } catch (InvalidDataException) { rejected = true; } catch (EndOfStreamException) { rejected = true; }
         Require(rejected, label);
     }
+    private static bool PreviewMatches(CaptureResult result)
+    {
+        using (Bitmap preview = result.MakeBitmap())
+        {
+            for (int i = 0; i < result.Pixels.Length; i += 4)
+                if (result.Pixels[i] == 0 && result.Pixels[i + 1] == 255 && result.Pixels[i + 2] == 0)
+                    return preview.GetPixel((i / 4) % result.Width, (i / 4) / result.Width).ToArgb() == Color.Lime.ToArgb();
+            return false;
+        }
+    }
     [STAThread] public static int Main(string[] args)
     {
         try
         {
             Native.SetDpiMode(); probe = Path.GetFullPath(args[0]);
+            string stalledWorker = Path.GetFullPath(args[1]);
             Require(Native.ActiveDesktop(), "test runner has an active accessible desktop");
-            foreach (string fixture in args.Skip(1))
+            foreach (string fixture in args.Skip(2))
             {
                 Console.WriteLine("TARGET " + Path.GetFileName(fixture));
                 WithFixture(fixture, "paint", delegate(Process owner, Target target)
@@ -72,7 +83,8 @@ public static class CaptureTests
                     Require(Discovery.Find().Any(t => t.Window == target.Window), "discovery finds the separate-process ListView target");
                     CaptureResult visible = Capture(target, 3500);
                     Require(visible.Status == CaptureStatus.Image && visible.Varied && HasColor(visible, Color.Lime) && HasColor(visible, Color.Blue), "visible capture contains private painted content");
-                    Require(visible.Rows == 8 && visible.Columns == 13, "native metadata is retained"); visible.ClearPixels();
+                    Require(visible.Rows == 8 && visible.Columns == 13, "native metadata is retained");
+                    Require(PreviewMatches(visible), "user preview preserves captured pixel color and position"); visible.ClearPixels();
                     Native.Rect rect; Native.GetWindowRect(target.Window, out rect);
                     using (Form cover = new Form { Text = "Synthetic covering window", StartPosition = FormStartPosition.Manual,
                         Location = new Point(rect.Left - 20, rect.Top - 20), Size = new Size(rect.Right - rect.Left + 40, rect.Bottom - rect.Top + 40), BackColor = Color.Magenta })
@@ -109,17 +121,23 @@ public static class CaptureTests
                     Require(blank.Status == CaptureStatus.Image && !blank.Varied, "successful blank client rendering is not classified as varied content (status=" + blank.Status + ", varied=" + blank.Varied
                         + ", client=" + blank.ClientX + "," + blank.ClientY + "," + blank.ClientWidth + "," + blank.ClientHeight + ")"); blank.ClearPixels();
                 });
-                WithFixture(fixture, "hang", delegate(Process owner, Target target)
+                WithFixture(fixture, "paint", delegate(Process owner, Target target)
                 {
-                    Stopwatch elapsed = Stopwatch.StartNew(); CaptureResult timeout = Capture(target, 600);
-                    Require(timeout.Status == CaptureStatus.Timeout && elapsed.ElapsedMilliseconds < 2500, "hung rendering is bounded in the parent");
+                    Require(PostMessage(target.Window, 0x8016, IntPtr.Zero, IntPtr.Zero), "synthetic target UI thread is stalled");
+                    Thread.Sleep(100);
+                    CaptureResult blocked = Capture(target, 3500);
+                    Require(blocked.Status == CaptureStatus.MetadataUnavailable && blocked.Pixels == null,
+                        "unresponsive native metadata cannot yield a newly accepted image (status=" + blocked.Status + ")");
                 });
-                WithFixture(fixture, "hang", delegate(Process owner, Target target)
+                WithFixture(fixture, "paint", delegate(Process owner, Target target)
                 {
+                    Stopwatch elapsed = Stopwatch.StartNew();
+                    CaptureResult timeout = CaptureClient.Run(stalledWorker, target, 600, CancellationToken.None).GetAwaiter().GetResult();
+                    Require(timeout.Status == CaptureStatus.Timeout && elapsed.ElapsedMilliseconds < 2500, "stalled worker is bounded in the parent");
                     using (CancellationTokenSource cancellation = new CancellationTokenSource())
                     {
                         cancellation.CancelAfter(600);
-                        CaptureResult cancelled = CaptureClient.Run(probe, target, 3500, cancellation.Token).GetAwaiter().GetResult();
+                        CaptureResult cancelled = CaptureClient.Run(stalledWorker, target, 3500, cancellation.Token).GetAwaiter().GetResult();
                         Require(cancelled.Status == CaptureStatus.Cancelled, "cancellation stops a pending capture");
                     }
                 });
@@ -140,9 +158,11 @@ public static class CaptureTests
             }
             Reject(delegate { CaptureWorker.Read(new MemoryStream(malformed)); }, "truncated frame is rejected");
             Require(Process.GetProcessesByName(Path.GetFileNameWithoutExtension(probe)).Length == 0, "no worker process remains after captures timeouts and cancellation");
+            Require(Process.GetProcessesByName(Path.GetFileNameWithoutExtension(stalledWorker)).Length == 0, "no stalled worker process remains");
             Console.WriteLine("PASS total=" + checks); return 0;
         }
         catch (Exception error) { Console.WriteLine("FAIL " + error.GetType().Name + ": " + error.Message); return 1; }
     }
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wp, IntPtr lp);
 }

@@ -32,6 +32,7 @@ Verktøyet tar ingen skjermbilder automatisk hvert 30. sekund. Hver knapp starte
 | SessionUnavailable | Aktiv, tilgjengelig skrivebordsøkt kunne ikke bekreftes. Ingen fangst brukes. |
 | LayoutChanged | Vindusgeometri, rad-/kolonneantall eller øverste rad endret seg under prøven. Bildet forkastes. |
 | NativeFailure | Windows-fangsten mislyktes. Ingen reservefangst av skrivebordet utføres. |
+| MetadataUnavailable | Nødvendige native kontrollspørsmål fikk ikke et brukbart svar. Ingen ny bildefangst godkjennes; årsaken kan være manglende respons eller utilgjengelig metadata. |
 | Timeout / Cancelled | Worker-ventingen ble avbrutt, og workeren avsluttes. Ingen gamle bilder brukes som nytt resultat. |
 | ProtocolError / InternalError / InvalidSize | Svaret kunne ikke brukes. Bare feilkategori og eventuelt et numerisk Windows-feilnummer rapporteres. |
 
@@ -55,7 +56,7 @@ Fra repoet på Windows x64:
 ./tests/trio-capture/run-tests.ps1 -Probe "$env:TEMP/TrioCaptureProbe/TrioCaptureProbe.exe"
 ```
 
-Bygget bruker Windows sin .NET Framework-kompilator, uten NuGet-pakker eller runtime-nedlasting. CI bygger den samme EXE-filen og prøver separate 32-/64-bits Windows Forms-mål: faktisk ListView, privat tegnet innhold, full dekking med annen farge, endret privat innhold bak dekking, feil/gammel prosessidentitet, minimering, lukket vindu, tomt vellykket svar, heng, avbrudd og ugyldige/trunkerte protokollsvar. Bare syntetiske data brukes. Ingen testbilder publiseres.
+Bygget bruker Windows sin .NET Framework-kompilator, uten NuGet-pakker eller runtime-nedlasting. CI bygger den samme EXE-filen og prøver separate 32-/64-bits Windows Forms-mål: faktisk ListView, privat tegnet innhold, full dekking med annen farge, endret privat innhold bak dekking, feil/gammel prosessidentitet, minimering, lukket vindu, tomt klientområde og en UI-tråd som ikke svarer på kontrollspørsmål. En egen worker-fixture blokkerer selve prosess-/pipegrensen for å verifisere tidsavbrudd, avbrudd og opprydding uavhengig av Windows sin tegneoppførsel. Ugyldige/trunkerte protokollsvar avvises også. Bare syntetiske data brukes. Ingen testbilder publiseres.
 
 Primærkilder:
 

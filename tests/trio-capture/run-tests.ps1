@@ -12,9 +12,12 @@ try {
         $fixtures += $fixture
     }
     $testExe = Join-Path (Split-Path $Probe -Parent) 'TrioCaptureTests.exe'
+    $stalledWorker = Join-Path $testDirectory 'TrioCaptureStalledWorker.exe'
+    & $compiler /nologo /target:exe /platform:x64 /warnaserror+ "/out:$stalledWorker" (Join-Path $PSScriptRoot 'StalledWorker.cs')
+    if ($LASTEXITCODE -ne 0) { throw 'Stalled worker compilation failed.' }
     & $compiler /nologo /target:exe /platform:x64 /codepage:65001 /warnaserror+ "/out:$testExe" "/reference:$Probe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll (Join-Path $PSScriptRoot 'Tests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Capture tests compilation failed.' }
-    & $testExe $Probe @fixtures
+    & $testExe $Probe $stalledWorker @fixtures
     if ($LASTEXITCODE -ne 0) { throw 'Capture tests failed.' }
 } finally {
     Remove-Item $testDirectory -Recurse -Force -ErrorAction SilentlyContinue
