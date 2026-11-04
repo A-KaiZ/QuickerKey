@@ -5,7 +5,7 @@ $repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $wpf = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/WPF'
 $exe = Join-Path $OutputDirectory 'TrioOcrProbe.exe'
-& $compiler /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 /warnaserror+ /main:QuickerKeys.Ocr.OcrProgram "/out:$exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "/reference:$wpf/UIAutomationClient.dll" "/reference:$wpf/UIAutomationTypes.dll" "/reference:$wpf/WindowsBase.dll" "/win32manifest:$(Join-Path $repo 'tools/trio-capture/app.manifest')" (Join-Path $repo 'tools/trio-capture/TrioCaptureProbe.cs') (Join-Path $PSScriptRoot 'TrioOcr.cs') (Join-Path $PSScriptRoot 'TrioOcrProbe.cs')
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 /warnaserror+ /main:QuickerKeys.Ocr.OcrProgram "/out:$exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "/reference:$wpf/UIAutomationClient.dll" "/reference:$wpf/UIAutomationTypes.dll" "/reference:$wpf/WindowsBase.dll" "/win32manifest:$(Join-Path $repo 'tools/trio-capture/app.manifest')" (Join-Path $repo 'tools/trio-capture/TrioCaptureProbe.cs') (Join-Path $PSScriptRoot 'TrioOcr.cs') (Join-Path $PSScriptRoot 'TrioOcrProbe.cs') (Join-Path $PSScriptRoot 'BinaryProcess.cs')
 if ($LASTEXITCODE -ne 0) { throw 'OCR probe compilation failed.' }
 Copy-Item (Join-Path $OutputDirectory 'TrioCaptureProbe.exe.config') ($exe + '.config') -Force
 $source = Join-Path $OutputDirectory 'source/ocr'

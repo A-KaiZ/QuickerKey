@@ -186,8 +186,14 @@ public static class OcrTests
         try
         {
             Native.SetDpiMode(); UnitTests(); Engine engine = new Engine(args[1]);
+            byte[] binary = { 0x89, 0x50, 0x4e, 0x47, 13, 10, 26, 10, 0, 255, 128, 0 };
+            ProcessStartInfo echoInfo = new ProcessStartInfo(args[2]) { WorkingDirectory = Path.GetDirectoryName(args[2]) };
+            using (BinaryProcess echo = BinaryProcess.Start(echoInfo)) using (MemoryStream returned = new MemoryStream()) {
+                echo.Input.Write(binary, 0, binary.Length); echo.Input.Close(); echo.Output.CopyTo(returned);
+                Require(echo.Child.WaitForExit(2000) && returned.ToArray().SequenceEqual(binary), "binary PNG signature and arbitrary bytes cross the process boundary without a BOM");
+            }
             Require(engine.Available, "portable engine and model are present"); GoldenTests(engine);
-            foreach (string fixture in args.Skip(2)) Live(args[0], fixture, engine);
+            foreach (string fixture in args.Skip(3)) Live(args[0], fixture, engine);
             Require(Process.GetProcessesByName("tesseract").Length == 0, "no OCR subprocess remains");
             Console.WriteLine("PASS total=" + checks); return 0;
         }

@@ -282,21 +282,22 @@ namespace QuickerKeys.Ocr
             start.EnvironmentVariables["OMP_THREAD_LIMIT"] = "1";
             start.EnvironmentVariables["TESSDATA_PREFIX"] = Path.Combine(Directory, "tessdata");
             start.EnvironmentVariables["PATH"] = Directory + ";" + Environment.GetFolderPath(Environment.SpecialFolder.System);
-            using (Process process = new Process { StartInfo = start })
+            BinaryProcess process = null;
+            try
             {
                 Task<byte[]> output = null, error = null;
                 Task combined = null;
                 try
                 {
-                    cancel.ThrowIfCancellationRequested(); process.Start();
-                    output = ReadBounded(process.StandardOutput.BaseStream, 2 * 1024 * 1024);
-                    error = ReadBounded(process.StandardError.BaseStream, 128 * 1024);
+                    cancel.ThrowIfCancellationRequested(); process = BinaryProcess.Start(start);
+                    output = ReadBounded(process.Output, 2 * 1024 * 1024);
+                    error = ReadBounded(process.Error, 128 * 1024);
                     Task input = SendInput(process, png);
                     combined = Task.WhenAll(output, error, input);
                     if (await Task.WhenAny(combined, Task.Delay(6000, cancel)).ConfigureAwait(false) != combined)
                         throw new EngineException(cancel.IsCancellationRequested ? OcrStatus.Cancelled : OcrStatus.Timeout);
                     await combined.ConfigureAwait(false);
-                    if (!process.WaitForExit(500) || process.ExitCode != 0) throw new EngineException(OcrStatus.EngineFailure);
+                    if (!process.Child.WaitForExit(500) || process.Child.ExitCode != 0) throw new EngineException(OcrStatus.EngineFailure);
                     string text = Encoding.UTF8.GetString(output.Result);
                     Array.Clear(output.Result, 0, output.Result.Length); Array.Clear(error.Result, 0, error.Result.Length);
                     return ParseTsv(text, layout.Columns[field]);
@@ -307,10 +308,11 @@ namespace QuickerKeys.Ocr
                 finally
                 {
                     Array.Clear(png, 0, png.Length);
-                    try { if (!process.HasExited) process.Kill(); process.WaitForExit(500); } catch { }
+                    if (process != null) process.Dispose();
                     if (combined != null) Observe(combined, output, error);
                 }
             }
+            finally { if (process != null) process.Dispose(); }
         }
         private static void Observe(Task combined, Task<byte[]> output, Task<byte[]> error)
         {
@@ -320,10 +322,10 @@ namespace QuickerKeys.Ocr
                 if (error.Status == TaskStatus.RanToCompletion) Array.Clear(error.Result, 0, error.Result.Length);
             }, TaskScheduler.Default);
         }
-        private static async Task SendInput(Process process, byte[] png)
+        private static async Task SendInput(BinaryProcess process, byte[] png)
         {
-            await process.StandardInput.BaseStream.WriteAsync(png, 0, png.Length).ConfigureAwait(false);
-            process.StandardInput.Close();
+            await process.Input.WriteAsync(png, 0, png.Length).ConfigureAwait(false);
+            process.Input.Close();
         }
         public static List<Word> ParseTsv(string text, Rectangle column)
         {
