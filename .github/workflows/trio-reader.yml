@@ -1,0 +1,26 @@
+name: Trio reader (Windows)
+on:
+  push:
+    paths:
+      - 'QuickerKeys.ahk'
+      - 'tests/**'
+      - '.github/workflows/trio-reader.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  trio-reader:
+    runs-on: windows-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download pinned AutoHotkey v2
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'ahk.zip'
+          Invoke-WebRequest 'https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.19/AutoHotkey_2.0.19.zip' -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne '4E0D0E65655066A646A210951320FEAEF0729A3597177131ADAEC4066BEF5869') { throw 'AutoHotkey hash mismatch' }
+          Expand-Archive $zip (Join-Path $env:RUNNER_TEMP 'ahk')
+      - name: Test complete AHK source, parser and synthetic Windows UIA
+        shell: pwsh
+        run: ./tests/run-trio-tests.ps1 -AutoHotkey "$env:RUNNER_TEMP/ahk/AutoHotkey64.exe"

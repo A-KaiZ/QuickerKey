@@ -180,6 +180,9 @@ RunDipsUiTests() {
     global APP_VERSJON := "3.11.3", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
     global PANELER := Map(), NAVKNAPPER := Map(), VIS_VILKAR := Map(), NAV_FOR := Map(), NETT_PAA := false
     global VERKTOY_LISTE := VerktoyListe(), DIPS_INI_FIL
+    global STATS_MAPPE := A_ScriptDir "\Statistikk", STATS
+    DirCreate STATS_MAPPE
+    STATS := StatistikkModul() ; Match the combined app's panel setup without starting Trio timers.
     ByggHovedvindu()
     VisPanel("Innstillinger")
     HOVED.Show("w" APP_B " h" APP_H)

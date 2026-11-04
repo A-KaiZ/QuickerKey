@@ -30,13 +30,15 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.11.3"
+global APP_VERSJON := "3.12-rc14"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
 global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
 global LOGG_MAPPE  := DATA_MAPPE "\Logg"
 global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
+global STATS_MAPPE := DATA_MAPPE "\Statistikk"
+global STATS := ""
 global DIPS_INI_FIL := INNST_MAPPE "\DIPS.ini"
 global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
@@ -54,8 +56,10 @@ RyddGamleLogger()
 lukketListe := LukkGamleSkript()
 Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser en tekstkode
 VERKTOY_LISTE := VerktoyListe()
+STATS := StatistikkModul()
 ByggHovedvindu()
 ByggTrayMeny()
+STATS.Start()
 Logg(APP_NAVN " " APP_VERSJON " startet  –  mappe: " DATA_MAPPE)
 for linje in FLYTTET
     Logg(linje)
@@ -129,7 +133,7 @@ FinnDataMappe() {
 ; Støtter både gammel flat struktur (v2.8) og undermapper (v2.9), også fra gammel AppData-mappe.
 LagMappestruktur() {
     meldinger := []
-    for mappe in [INNST_MAPPE, TEKST_MAPPE, LOGG_MAPPE] {
+    for mappe in [INNST_MAPPE, TEKST_MAPPE, LOGG_MAPPE, STATS_MAPPE] {
         if !DirExist(mappe)
             DirCreate mappe
     }
@@ -405,8 +409,8 @@ ByggHovedvindu() {
     navValg := ["Oversikt"]
     for vt in VERKTOY_LISTE
         navValg.Push(vt.Navn)
-    navValg.Push("Logg", "Innstillinger")
-    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 40))
+    navValg.Push("Statistikk", "Logg", "Innstillinger")
+    APP_H := Max(600, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 40))
 
     HOVED := Gui("-MaximizeBox", APP_NAVN)
     HOVED.BackColor := TEMA.bg
@@ -449,6 +453,7 @@ ByggHovedvindu() {
     ByggOversikt()
     for vt in VERKTOY_LISTE
         ByggVerktoyPanel(vt)
+    STATS.ByggPanel()
     ByggLoggPanel()
     ByggInnstillingerPanel()
     if NETT_PAA
@@ -597,6 +602,14 @@ HjelpTekst(side) {
                 . "•  PÅ / AV slår et verktøy av eller på.`n"
                 . "•  «Åpne →» viser verktøyets side.`n"
                 . "•  Alt kjører i bakgrunnen. Åpne vinduet igjen fra ikonet ved klokka."
+        case "Statistikk":
+            return "•  Manuell statistikk for mottatte/utgående samtaler, viderekobling og skriftlig tid.`n"
+                . "•  Rød søppelknapp tømmer kun dagens fullførte manuelle registreringer, etter bekreftelse.`n"
+                . "•  «Trio Oppgavelogg / UIA» styrer automatisk åpning, minimering og skrivebeskyttet diagnostikk.`n"
+                . "•  Automatisk åpning prøves uten fokusbytte når tastatur/mus er i ro.`n"
+                . "•  Legg loggvinduet bak andre vinduer, ikke minimer det – UIA forsvinner minimert.`n"
+                . "•  Feltdiagnosen viser kolonnemapping og avvisningsgrunner uten rå celleverdier.`n"
+                . "•  Tilgjengelige validerte Trio-oppgaver samles automatisk i RAM. Oppgaver er ikke bekreftede samtaler."
         case "Logg":
             return "•  Viser hva programmet har gjort i dag – nyeste øverst.`n"
                 . "•  Alt lagres også i mappen Logg, én fil per dag (30 dager tilbake).`n"
@@ -660,6 +673,8 @@ VisPanel(navn, *) {
         knapp.Opt("Background" (knappNavn = valgt ? TEMA.aksent : TEMA.nav))
         knapp.Redraw()
     }
+    if (navn = "Statistikk" && IsObject(STATS))
+        STATS.Oppdater()
 }
 
 VisHoved(*) {
@@ -820,7 +835,7 @@ ImporterKonfigurasjon(*) {
         ImporterGammelQuickKey(fil)
         return
     }
-    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk)\]\s*$") {
+    if !RegExMatch(innhold, "im)^\s*\[(App|SMKontakt|Vindusbytter|Tekstflyt|TrioSnarveier|Nettverk|Statistikk)\]\s*$") {
         MsgBox "Ingen støttet programkonfigurasjon ble funnet. Personlige DIPS-profiler importeres ikke her.", APP_NAVN, "Icon!"
         return
     }
@@ -857,7 +872,8 @@ HentImporterbareEndringer(fil) {
             , "KontaktType", "KontaktNavn", "KontaktId", "KontaktKlasse"],
         "Vindusbytter", ["Aktiv"],
         "TrioSnarveier", ["Aktiv", "HKCopy", "HKCopyKilde", "ApneIM", "IMVindu", "IMX", "IMY", "IMNavn", "IMId", "IMKlasse", "IMModus"],
-        "Nettverk", ["Skilletegn"]
+        "Nettverk", ["Skilletegn"],
+        "Statistikk", ["TrioAutoApne", "TrioBakgrunn", "TrioIntervallSek", "TrioVisFeil"]
     )
     loop 4 {
         i := A_Index
@@ -4743,6 +4759,2169 @@ TrioTastFraTekst(tekst) {
     if (mods = "" || tast = "")
         return ""
     return GetKeyVK(tast) ? mods tast : ""
+}
+
+
+; =====================================================================
+;  STATISTIKK - separate manuelle logger og observerte Trio-oppgaver.
+;  Oppgaver er ikke automatisk dokumenterte besvarte samtaler.
+;  Fullførte økter lagres som CSV i AppData\QuickerKeys\Statistikk.
+;  Pågående økter lagres i Aktiv.ini så Reload/omstart ikke mister dem.
+; =====================================================================
+; =====================================================================
+;  TRIO OPPGAVELOGG – skrivebeskyttet innlesing og anonym feltdiagnose.
+;  Validerte statistikkfelt i RAM; ingen rå kundeverdier i rapport/logg.
+;  Automatisk åpning venter på fysisk inaktivitet.
+; =====================================================================
+; Bounded, checked ListView text protocol. The only remote bytes read are
+; the output buffer allocated for documented ListView messages, never
+; arbitrary application memory. No list data, selection or focus is changed.
+class TrioNativeTekstKanal {
+    handle := 0
+    remote := 0
+    hwnd := 0
+    kapasitet := 1024
+
+    __New(hwnd) {
+        this.hwnd := hwnd
+        this.handle := DllCall("OpenProcess","UInt",0x438,"Int",false,"UInt",WinGetPID("ahk_id " hwnd),"Ptr")
+        if !this.handle
+            throw OSError(A_LastError,"OpenProcess")
+        try {
+            wow64 := 0
+            if !DllCall("IsWow64Process","Ptr",this.handle,"Int*",&wow64)
+                throw OSError(A_LastError,"IsWow64Process")
+            this.ptrStorrelse := A_Is64bitOS && !wow64 ? 8 : 4
+            if (A_PtrSize = 4 && this.ptrStorrelse = 8)
+                throw Error("64-bits mål krever 64-bits AutoHotkey i kontrollert tekstlesing.")
+            this.struktur := this.ptrStorrelse = 8 ? 88 : 60
+            this.buffer := Buffer(this.struktur + this.kapasitet * 2,0)
+            this.remote := DllCall("VirtualAllocEx","Ptr",this.handle,"Ptr",0,"UPtr",this.buffer.Size,"UInt",0x3000,"UInt",4,"Ptr")
+            if !this.remote
+                throw OSError(A_LastError,"VirtualAllocEx")
+        } catch {
+            this.Lukk()
+            throw
+        }
+    }
+
+    Lukk() {
+        if (this.remote && this.handle)
+            DllCall("VirtualFreeEx","Ptr",this.handle,"Ptr",this.remote,"UPtr",0,"UInt",0x8000)
+        this.remote := 0
+        if this.handle
+            DllCall("CloseHandle","Ptr",this.handle)
+        this.handle := 0
+    }
+
+    __Delete() {
+        try this.Lukk()
+    }
+
+    Les(rad, kolonne, variant := "W") {
+        b := this.buffer
+        DllCall("RtlZeroMemory","Ptr",b,"UPtr",b.Size)
+        NumPut("UInt",1,b,0) ; LVIF_TEXT
+        NumPut("Int",rad,b,4), NumPut("Int",kolonne,b,8)
+        NumPut(this.ptrStorrelse = 8 ? "UInt64" : "UInt",this.remote + this.struktur,b,this.ptrStorrelse = 8 ? 24 : 20)
+        NumPut("Int",this.kapasitet,b,this.ptrStorrelse = 8 ? 32 : 24)
+        skrevet := 0
+        if !DllCall("WriteProcessMemory","Ptr",this.handle,"Ptr",this.remote,"Ptr",b,"UPtr",b.Size,"UPtr*",&skrevet)
+            return {ok:false,tekst:"",steg:"WriteProcessMemory",feil:A_LastError,avkortet:false}
+        if (skrevet != b.Size)
+            return {ok:false,tekst:"",steg:"WriteProcessMemory",feil:299,avkortet:false}
+        tegn := 0
+        DllCall("SetLastError","UInt",0)
+        levert := DllCall("User32\SendMessageTimeoutW","Ptr",this.hwnd,"UInt",variant = "A" ? 0x102D : 0x1073
+            ,"UPtr",rad,"Ptr",this.remote,"UInt",2,"UInt",250,"UPtr*",&tegn,"Ptr")
+        kode := A_LastError
+        if !levert
+            return {ok:false,tekst:"",steg:"SendMessageTimeout",feil:kode,avkortet:false}
+        if !tegn
+            return {ok:true,tekst:"",steg:"tomt svar",feil:0,avkortet:false}
+        lengde := Min(tegn,this.kapasitet-1), antBytes := (lengde+1) * (variant = "A" ? 1 : 2), lest := 0
+        data := Buffer(antBytes,0)
+        if !DllCall("ReadProcessMemory","Ptr",this.handle,"Ptr",this.remote + this.struktur,"Ptr",data,"UPtr",antBytes,"UPtr*",&lest)
+            return {ok:false,tekst:"",steg:"ReadProcessMemory",feil:A_LastError,avkortet:false}
+        if (lest != antBytes)
+            return {ok:false,tekst:"",steg:"ReadProcessMemory",feil:299,avkortet:false}
+        tekst := StrGet(data,lengde,variant = "A" ? "CP0" : "UTF-16")
+        return {ok:true,tekst:Trim(tekst),steg:"tekst lest",feil:0,avkortet:tegn >= this.kapasitet-1}
+    }
+}
+
+class TrioOppgaveloggDiagnose {
+    static MaksNoder := 140
+    SperretPid := 0                   ; høyest ett mislykket automatisk åpningsforsøk per Trio-prosess
+
+    ; Try the learned Trio window first; also detect a single unambiguous
+    ; Trio Attendant top-level window if learning saved a different title.
+    ; No app activation, interaction, or raw window-title logging.
+    FinnTrio() {
+        id := Innst("SMKontakt", "TrioVindu", "")
+        h := 0
+        if (id != "") {
+            try h := FinnVindu(id)
+            if (h && this.ErTrioHoved(h))
+                return h
+        }
+        candidates := []
+        for h in WinGetList() {
+            if this.ErTrioHoved(h)
+                candidates.Push(h)
+        }
+        return candidates.Length = 1 ? candidates[1] : 0
+    }
+
+    ErTrioHoved(hwnd) {
+        if !hwnd
+            return false
+        try {
+            if (WinGetPID("ahk_id " hwnd) = ProcessExist())
+                return false
+            if ErNettleser(hwnd)
+                return false
+            tittel := WinGetTitle("ahk_id " hwnd)
+            exe := WinGetProcessName("ahk_id " hwnd)
+            if RegExMatch(tittel, "i)oppgavelogg")
+                return false
+            if !(WinGetStyle("ahk_id " hwnd) & 0x10000000)
+                return false
+            return RegExMatch(tittel, "i)trio\s*attendant|^trio\b") || RegExMatch(exe, "i)trio|attendant")
+        }
+        return false
+    }
+
+    FinnLoggvindu(trioHwnd) {
+        if !trioHwnd
+            return 0
+        pid := 0, exe := ""
+        try {
+            pid := WinGetPID("ahk_id " trioHwnd)
+            exe := StrLower(WinGetProcessName("ahk_id " trioHwnd))
+        }
+        if !pid
+            return 0
+        candidates := []
+        try {
+            for h in WinGetList() {
+                if (h = trioHwnd)
+                    continue
+                title := WinGetTitle("ahk_id " h)
+                if !RegExMatch(title, "i)oppgavelogg|task\s*(?:log|history)")
+                    continue
+                cpid := WinGetPID("ahk_id " h)
+                cexe := StrLower(WinGetProcessName("ahk_id " h))
+                ; Allow a second Trio process with the same executable, but
+                ; never search for or interact with an unrelated application.
+                if (cpid = pid || (exe != "" && cexe = exe))
+                    candidates.Push(h)
+            }
+        }
+        return candidates.Length = 1 ? candidates[1] : 0
+    }
+
+    ; Ingen WinActivate, Send, klikk eller endring av aktiv fane.
+    ; MenuSelect mot Trio-vinduets standard Win32-meny, også når Trio
+    ; ligger i bakgrunnen. Forsøkes først etter fysisk inaktivitet.
+    ApneVedBehov(leggBak := true) {
+        trio := this.FinnTrio()
+        if !trio
+            return {kode:"trio-mangler", status:"Trio Attendant er ikke funnet.", logg:0}
+        logg := this.FinnLoggvindu(trio)
+        if logg {
+            this.SperretPid := 0
+            return {kode:"finnes", status:"Oppgavelogg er allerede åpen. Endrer ikke vinduet.", logg:logg}
+        }
+        pid := WinGetPID("ahk_id " trio)
+        if (this.SperretPid = pid)
+            return {kode:"sperret", status:"Automatisk åpning ble forsøkt uten bekreftet loggvindu. Åpne manuelt eller start QuickerKeys på nytt.", logg:0}
+        if (A_TimeIdlePhysical < 4000)
+            return {kode:"venter", status:"Venter til tastatur og mus har vært i ro i 4 sekunder.", logg:0}
+
+        ; Kan gi et kort vindusglimt ved første åpning, selv om hovedvinduet
+        ; ikke aktiveres eksplisitt. Ingen forsøk på å ta tilbake brukerfokus.
+        try MenuSelect "ahk_id " trio, , "Vis", "Oppgavelogg"
+        catch {
+            this.SperretPid := pid
+            return {kode:"menyfeil", status:"Trio støttet ikke bakgrunnskommandoen Vis > Oppgavelogg. Åpne loggen manuelt.", logg:0}
+        }
+        funnet := 0
+        loop 12 {
+            Sleep 100
+            funnet := this.FinnLoggvindu(trio)
+            if funnet
+                break
+        }
+        if !funnet {
+            this.SperretPid := pid
+            return {kode:"ikke-funnet", status:"Vis-menyen ble brukt, men Oppgavelogg ble ikke gjenkjent. Ingen flere automatiske forsøk i denne Trio-økten.", logg:0}
+        }
+
+        ; Trio 10.1.35 mister UIA-tabellen når Oppgavelogg minimeres.
+        ; Flytt derfor et NYTT loggvindu nederst i Z-rekkefølgen i stedet.
+        ; Manuelt åpnede vinduer røres ikke.
+        if leggBak {
+            try WinMoveBottom "ahk_id " funnet
+            catch {
+                return {kode:"bakgrunn-feil", status:"Oppgavelogg åpnet, men kunne ikke legges bak andre vinduer.", logg:funnet}
+            }
+            return {kode:"opprettet", status:"Oppgavelogg åpnet og lagt bak andre vinduer (ikke minimert).", logg:funnet}
+        }
+        return {kode:"opprettet", status:"Oppgavelogg åpnet uten minimering.", logg:funnet}
+    }
+
+    ; Sett allerede åpen Oppgavelogg bakerst uten å hente den foran.
+    ; Hvis brukeren har minimert den, gjenopprett uten å aktivere
+    ; (SW_SHOWNOACTIVATE=4). Returnerer bare anonym status.
+    LeggBakgrunn(loggHwnd) {
+        if !WinExist("ahk_id " loggHwnd)
+            return {ok:false, status:"Oppgavelogg finnes ikke lenger."}
+        try {
+            if (WinGetMinMax("ahk_id " loggHwnd) = -1) {
+                ; SW_SHOWNOACTIVATE: gjenopprett i tidligere størrelse uten fokus.
+                if !DllCall("User32\ShowWindowAsync", "Ptr", loggHwnd, "Int", 4, "Int")
+                    return {ok:false, status:"Windows kunne ikke gjenopprette Oppgavelogg uten fokus."}
+                Sleep 120
+                if (WinGetMinMax("ahk_id " loggHwnd) = -1)
+                    return {ok:false, status:"Oppgavelogg er fortsatt minimert etter gjenopprettingsforsøk."}
+            }
+            ; Unngå å legge det bakerst dersom brukeren akkurat har aktivert
+            ; det mens vi undersøkte vinduets tilstand.
+            if WinActive("ahk_id " loggHwnd)
+                return {ok:false, status:"Oppgavelogg er i bruk; flyttes ikke nå."}
+            WinMoveBottom "ahk_id " loggHwnd
+            return {ok:true, status:"Oppgavelogg ligger bak andre vinduer, uten minimering."}
+        } catch as feil {
+            return {ok:false, status:"Bakgrunnsplassering feilet: " SubStr(feil.Message, 1, 130)}
+        }
+    }
+
+    ; RC9: all layouts use the same header-based field map and validator.
+    ; No concatenation of adjacent rows and no fixed 13-column assumption.
+    TestRadstruktur(loggHwnd) {
+        r := this.HentDagensData(loggHwnd)
+        return {ok:r.ok, status:r.status, detaljer:r.detaljer}
+    }
+
+    NyLesing() {
+        return {ok:false, status:"", kilde:"", sett:Map(), kandidater:0, avvist:0
+            , andreDager:0, begrenset:false, detaljer:"", noder:0, lesefeil:0
+            , behandlingMangler:0, behandlingUgyldig:0
+            , tidsformer:Map(), tidFraName:0, tidFraValue:0, tidskonflikt:0
+            , teksttilstand:Map(), valgteTidskilder:Map(), tommeTidsceller:0, radnavnFormer:Map()
+            , utenPlassering:0, bekreftedeKart:0, datoIDag:FormatTime(,"yyyyMMdd")
+            , grunner:Map("felt",0,"dato",0,"id",0,"konflikt",0)
+            , nativeForsok:[], listeklasse:"", rammeverk:""
+            , former:Map(), funnfelt:Map(), kolonner:[], kart:Map(), metoder:Map()}
+    }
+
+    HentDagensData(loggHwnd, kunUia := false) {
+        out := this.NyLesing()
+        if !loggHwnd {
+            out.status := "Oppgavelogg er ikke tilgjengelig."
+            return this.AvsluttLesing(out)
+        }
+        try {
+            if (WinGetMinMax("ahk_id " loggHwnd) = -1) {
+                out.status := "Oppgavelogg er minimert – venter på bakgrunnsmodus."
+                return this.AvsluttLesing(out)
+            }
+            rot := UiaFraVindu(loggHwnd)
+            if !IsObject(rot) {
+                out.status := "UIA-rot kunne ikke leses."
+                return this.AvsluttLesing(out)
+            }
+            ; Native report ListViews: use their own header, including unnamed
+            ; icon columns. HDM_ORDERTOINDEX maps displayed to logical columns.
+            kandidater := []
+            for ctrl in (kunUia ? [] : WinGetControlsHwnd("ahk_id " loggHwnd)) {
+                klasse := WinGetClass("ahk_id " ctrl)
+                if !this.ErNativeListeklasse(klasse)
+                    continue
+                forsok := {klasse:klasse,steg:"LVM_GETHEADER",rader:-1,kolonner:-1,tidsverdier:0
+                    ,ownerData:(WinGetStyle("ahk_id " ctrl) & 0x1000) != 0}
+                out.nativeForsok.Push(forsok)
+                try {
+                    forsok.rader := ListViewGetContent("Count",ctrl,"ahk_id " loggHwnd)
+                    forsok.kolonner := ListViewGetContent("Count Col",ctrl,"ahk_id " loggHwnd)
+                    hdr := SendMessage(0x101F, 0, 0, ctrl) ; LVM_GETHEADER (read-only)
+                    if !hdr {
+                        forsok.steg := "ingen native header"
+                        continue
+                    }
+                    forsok.steg := "kolonneoverskrifter"
+                    schema := this.LesNativeKolonner(hdr,forsok.kolonner)
+                    if !this.HarIdentitetsfelt(schema.kart) {
+                        forsok.steg := "Tidspunkt/Oppgave-ID ikke koblet til native indeks"
+                        continue
+                    }
+                    forsok.steg := "ListViewGetContent"
+                    kolonneData := Map(), maks := 0
+                    for visIndex, kol in schema.kolonner {
+                        if (kol.key = "")
+                            continue
+                        logisk := kol.nativeIndex
+                        if (logisk < 0 || logisk >= forsok.kolonner)
+                            continue
+                        verdier := StrSplit(ListViewGetContent("Col" (logisk + 1), ctrl,
+                            "ahk_id " loggHwnd), "`n", "`r")
+                        kolonneData[kol.key] := verdier
+                        maks := Max(maks, verdier.Length)
+                    }
+                    dagensKandidater := 0
+                    ; The date column is already loaded. Scan its entire
+                    ; history; the cap applies to today's tasks, not position.
+                    loop maks {
+                        nr := A_Index, felt := Map()
+                        if !kolonneData.Has("tidspunkt")
+                            continue
+                        tider := kolonneData["tidspunkt"]
+                        felt["tidspunkt"] := nr <= tider.Length ? Trim(tider[nr]) : ""
+                        if (felt["tidspunkt"] != "")
+                            forsok.tidsverdier++
+                        if this.ErDagensTid(felt["tidspunkt"],out) {
+                            if (dagensKandidater >= 2000) {
+                                out.begrenset := true
+                                continue
+                            }
+                            dagensKandidater++
+                            for key, verdier in kolonneData
+                                felt[key] := nr <= verdier.Length ? Trim(verdier[nr]) : ""
+                        }
+                        ; Empty native text is common in owner-drawn controls;
+                        ; it must not suppress the UIA fallback.
+                        if (felt.Has("tidspunkt") && felt["tidspunkt"] != "")
+                            kandidater.Push({felt:felt, konflikt:false})
+                    }
+                    if !kandidater.Length {
+                        kandidater := this.ProvKontrollertNative(ctrl,schema,out,forsok)
+                        if kandidater.Length
+                            forsok.steg := "kontrollert LVM_GETITEMTEXT" forsok.probeValgt
+                    }
+                    if !kandidater.Length
+                        forsok.steg := "ingen native tidsverdier"
+                    else if !forsok.HasOwnProp("probeValgt")
+                        forsok.steg := "native tidsverdier lest"
+                    if kandidater.Length {
+                        out.kilde := "Win32 ListView / kolonnenavn"
+                        out.kolonner := schema.kolonner, out.kart := schema.kart
+                        break
+                    }
+                } catch as feil {
+                    forsok.steg := "feil ved " forsok.steg " (" Type(feil) ", linje " feil.Line ")"
+                    out.lesefeil++
+                }
+            }
+            if !kandidater.Length {
+                lister := UiaFinnAlle(rot, 50008)
+                if (lister.Length != 1) {
+                    out.status := "Fant " lister.Length " UIA-lister; trenger nøyaktig én."
+                    return this.AvsluttLesing(out)
+                }
+                out.kilde := "UIA List / kolonnenavn og celleplassering"
+                out.listeklasse := SubStr(RegExReplace(UiaStreng(lister[1],30012),"[^a-zA-Z0-9_.#-]","?"),1,120)
+                framework := UiaStreng(lister[1],30024)
+                out.rammeverk := InStr("|Win32|WinForm|WPF|XAML|Qt|Chrome|","|" framework "|") ? framework : "annet/ukjent"
+                schema := this.LesKolonner(rot)
+                out.kolonner := schema.kolonner, out.kart := schema.kart
+                if !this.HarIdentitetsfelt(out.kart) {
+                    out.status := "Kan ikke koble Tidspunkt og Oppgave-ID entydig. Se overskriftene nedenfor."
+                    return this.AvsluttLesing(out)
+                }
+                slutt := A_TickCount + 4000
+                kandidater := this.LesUiaRader(lister[1], schema, out, slutt)
+            }
+            this.VurderRader(kandidater, out)
+        } catch as feil {
+            ; Exception messages can contain provider text. Export metadata only.
+            out.status := "Feil under Trio-lesing: " Type(feil) " (linje " feil.Line ")."
+        }
+        return this.AvsluttLesing(out)
+    }
+
+    ProvKontrollertNative(ctrl, schema, out, forsok) {
+        kandidater := [], kanal := ""
+        forsok.prober := []
+        try {
+            kanal := TrioNativeTekstKanal(ctrl)
+            forsok.targetBits := kanal.ptrStorrelse * 8
+            tidskolonne := -1
+            for kol in schema.kolonner {
+                if (kol.key = "tidspunkt")
+                    tidskolonne := kol.nativeIndex
+            }
+            if (tidskolonne < 0 || forsok.rader < 1)
+                return kandidater
+            valgt := "", frist := A_TickCount + 6000
+            utvalg := Map(0,true,Min(1,forsok.rader-1),true,Max(0,forsok.rader-2),true,forsok.rader-1,true)
+            for variant in ["W","A"] {
+                tall := {variant:variant,lest:0,tomme:0,tekst:0,feil:0,sisteSteg:"",sisteFeil:0}
+                forsok.prober.Push(tall)
+                for rad in utvalg {
+                    svar := kanal.Les(rad,tidskolonne,variant)
+                    tall.lest++
+                    if !svar.ok {
+                        tall.feil++, tall.sisteSteg := svar.steg, tall.sisteFeil := svar.feil
+                        break
+                    }
+                    if (svar.tekst = "")
+                        tall.tomme++
+                    else {
+                        tall.tekst++
+                        if this.Tidsstempel(svar.tekst)
+                            valgt := variant
+                    }
+                    if (A_TickCount >= frist)
+                        break
+                }
+                if (valgt != "" || A_TickCount >= frist)
+                    break
+            }
+            if (valgt = "")
+                return kandidater
+            forsok.probeValgt := valgt
+            dagensN := 0
+            loop forsok.rader {
+                if (A_TickCount >= frist) {
+                    out.begrenset := true
+                    break
+                }
+                nr := A_Index-1
+                tid := kanal.Les(nr,tidskolonne,valgt)
+                if !tid.ok {
+                    forsok.probeFeil := tid.steg " kode=" tid.feil
+                    break
+                }
+                if (tid.tekst = "")
+                    continue
+                felt := Map("tidspunkt",tid.tekst)
+                forsok.tidsverdier++
+                if this.ErDagensTid(tid.tekst,out) {
+                    if (dagensN >= 2000) {
+                        out.begrenset := true
+                        continue
+                    }
+                    dagensN++
+                    for kol in schema.kolonner {
+                        if (kol.key = "" || kol.key = "tidspunkt")
+                            continue
+                        svar := kanal.Les(nr,kol.nativeIndex,valgt)
+                        if (svar.ok && !svar.avkortet)
+                            felt[kol.key] := svar.tekst
+                        else if svar.avkortet
+                            out.begrenset := true
+                        else
+                            forsok.probeFeil := svar.steg " kode=" svar.feil
+                    }
+                }
+                kandidater.Push({felt:felt,konflikt:false})
+            }
+        } catch as feil {
+            forsok.probeFeil := Type(feil) " kode=" (feil.HasProp("Number") ? feil.Number : 0)
+        } finally {
+            if IsObject(kanal)
+                kanal.Lukk()
+        }
+        return kandidater
+    }
+
+    LesNativeKolonner(headerHwnd, antKol) {
+        rot := UiaFraVindu(headerHwnd)
+        kolonner := [], kart := Map(), indekser := Map(), duplikat := Map()
+        ; SysHeader32 accessibility child IDs are display indexes + 1.
+        ; Translate with HDM_ORDERTOINDEX; no rectangle is required.
+        for el in UiaFinnAlle(rot,50035) {
+            id := UiaTall(el,30091) ; LegacyIAccessible.ChildId
+            if (id < 1 || id > antKol || indekser.Has(id))
+                continue
+            logisk := SendMessage(0x120F,id-1,0,headerHwnd) ; HDM_ORDERTOINDEX
+            if (logisk < 0 || logisk >= antKol)
+                continue
+            indekser[id] := true
+            navn := UiaStreng(el,30005), key := this.KolonneKey(navn)
+            kolonner.Push({key:key,navn:this.OverskriftTilDiagnose(navn),nativeIndex:logisk})
+            if (key != "") {
+                if kart.Has(key)
+                    duplikat[key] := true
+                kart[key] := true
+            }
+        }
+        for key in duplikat
+            kart.Delete(key)
+        if this.HarIdentitetsfelt(kart)
+            return {kolonner:kolonner,kart:kart}
+        ; Providers without logical child IDs can still use the previous
+        ; display geometry, but ONLY with the complete visible header set.
+        schema := this.LesKolonner(rot)
+        if (schema.kolonner.Length = antKol && this.HarIdentitetsfelt(schema.kart)) {
+            for i, kol in schema.kolonner
+                kol.nativeIndex := SendMessage(0x120F,i-1,0,headerHwnd)
+            return schema
+        }
+        return {kolonner:kolonner,kart:Map()}
+    }
+
+    ErNativeListeklasse(klasse) {
+        ; WinForms superclasses the native common control and changes its
+        ; registered class name, while retaining the ListView messages.
+        return RegExMatch(klasse,"i)^(?:SysListView32|WindowsForms\d*\.SysListView32(?:\.[a-z0-9_]+)*)$") > 0
+    }
+
+    NormaliserOverskrift(navn) {
+        ; UIA labels may include soft hyphens, zero-width/directional marks,
+        ; NBSP, line wrapping or mnemonic '&'. Keep exact semantic matching.
+        return RegExReplace(StrLower(navn), "[\s\p{Z}\p{Cf}.():_–—&-]", "")
+    }
+
+    KolonneKey(navn) {
+        n := this.NormaliserOverskrift(navn)
+        switch n {
+            case "tidspunkt", "dato/tid", "datotid": return "tidspunkt"
+            case "oppgave", "oppgaveid", "oppgavenr", "oppgavenummer": return "oppgave"
+            case "behandlingstid", "behandltid", "behtid": return "behandling"
+            case "køtid", "kotid": return "ko"
+            case "koblet": return "koblet"
+            case "kommentar", "kommentarim": return "kommentar"
+        }
+        return "" ; Unknown headers are reported as labels, never inferred from row values.
+    }
+
+    Rektangel(el) {
+        r := Buffer(16, 0)
+        try ComCall(43, el, "Ptr", r) ; get_CurrentBoundingRectangle: RECT*
+        catch
+            return ""
+        venstre := NumGet(r, 0, "Int"), topp := NumGet(r, 4, "Int")
+        hoyre := NumGet(r, 8, "Int"), bunn := NumGet(r, 12, "Int")
+        return hoyre > venstre && bunn > topp
+            ? {l:venstre, t:topp, r:hoyre, b:bunn} : ""
+    }
+
+    LesKolonner(rot) {
+        kolonner := [], kart := Map(), duplikat := Map()
+        if !IsObject(rot)
+            return {kolonner:kolonner, kart:kart}
+        for el in UiaFinnAlle(rot, 50035) { ; HeaderItem, including unnamed icons
+            rekt := this.Rektangel(el)
+            if !IsObject(rekt)
+                continue
+            navn := UiaStreng(el, 30005)
+            key := this.KolonneKey(navn)
+            kol := {key:key, navn:this.OverskriftTilDiagnose(navn), l:rekt.l, r:rekt.r, t:rekt.t, b:rekt.b}
+            ; Insertion sort by display position, never by text content.
+            i := 1
+            while (i <= kolonner.Length && kolonner[i].l < kol.l)
+                i++
+            kolonner.InsertAt(i, kol)
+            if (key != "") {
+                if kart.Has(key)
+                    duplikat[key] := true
+                kart[key] := true
+            }
+        }
+        ; Multiple header bands / overlapping columns are ambiguous.
+        for i, kol in kolonner {
+            if (i > 1 && (kol.l < kolonner[i-1].r || kol.t != kolonner[1].t)) {
+                kart := Map()
+                break
+            }
+        }
+        for key in duplikat {
+            if kart.Has(key)
+                kart.Delete(key)
+        }
+        return {kolonner:kolonner, kart:kart}
+    }
+
+    HarIdentitetsfelt(kart) => kart.Has("tidspunkt") && kart.Has("oppgave")
+
+    ; Bounded traversal scoped to the List. Stop at outer row items so that
+    ; nested ListItem cells are not counted as independent tasks.
+    Barn(el, out, slutt, maks := 64) {
+        resultat := [], p := 0
+        if (A_TickCount >= slutt) {
+            out.begrenset := true
+            return resultat
+        }
+        try {
+            ComCall(14, Uia().uia, "Ptr*", &p)
+            walker := ComValue(13, p)
+            p := 0
+            ComCall(4, walker, "Ptr", el, "Ptr*", &p)
+            while p {
+                if (resultat.Length >= maks || out.noder >= 6000 || A_TickCount >= slutt) {
+                    out.begrenset := true
+                    break
+                }
+                barnEl := ComValue(13, p)
+                resultat.Push(barnEl), out.noder++
+                p := 0
+                ComCall(6, walker, "Ptr", barnEl, "Ptr*", &p)
+            }
+        } catch {
+            out.lesefeil++
+        }
+        return resultat
+    }
+
+    LesUiaRader(liste, schema, out, slutt) {
+        ko := [{el:liste, d:0}], rader := Map(), utenRekt := [], i := 1
+        while (i <= ko.Length && A_TickCount < slutt) {
+            post := ko[i], i++
+            type := UiaTall(post.el, 30003)
+            if (post.d > 0 && (type = 50007 || type = 50029)) {
+                rekt := this.Rektangel(post.el)
+                rad := this.LesUiaRad(post.el, schema, out, slutt)
+                if (rad.HasOwnProp("blader") && rad.blader.Length > 1) {
+                    utenRekt.Push(rad)
+                } else if IsObject(rekt) {
+                    ; For ListItem-per-cell providers, cells on the exact same
+                    ; row band are merged by geometry, never by a rolling offset.
+                    key := rekt.t ":" rekt.b
+                    if !rader.Has(key)
+                        rader[key] := {felt:Map(), konflikt:false}
+                    this.FlettFelt(rader[key], rad)
+                } else {
+                    utenRekt.Push(rad)
+                }
+                if (rader.Count + utenRekt.Length >= 2000) {
+                    out.begrenset := true
+                    break
+                }
+                continue
+            }
+            if (post.d >= 6) {
+                out.begrenset := true
+                continue
+            }
+            for el in this.Barn(post.el, out, slutt, 2000)
+                ko.Push({el:el, d:post.d + 1})
+        }
+        if (i <= ko.Length)
+            out.begrenset := true
+        resultat := []
+        for key, rad in rader
+            resultat.Push(rad)
+        for rad in utenRekt
+            resultat.Push(rad)
+        this.SupplerUtenPlassering(resultat,schema,out,slutt)
+        return resultat
+    }
+
+    LesUiaRad(el, schema, out, slutt) {
+        rad := {felt:Map(), konflikt:false, blader:[], feltindeks:Map(), form:""}
+        navn := UiaStreng(el, 30005)
+        if (schema.kolonner.Length && schema.kolonner[1].key = "tidspunkt") {
+            this.Tell(out.radnavnFormer,"Name=" this.MaskertFormat(navn))
+            if this.Tidsstempel(navn)
+                rad.radTid := navn
+        }
+        if InStr(navn, A_Tab) {
+            felt := StrSplit(navn, A_Tab)
+            if (felt.Length = schema.kolonner.Length) {
+                for i, kol in schema.kolonner {
+                    if (kol.key != "" && schema.kart.Has(kol.key))
+                        rad.felt[kol.key] := Trim(felt[i])
+                }
+                this.Tell(out.metoder, "tabellrad")
+                return rad
+            }
+        }
+        celler := this.Barn(el, out, slutt)
+        strukturRad := this.LesRadceller(celler, schema, out)
+        if IsObject(strukturRad) {
+            if (rad.HasOwnProp("radTid") && (!strukturRad.felt.Has("tidspunkt")
+                || !this.Tidsstempel(strukturRad.felt["tidspunkt"]))) {
+                strukturRad.radTid := rad.radTid
+                this.LesKartlagteFelt(strukturRad,strukturRad.feltindeks,out)
+            }
+            this.Tell(out.former, "celler=" celler.Length)
+            this.Tell(out.metoder, "kolonnejusterte radceller")
+            return strukturRad
+        }
+        ko := [{el:el, d:0, sti:""}], i := 1, form := ""
+        while (i <= ko.Length && i <= 64 && A_TickCount < slutt) {
+            post := ko[i], i++
+            barnListe := post.d = 0 ? celler : this.Barn(post.el, out, slutt)
+            if barnListe.Length {
+                if (post.d >= 4) {
+                    out.begrenset := true
+                    continue
+                }
+                for nr, barnEl in barnListe
+                    ko.Push({el:barnEl, d:post.d+1, sti:post.sti "." nr})
+                continue
+            }
+            rad.blader.Push(post.el)
+            form .= post.sti ":" UiaTall(post.el,30003) "|"
+            rekt := this.Rektangel(post.el)
+            if !IsObject(rekt)
+                continue
+            key := this.CelleKolonne(rekt, schema)
+            if (key = "")
+                continue
+            rad.feltindeks[rad.blader.Length] := key
+        }
+        if (i <= ko.Length)
+            out.begrenset := true
+        else
+            rad.form := form ; Only complete traversals may teach a layout.
+        this.Tell(out.former, "blad=" Min(rad.blader.Length,64))
+        this.Tell(out.metoder, "celleplassering")
+        this.LesKartlagteFelt(rad,rad.feltindeks,out)
+        return rad
+    }
+
+    ; Learn a slot map only from a complete, geometrically aligned row
+    ; with valid identity. Require the same leaf paths/types/column count
+    ; and no contradictory maps before reading cells without rectangles.
+    SupplerUtenPlassering(rader, schema, out, slutt) {
+        kart := Map(), sperret := Map()
+        for rad in rader {
+            if (!rad.HasOwnProp("form") || rad.form = "" || rad.konflikt
+                || rad.blader.Length != schema.kolonner.Length
+                || !rad.felt.Has("tidspunkt") || !this.Tidsstempel(rad.felt["tidspunkt"]))
+                continue
+            alle := true, sett := Map()
+            for indeks, key in rad.feltindeks {
+                if sett.Has(key)
+                    alle := false
+                sett[key] := true
+            }
+            for key in schema.kart {
+                if !sett.Has(key)
+                    alle := false
+            }
+            if !alle
+                continue
+            if kart.Has(rad.form) {
+                for indeks, key in rad.feltindeks {
+                    if (!kart[rad.form].Has(indeks) || kart[rad.form][indeks] != key)
+                        sperret[rad.form] := true
+                }
+            } else
+                kart[rad.form] := rad.feltindeks
+        }
+        out.bekreftedeKart := kart.Count - sperret.Count
+        for rad in rader {
+            if (A_TickCount >= slutt) {
+                out.begrenset := true
+                break
+            }
+            if (!rad.HasOwnProp("form") || rad.form = "" || !kart.Has(rad.form)
+                || sperret.Has(rad.form) || rad.konflikt)
+                continue
+            if (rad.felt.Has("tidspunkt") && !this.ErDagensTid(rad.felt["tidspunkt"],out))
+                continue
+            mangler := false
+            for indeks, key in kart[rad.form] {
+                if !rad.felt.Has(key)
+                    mangler := true
+            }
+            if !mangler
+                continue
+            this.LesKartlagteFelt(rad,kart[rad.form],out)
+            out.utenPlassering++
+        }
+    }
+
+    ; Win32's UIA provider exposes the first Text cell with a rectangle
+    ; spanning the WHOLE row. Require a complete one-to-one set of direct
+    ; row cells and align their left edges to headers before using it.
+    ; This is also independent of provider enumeration/display order.
+    LesRadceller(celler, schema, out) {
+        if (celler.Length != schema.kolonner.Length || celler.Length < 3)
+            return ""
+        koblinger := [], brukt := Map(), helradCelle := ""
+        for celleIndex, el in celler {
+            type := UiaTall(el, 30003)
+            if !(type = 50020 || type = 50007 || type = 50029)
+                return ""
+            rekt := this.Rektangel(el)
+            if !IsObject(rekt)
+                return ""
+            ; Full-row Text bounds do not follow the first logical column
+            ; after the user drags headers. Reserve this one cell, then map
+            ; it to the sole remaining header after all real bounds match.
+            if (Abs(rekt.l - schema.kolonner[1].l) <= 2
+                && Abs(rekt.r - schema.kolonner[-1].r) <= 2) {
+                if IsObject(helradCelle)
+                    return ""
+                helradCelle := {el:el,indeks:celleIndex}
+                continue
+            }
+            matchIndex := 0
+            for i, kol in schema.kolonner {
+                if (Abs(rekt.l - kol.l) <= 2) {
+                    if matchIndex
+                        return ""
+                    matchIndex := i
+                }
+            }
+            if (!matchIndex || brukt.Has(matchIndex)
+                || rekt.r > schema.kolonner[-1].r + 2)
+                return ""
+            brukt[matchIndex] := true
+            koblinger.Push({el:el, kol:schema.kolonner[matchIndex], indeks:celleIndex})
+        }
+        if IsObject(helradCelle) {
+            mangler := 0
+            for i, kol in schema.kolonner {
+                if !brukt.Has(i) {
+                    if mangler
+                        return ""
+                    mangler := i
+                }
+            }
+            if !mangler
+                return ""
+            koblinger.Push({el:helradCelle.el,kol:schema.kolonner[mangler],indeks:helradCelle.indeks})
+        }
+        if (koblinger.Length != schema.kolonner.Length)
+            return ""
+        rad := {felt:Map(), konflikt:false, blader:celler, feltindeks:Map(), form:""}
+        for i, el in celler
+            rad.form .= "." i ":" UiaTall(el,30003) "|"
+        for kobling in koblinger {
+            key := kobling.kol.key
+            if (key = "" || !schema.kart.Has(key))
+                continue
+            rad.feltindeks[kobling.indeks] := key
+        }
+        this.LesKartlagteFelt(rad,rad.feltindeks,out)
+        return rad
+    }
+
+    ErDagensTid(tekst, out) {
+        stamp := this.Tidsstempel(tekst)
+        return stamp != "" && SubStr(stamp,1,8) = out.datoIDag
+    }
+
+    LesKartlagteFelt(rad, kart, out) {
+        ; A ListItem-per-cell layout has no complete row context yet;
+        ; retain its one known field for later same-row geometry merging.
+        if (rad.blader.Length = 1) {
+            for indeks, key in kart
+                this.SettFelt(rad,key,this.LesCelleVerdi(rad.blader[indeks],key,out))
+            return
+        }
+        ; Read the timestamp FIRST, irrespective of visual column order.
+        konflikter := out.tidskonflikt
+        for indeks, key in kart {
+            if (key = "tidspunkt" && !rad.felt.Has(key))
+                this.SettFelt(rad,key,this.LesCelleVerdi(rad.blader[indeks],key,out))
+        }
+        if (out.tidskonflikt > konflikter) {
+            rad.konflikt := true
+            return
+        }
+        if (rad.HasOwnProp("radTid") && (!rad.felt.Has("tidspunkt") || !this.Tidsstempel(rad.felt["tidspunkt"]))) {
+            rad.felt["tidspunkt"] := rad.radTid
+            this.Tell(out.valgteTidskilder,"rad Name (første kolonne)")
+        }
+        if (!rad.felt.Has("tidspunkt") || !this.ErDagensTid(rad.felt["tidspunkt"],out))
+            return
+        for indeks, key in kart {
+            if !rad.felt.Has(key)
+                this.SettFelt(rad,key,this.LesCelleVerdi(rad.blader[indeks],key,out))
+        }
+    }
+
+    CelleKolonne(rekt, schema) {
+        for kol in schema.kolonner {
+            if (kol.key != "" && schema.kart.Has(kol.key)
+                && rekt.l >= kol.l - 2 && rekt.r <= kol.r + 2)
+                return kol.key
+        }
+        return ""
+    }
+
+    SettFelt(rad, key, verdi) {
+        if (rad.felt.Has(key) && rad.felt[key] != verdi
+            && rad.felt[key] != "" && verdi != "")
+            rad.konflikt := true
+        if !rad.felt.Has(key) || verdi != ""
+            rad.felt[key] := verdi
+    }
+
+    FlettFelt(rad, annen) {
+        rad.konflikt := rad.konflikt || annen.konflikt
+        for key, verdi in annen.felt
+            this.SettFelt(rad, key, verdi)
+    }
+
+    Tell(kart, key) => kart[key] := kart.Has(key) ? kart[key] + 1 : 1
+
+    VurderRader(kandidater, out, idag := "") {
+        if (idag = "")
+            idag := FormatTime(, "yyyyMMdd")
+        out.datoIDag := idag
+        out.kandidater := kandidater.Length
+        for rad in kandidater {
+            felt := rad.felt
+            for key in felt
+                this.Tell(out.funnfelt,key)
+            grunn := ""
+            if rad.konflikt
+                grunn := "konflikt"
+            else if !felt.Has("tidspunkt")
+                grunn := "felt"
+            else if !(stamp := this.Tidsstempel(felt["tidspunkt"]))
+                grunn := "dato"
+            else if (SubStr(stamp,1,8) != idag) {
+                out.andreDager++
+                continue ; No ID or other metrics needed for historical rows.
+            } else if !felt.Has("oppgave")
+                grunn := "felt"
+            else if !RegExMatch(felt["oppgave"], "^\d{1,15}$")
+                grunn := "id"
+            if (grunn != "") {
+                out.avvist++, out.grunner[grunn]++
+                continue
+            }
+            behandlingSek := felt.Has("behandling") ? this.VarighetSekunder(felt["behandling"]) : -1
+            if !felt.Has("behandling")
+                out.behandlingMangler++
+            else if (behandlingSek < 0)
+                out.behandlingUgyldig++
+            key := felt["oppgave"] "|" stamp
+            koSek := felt.Has("ko") ? this.VarighetSekunder(felt["ko"]) : -1
+            koblet := felt.Has("koblet") ? Trim(felt["koblet"]) : ""
+            out.sett[key] := {time:SubStr(stamp,9,2), sek:behandlingSek, behandlingKjent:behandlingSek >= 0
+                , koSek:koSek, koHarVerdi:koSek >= 0, videre:felt.Has("koblet")
+                    ? (koblet != "" && !RegExMatch(koblet,"i)^(?:N/A|-|0|nei|false)$")) : false
+                , videreKjent:felt.Has("koblet"), imKjent:felt.Has("kommentar")
+                , im:felt.Has("kommentar") && RegExMatch(felt["kommentar"],"i)\bIM\d{4,12}\b") > 0}
+        }
+        out.ok := out.sett.Count > 0
+        if out.ok {
+            out.status := "Leste " out.sett.Count " validerte oppgaver fra dagens dato."
+            if (out.behandlingMangler || out.behandlingUgyldig)
+                out.status .= " Behandlingstid er delvis eller helt ukjent."
+        } else if (out.andreDager > 0 && out.avvist = 0)
+            out.status := "Lesbare historiske oppgaver funnet, men ingen fra dagens dato i utvalget."
+        else if out.tommeTidsceller
+            out.status := "Ingen lesbar tidstekst i prøvde cellekilder. Se tekstkildediagnosen."
+        else
+            out.status := "Ingen dagens oppgaver kunne leses. Se feltdiagnosen nedenfor."
+    }
+
+    NormaliserTid(tekst) {
+        tekst := RegExReplace(tekst, "\p{Cf}", "")
+        tekst := Trim(RegExReplace(tekst, "[\s\p{Z}]+", " "))
+        ; Only strip the known field label, never search arbitrary text for
+        ; any date substring or guess a day from the current clock.
+        return RegExReplace(tekst, "i)^tidspunkt\s*[:=]\s*", "")
+    }
+
+    Tidsstempel(tekst) {
+        tekst := this.NormaliserTid(tekst)
+        if RegExMatch(tekst, "^(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$", &m)
+            stamp := m[3] Format("{:02}{:02}{:02}", Integer(m[2]), Integer(m[1]), Integer(m[4])) m[5] (m[6] != "" ? m[6] : "00")
+        else if RegExMatch(tekst, "^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):([0-5]\d)(?::([0-5]\d))?$", &m)
+            stamp := m[1] m[2] m[3] m[4] m[5] (m[6] != "" ? m[6] : "00")
+        else
+            return ""
+        try {
+            if (DateAdd(stamp, 0, "Seconds") = stamp)
+                return stamp
+        }
+        return ""
+    }
+
+    MaskertFormat(tekst) {
+        if (tekst = "")
+            return "(tom)"
+        ; All letters and numbers are masked BEFORE exporting any signature.
+        ; Escaped Unicode format/space codes reveal representation, not data.
+        tekst := RegExReplace(SubStr(tekst, 1, 80), "\p{L}", "x")
+        tekst := RegExReplace(tekst, "\p{N}", "d")
+        return this.OverskriftTilDiagnose(tekst)
+    }
+
+    VelgTidsverdi(navn, verdi, out) {
+        this.Tell(out.tidsformer,"Name=" this.MaskertFormat(navn) " | Value=" this.MaskertFormat(verdi))
+        n := this.Tidsstempel(navn), v := this.Tidsstempel(verdi)
+        if (n != "" && v != "" && n != v) {
+            out.tidskonflikt++
+            return "" ; Never silently choose between different valid dates.
+        }
+        if (v != "") {
+            out.tidFraValue++
+            return this.NormaliserTid(verdi)
+        }
+        if (n != "") {
+            out.tidFraName++
+            return this.NormaliserTid(navn)
+        }
+        return verdi != "" ? verdi : navn
+    }
+
+    CelleEgenskap(el, egenskap) {
+        variant := Buffer(24,0)
+        try {
+            ComCall(10,el,"Int",egenskap,"Ptr",variant)
+            vt := NumGet(variant,0,"UShort"), tekst := ""
+            if (vt = 8) {
+                ptr := NumGet(variant,8,"Ptr")
+                tekst := ptr ? StrGet(ptr,"UTF-16") : ""
+            }
+            return {tekst:tekst,vt:vt}
+        } catch {
+            return {tekst:"",vt:-1}
+        } finally {
+            DllCall("oleaut32\VariantClear","Ptr",variant)
+        }
+    }
+
+    CelleTextPattern(el, maks := 512) {
+        p := 0, rangePtr := 0, bstr := 0, steg := "GetCurrentPattern"
+        try {
+            ComCall(16,el,"Int",10014,"Ptr*",&p) ; GetCurrentPattern(Text)
+            if !p
+                return {tekst:"",stottet:false,steg:steg,hr:0}
+            pattern := ComValue(13,p)
+            steg := "DocumentRange"
+            ComCall(7,pattern,"Ptr*",&rangePtr) ; get_DocumentRange
+            if !rangePtr
+                return {tekst:"",stottet:true,steg:steg,hr:0}
+            textRange := ComValue(13,rangePtr)
+            steg := "GetText"
+            ComCall(12,textRange,"Int",maks,"Ptr*",&bstr) ; GetText, read-only
+            return {tekst:bstr ? StrGet(bstr,"UTF-16") : "",stottet:true,steg:"OK",hr:0}
+        } catch as feil {
+            return {tekst:"",stottet:false,steg:steg,hr:feil.HasProp("Number") ? feil.Number : 0}
+        } finally {
+            if bstr
+                DllCall("oleaut32\SysFreeString","Ptr",bstr)
+        }
+    }
+
+    FeltTekstGyldig(key, tekst) {
+        if (key = "tidspunkt")
+            return this.Tidsstempel(tekst) != ""
+        if (key = "oppgave")
+            return RegExMatch(Trim(tekst),"^\d{1,15}$") > 0
+        if (key = "behandling" || key = "ko")
+            return this.VarighetSekunder(tekst) >= 0
+        return Trim(tekst) != ""
+    }
+
+    RegistrerCelleKilde(out, key, kontekst, navn, info) {
+        if (key != "tidspunkt")
+            return
+        tilstand := info.HasOwnProp("vt") ? "VT=" info.vt : (info.stottet ? "støttet" : "utilgjengelig")
+        if (info.HasOwnProp("steg") && !info.stottet)
+            tilstand .= " steg=" info.steg " HRESULT=" info.hr
+        this.Tell(out.teksttilstand,kontekst " " navn " " tilstand " " (info.tekst = "" ? "tom" : "tekst"))
+        if (info.tekst != "")
+            this.Tell(out.tidsformer,kontekst " " navn "=" this.MaskertFormat(info.tekst))
+    }
+
+    VelgFeltkilde(key, kandidater, out) {
+        valgt := "", kilde := "", forste := ""
+        for kandidat in kandidater {
+            tekst := Trim(kandidat.tekst)
+            if (forste = "" && tekst != "")
+                forste := tekst
+            if !this.FeltTekstGyldig(key,tekst)
+                continue
+            if (key = "tidspunkt" && valgt != "" && this.Tidsstempel(valgt) != this.Tidsstempel(tekst)) {
+                out.tidskonflikt++
+                return {tekst:"",gyldig:false,tvetydig:true,kilde:""}
+            }
+            if (valgt = "")
+                valgt := tekst, kilde := kandidat.kilde
+        }
+        return {tekst:valgt != "" ? valgt : forste, gyldig:valgt != "",tvetydig:false,kilde:kilde}
+    }
+
+    CelleTekstkilder(el, key, out, kontekst := "celle") {
+        navn := this.CelleEgenskap(el,30005), verdi := this.CelleEgenskap(el,30045)
+        this.RegistrerCelleKilde(out,key,kontekst,"Name",navn)
+        this.RegistrerCelleKilde(out,key,kontekst,"Value",verdi)
+        if (key = "tidspunkt")
+            this.Tell(out.tidsformer,"Name=" this.MaskertFormat(navn.tekst) " | Value=" this.MaskertFormat(verdi.tekst))
+        valgt := this.VelgFeltkilde(key,[{tekst:verdi.tekst,kilde:kontekst " Value"}
+            ,{tekst:navn.tekst,kilde:kontekst " Name"}],out)
+        if (valgt.gyldig || valgt.tvetydig) {
+            if (key = "tidspunkt" && valgt.gyldig) {
+                if (valgt.kilde = kontekst " Value")
+                    out.tidFraValue++
+                else
+                    out.tidFraName++
+            }
+            return valgt
+        }
+        legacyNavn := this.CelleEgenskap(el,30092), legacyVerdi := this.CelleEgenskap(el,30093)
+        this.RegistrerCelleKilde(out,key,kontekst,"LegacyName",legacyNavn)
+        this.RegistrerCelleKilde(out,key,kontekst,"LegacyValue",legacyVerdi)
+        legacy := this.VelgFeltkilde(key,[{tekst:legacyVerdi.tekst,kilde:kontekst " LegacyValue"}
+            ,{tekst:legacyNavn.tekst,kilde:kontekst " LegacyName"}],out)
+        if (legacy.gyldig || legacy.tvetydig)
+            return legacy
+        text := this.CelleTextPattern(el)
+        this.RegistrerCelleKilde(out,key,kontekst,"TextPattern",text)
+        if this.FeltTekstGyldig(key,text.tekst)
+            return {tekst:Trim(text.tekst),gyldig:true,tvetydig:false,kilde:kontekst " TextPattern"}
+        if (valgt.tekst = "")
+            valgt.tekst := legacy.tekst != "" ? legacy.tekst : Trim(text.tekst)
+        return valgt
+    }
+
+    CelleForelder(el) => UiaForelder(el)
+    CelleKontrolltype(el) => UiaTall(el,30003)
+
+    LesCelleVerdi(el, key, out) {
+        valgt := this.CelleTekstkilder(el,key,out)
+        if valgt.tvetydig
+            return ""
+        if !valgt.gyldig {
+            forelder := el
+            loop 3 {
+                forelder := this.CelleForelder(forelder)
+                if !IsObject(forelder)
+                    break
+                type := this.CelleKontrolltype(forelder)
+                if (type = 50007 || type = 50029 || type = 50008 || type = 50028 || type = 50036)
+                    break ; Never read a whole row/list as a cell.
+                rekt := this.Rektangel(forelder)
+                if (!IsObject(rekt) || this.CelleKolonne(rekt,{kolonner:out.kolonner,kart:out.kart}) != key)
+                    break
+                alternativ := this.CelleTekstkilder(forelder,key,out,"celleforelder")
+                if alternativ.tvetydig
+                    return ""
+                if alternativ.gyldig {
+                    valgt := alternativ
+                    break
+                }
+            }
+        }
+        if (key = "tidspunkt" && valgt.gyldig)
+            this.Tell(out.valgteTidskilder,valgt.kilde)
+        if (key = "tidspunkt" && valgt.tekst = "")
+            out.tommeTidsceller++
+        return valgt.tekst
+    }
+
+    OverskriftTilDiagnose(navn) {
+        ; Called ONLY on HeaderItem Names, never on row/cell contents.
+        ; Make invisible Unicode characters visible without copying row data.
+        tekst := ""
+        loop parse SubStr(navn, 1, 100) {
+            tegn := A_LoopField
+            tekst .= RegExMatch(tegn, "[\p{Cf}\p{Cc}]") || (tegn != " " && RegExMatch(tegn,"\p{Z}"))
+                ? Format("[U+{:04X}]", Ord(tegn)) : tegn
+        }
+        return tekst != "" ? tekst : "(tom)"
+    }
+
+    AvsluttLesing(out) {
+        feltNavn := Map("tidspunkt","Tidspunkt", "oppgave","Oppgave-ID", "behandling","Behandlingstid"
+            , "ko","Køtid", "koblet","Koblet", "kommentar","Kommentar/IM")
+        tekst := "Dagens datofilter: " SubStr(out.datoIDag,7,2) "." SubStr(out.datoIDag,5,2) "." SubStr(out.datoIDag,1,4)
+            . "`nKolonner kartlagt: " out.kolonner.Length
+        for key, navn in feltNavn
+            tekst .= "`n" navn ": " (out.kart.Has(key) ? "koblet" : "mangler eller tvetydig plassering")
+                . " | felt undersøkt: " (out.funnfelt.Has(key) ? out.funnfelt[key] : 0)
+        tekst .= "`nKandidatrader: " out.kandidater " | Validerte i dag: " out.sett.Count
+            . " | Andre dager: " out.andreDager
+            . "`nAvvist – manglende felt: " out.grunner["felt"] ", dato/tid: " out.grunner["dato"]
+            . ", ID-format: " out.grunner["id"] ", motstridende celler: " out.grunner["konflikt"]
+            . "`nBehandlingstid – mangler: " out.behandlingMangler ", ugyldig/ukjent: " out.behandlingUgyldig
+            . " (stopper ikke oppgavetelling)"
+            . "`nUIA-noder lest: " out.noder " | Lesefeil: " out.lesefeil
+            . "`nBekreftede cellekart: " out.bekreftedeKart " | Rader supplert uten plassering: " out.utenPlassering
+            . "`nGyldig tid fra Name: " out.tidFraName " | Value: " out.tidFraValue
+            . " | Motstridende tidsverdier: " out.tidskonflikt
+        if (out.listeklasse != "")
+            tekst .= "`nUIA-listeklasse: " out.listeklasse " | rammeverk=" out.rammeverk
+        tekst .= "`nNative listekandidater: " out.nativeForsok.Length
+        for i, forsok in out.nativeForsok
+            tekst .= "`nNative liste " i ": " forsok.klasse
+                . " | rader=" forsok.rader " | kolonner=" forsok.kolonner
+                . " | OwnerData=" (forsok.ownerData ? "ja" : "nei")
+                . " | tidsverdier=" forsok.tidsverdier " | resultat=" forsok.steg
+        for i, forsok in out.nativeForsok {
+            if forsok.HasOwnProp("probeFeil")
+                tekst .= "`nNative protokollfeil: " forsok.probeFeil
+            if forsok.HasOwnProp("prober") {
+                for probe in forsok.prober
+                    tekst .= "`nLVM_GETITEMTEXT" probe.variant ": kall=" probe.lest " tomme=" probe.tomme
+                        . " tekst=" probe.tekst " feil=" probe.feil
+                        . " steg=" (probe.sisteSteg != "" ? probe.sisteSteg : "OK") " kode=" probe.sisteFeil
+            }
+        }
+        for i, kol in out.kolonner
+            tekst .= "`nOverskrift " i ": " kol.navn " -> " (kol.key != "" && out.kart.Has(kol.key)
+                ? kol.key : kol.key != "" ? "tvetydig " kol.key : "ikke koblet")
+        for tilstand, ant in out.teksttilstand
+            tekst .= "`nTidstekstkilde " tilstand " | lest " ant " ganger"
+        for kilde, ant in out.valgteTidskilder
+            tekst .= "`nTid valgt fra " kilde ": " ant
+        for form, ant in out.radnavnFormer
+            tekst .= "`nMaskert radnavn (første tidskolonne) " form " | lest " ant " ganger"
+        for form, ant in out.tidsformer
+            tekst .= "`nMaskert tidscelle " form " | lest " ant " ganger"
+        for key, ant in out.former
+            tekst .= "`nRadstruktur " key ": " ant " elementer"
+        for key, ant in out.metoder
+            tekst .= "`nLesemåte " key ": " ant " elementer"
+        if out.begrenset
+            tekst .= "`nUtvalget ble begrenset av tid-/node-/radgrense."
+        out.detaljer := tekst "`nKun kolonneoverskrifter, formatutfall og antall. Ingen rå rad-/celleverdier."
+        return out
+    }
+
+    VarighetSekunder(tekst) {
+        tekst := Trim(tekst)
+        if RegExMatch(tekst, "^(\d{1,3}):([0-5]\d):([0-5]\d)$", &m)
+            return Integer(m[1]) * 3600 + Integer(m[2]) * 60 + Integer(m[3])
+        if RegExMatch(tekst, "^(\d{1,3}):([0-5]\d)$", &m)
+            return Integer(m[1]) * 60 + Integer(m[2])
+        return -1
+    }
+
+    KortTekniskFeil(steg, feil) {
+        melding := StrReplace(StrReplace(feil.Message, "`r", " "), "`n", " ")
+        return "Steg: " steg "`nAHK-feil: " SubStr(melding, 1, 180) "`nLinje: " feil.Line
+    }
+
+    ; Tre-/kontrollkartlegging: leser kun TYPE og ET SNEVERT SETT
+    ; STATISKE KOLONNENAVN. Ingen UIA Value, cellenavn, telefonnumre,
+    ; kundenumre, IM-ID-er eller kommentarer samles/lagres.
+    Kartlegg(loggHwnd) {
+        if !loggHwnd
+            return {ok:false, status:"Oppgavelogg er ikke åpen.", detaljer:"Ingen UIA-diagnose kjørt."}
+        minimert := false
+        try minimert := WinGetMinMax("ahk_id " loggHwnd) = -1
+        t0 := A_TickCount
+        rot := ""
+        try rot := UiaFraVindu(loggHwnd)
+        catch as feil {
+            return {ok:false, status:"UIA kunne ikke koble til Oppgavelogg.", detaljer:this.KortTekniskFeil("ElementFromHandle", feil)}
+        }
+        if !IsObject(rot)
+            return {ok:false, status:"UIA fant ikke vinduets rot-element.", detaljer:"Ingen lesbare kontroller."}
+
+        pw := 0
+        try ComCall(14, Uia().uia, "Ptr*", &pw) ; get_ControlViewWalker
+        catch as feil {
+            return {ok:false, status:"Kunne ikke hente UIA ControlViewWalker.", detaljer:this.KortTekniskFeil("ControlViewWalker", feil)}
+        }
+        if !pw
+            return {ok:false, status:"UIA returnerte ingen kontrollvandrer.", detaljer:"Ingen kontroller lest."}
+        walker := ComValue(13, pw)
+        koder := Map(50028,"DataGrid", 50036,"Table", 50008,"List", 50029,"DataItem"
+            , 50007,"ListItem", 50034,"Header", 50035,"HeaderItem")
+        antall := Map()
+        for navn in koder
+            antall[koder[navn]] := 0
+        overskrifter := Map()
+        trykket := Map()
+        ; Kun eksakte, kjente overskrifter kan brukes i diagnose:
+        for navn in ["Tidspunkt", "Oppgave", "Telefonnr", "Telefonnummer", "Kundenummer"
+            , "Tjeneste", "Behandlingstid", "Køtid", "Koblet", "Kategori", "Kommentar", "Kommentar (IM)"]
+            trykket[StrLower(navn)] := navn
+
+        ko := [{node:rot, d:0}], indeks := 1
+        while (indeks <= ko.Length && indeks <= TrioOppgaveloggDiagnose.MaksNoder) {
+            innslag := ko[indeks]
+            indeks++
+            if (innslag.d > 0) {
+                type := 0
+                try type := UiaTall(innslag.node, 30003)
+                if koder.Has(type)
+                    antall[koder[type]] += 1
+                if (type = 50035) {
+                    navn := ""
+                    try navn := StrLower(Trim(UiaStreng(innslag.node, 30005)))
+                    if trykket.Has(navn)
+                        overskrifter[navn] := true
+                }
+            }
+            if (innslag.d >= 5 || ko.Length >= TrioOppgaveloggDiagnose.MaksNoder)
+                continue
+            barnPtr := 0
+            try ComCall(4, walker, "Ptr", innslag.node, "Ptr*", &barnPtr) ; GetFirstChildElement
+            catch
+                continue
+            if !barnPtr
+                continue
+            barn := ComValue(13, barnPtr)
+            loop 70 {
+                ko.Push({node:barn, d:innslag.d + 1})
+                if (ko.Length >= TrioOppgaveloggDiagnose.MaksNoder)
+                    break
+                nestePtr := 0
+                try ComCall(6, walker, "Ptr", barn, "Ptr*", &nestePtr) ; GetNextSiblingElement
+                catch
+                    break
+                if !nestePtr
+                    break
+                barn := ComValue(13, nestePtr)
+            }
+        }
+        funn := antall["DataGrid"] + antall["Table"] + antall["List"]
+        rader := antall["DataItem"] + antall["ListItem"]
+        status := funn ? "UIA-struktur funnet i Oppgavelogg." : "UIA fant ikke en gjenkjennelig tabell/listestruktur."
+        if (minimert && !funn)
+            status := "Minimert Oppgavelogg: ingen tabell/listestruktur påvist."
+        detaljer := "Vindustilstand: " (minimert ? "minimert" : "åpen / ikke minimert")
+            . "`nKontrollnoder registrert (maks): " Min(ko.Length, TrioOppgaveloggDiagnose.MaksNoder)
+            . "`nDataGrid: " antall["DataGrid"] " | Table: " antall["Table"] " | List: " antall["List"]
+            . "`nDataItem/ListItem funnet: " rader " (ikke nødvendigvis alle oppgaver)"
+            . "`nKjente overskriftalias i strukturutvalget: " overskrifter.Count
+            . "`nTid: " (A_TickCount - t0) " ms"
+            . "`nDenne strukturkontrollen teller bare kontroller. Feltdiagnosen nedenfor gjelder innlesingen."
+        return {ok:funn > 0, status:status, detaljer:detaljer}
+    }
+}
+
+class StatistikkModul {
+    SamtaleType := ""                 ; "inn" = mottatt, "ut" = utgående
+    SamtaleStart := ""
+    Viderekoblet := false
+    SkriftStart := ""
+    SisteBeskjed := ""
+    Stat1 := ""
+    Stat2 := ""
+    Stat3 := ""
+    TilstandK := ""
+    SkriftKnapp := ""
+    Liste := ""
+    TrioStatusK := ""
+    TrioStatusTekst := "Venter på første UIA-diagnose."
+    TrioDetaljer := "Ingen undersøkelse kjørt."
+    TrioFeil := false
+    TrioOpptatt := false
+    TrioForrigeLogg := ""
+    TrioSistSjekket := ""
+    TrioApneOpptatt := false
+    TrioLoggHwnd := 0
+    TrioLoggSistAktivTick := 0
+    TrioLoggManglerSiden := 0
+    TrioLoggBakert := false
+    TrioLoggSistForsokTick := 0
+    TrioGui := ""
+    TrioInfoK := ""
+    TrioAutoK := ""
+    TrioBakgrunnK := ""
+    TrioIntervallK := ""
+    TrioFeilK := ""
+    TrioOppgaver := ""
+    TrioDato := ""
+    TrioSistStatus := "Venter på automatisk synkronisering."
+    TrioFeltDiagnose := "Ingen innlesing gjennomført."
+    TrioSistKilde := ""
+    TrioSistSynk := ""
+    TrioSistBegrenset := false
+    TrioSistKandidater := 0
+    VisualKortK := ""
+    VisualBarK := ""
+    VisualTimeTallK := ""
+    VisualKildeK := ""
+    VisualGui := ""
+    VisualTrioTekst := ""
+
+    __New() {
+        this.StateFil := STATS_MAPPE "\Aktiv.ini"
+        this.TickCb := ObjBindMethod(this, "Tick")
+        this.TrioCb := ObjBindMethod(this, "TrioSjekk")
+        this.TrioOpenCb := ObjBindMethod(this, "TrioApneTimer")
+        this.TrioLeser := TrioOppgaveloggDiagnose()
+        this.TrioOppgaver := Map()
+        this.TrioDato := FormatTime(, "yyyy-MM-dd")
+        this.TrioAutoApne := Innst("Statistikk", "TrioAutoApne", "1") = "1"
+        this.TrioBakgrunn := Innst("Statistikk", "TrioBakgrunn", "1") = "1"
+        intervallVerdi := Innst("Statistikk", "TrioIntervallSek", "30")
+        this.TrioIntervall := RegExMatch(intervallVerdi, "^(15|30|60)$") ? Integer(intervallVerdi) : 30
+        this.TrioVisFeil := Innst("Statistikk", "TrioVisFeil", "1") = "1"
+        this.HentTilstand()
+    }
+
+    HentTilstand() {
+        this.SamtaleType := IniRead(this.StateFil, "Aktiv", "SamtaleType", "")
+        this.SamtaleStart := IniRead(this.StateFil, "Aktiv", "SamtaleStart", "")
+        this.Viderekoblet := IniRead(this.StateFil, "Aktiv", "Viderekoblet", "0") = "1"
+        this.SkriftStart := IniRead(this.StateFil, "Aktiv", "SkriftStart", "")
+        if (this.SamtaleType != "inn" && this.SamtaleType != "ut")
+            this.SamtaleType := "", this.SamtaleStart := "", this.Viderekoblet := false
+        if (this.SamtaleStart != "" && !RegExMatch(this.SamtaleStart, "^\d{14}$"))
+            this.SamtaleType := "", this.SamtaleStart := "", this.Viderekoblet := false
+        if (this.SkriftStart != "" && !RegExMatch(this.SkriftStart, "^\d{14}$"))
+            this.SkriftStart := ""
+    }
+
+    LagreTilstand() {
+        IniWrite(this.SamtaleType, this.StateFil, "Aktiv", "SamtaleType")
+        IniWrite(this.SamtaleStart, this.StateFil, "Aktiv", "SamtaleStart")
+        IniWrite(this.Viderekoblet ? "1" : "0", this.StateFil, "Aktiv", "Viderekoblet")
+        IniWrite(this.SkriftStart, this.StateFil, "Aktiv", "SkriftStart")
+    }
+
+    Start() {
+        SetTimer this.TickCb, 1000
+        SetTimer this.TrioCb, this.TrioIntervall * 1000
+        SetTimer this.TrioOpenCb, 2500  ; lightweight foreground/idle check, NOT UIA
+        this.Oppdater()
+    }
+
+    ByggPanel() {
+        pn := "Statistikk", x := INNHOLD_X, b := INNHOLD_B
+        PanelTittel(pn, "Statistikk")
+        Skrift(HOVED, "s9 bold c" TEMA.dempet)
+        Reg(pn, HOVED.AddText("x" x " y123 w" b " h21 Background" TEMA.bg,
+            "I DAG  ·  MANUELT REGISTRERT  ·  IKKE TRIO-TELEMETRI"))
+        Skrift(HOVED, "s11 bold c" TEMA.tekst)
+        this.Stat1 := Reg(pn, HOVED.AddText("x" x " y151 w" b " h26 Background" TEMA.bg, ""))
+        Skrift(HOVED, "s10 norm c" TEMA.tekst)
+        this.Stat2 := Reg(pn, HOVED.AddText("x" x " y183 w" b " h24 Background" TEMA.bg, ""))
+        this.Stat3 := Reg(pn, HOVED.AddText("x" x " y212 w" b " h24 Background" TEMA.bg, ""))
+        Reg(pn, HOVED.AddText("x" x " y241 w" b " h1 Background" TEMA.linje))
+        Skrift(HOVED, "s10 bold c" TEMA.paa)
+        this.TilstandK := Reg(pn, HOVED.AddText("x" x " y250 w" b " h44 Background" TEMA.bg, ""))
+        Skrift(HOVED, "s10 bold c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" x " y302 w240 h36", "Start mottatt samtale",
+            ObjBindMethod(this, "StartKall", "inn")))
+        Reg(pn, Knapp(HOVED, "x" (x + 252) " y302 w240 h36", "Ring ut / start samtale",
+            ObjBindMethod(this, "StartKall", "ut"), TEMA.aksent2))
+        Reg(pn, Knapp(HOVED, "x" x " y345 w240 h36", "Avslutt samtale",
+            ObjBindMethod(this, "AvsluttKall"), TEMA.paa))
+        Reg(pn, Knapp(HOVED, "x" (x + 252) " y345 w240 h36", "Merk som satt videre",
+            ObjBindMethod(this, "MerkVidere"), TEMA.aksent2))
+        this.SkriftKnapp := Reg(pn, Knapp(HOVED, "x" x " y391 w240 h36", "Start skriftlig tid",
+            ObjBindMethod(this, "SkriftToggle")))
+        Reg(pn, Knapp(HOVED, "x" (x + 252) " y391 w240 h36", "Forkast pågående økter",
+            ObjBindMethod(this, "Forkast"), TEMA.av))
+        Skrift(HOVED, "s9 norm c" TEMA.dempet)
+        this.TrioStatusK := Reg(pn, HOVED.AddText("x" x " y434 w" b " h20 Background" TEMA.bg,
+            "Trio: Venter på første UIA-diagnose."))
+        Reg(pn, HOVED.AddText("x" x " y457 w" (b - 56) " h18 Background" TEMA.bg,
+            "SISTE REGISTRERINGER I DAG (uten kundeinformasjon)"))
+        Skrift(HOVED, "s12 bold cFFFFFF")
+        Reg(pn, Knapp(HOVED, "x" (x + b - 38) " y453 w36 h24", "🗑",
+            ObjBindMethod(this, "TomDagensRegistreringer"), "B63B43"))
+        Skrift(HOVED, "s9 norm c" TEMA.tekst)
+        this.Liste := Reg(pn, HOVED.AddListView("x" x " y480 w" b " h68 -Multi -Sort Background" TEMA.kort,
+            ["Tid", "Type", "Varighet", "Videre"]))
+        this.Liste.ModifyCol(1, 100), this.Liste.ModifyCol(2, 153)
+        this.Liste.ModifyCol(3, 122), this.Liste.ModifyCol(4, 92)
+        Skrift(HOVED, "s9 bold c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" x " y556 w240 h30", "Åpne statistikk / CSV",
+            (*) => Run('"' STATS_MAPPE '"'), TEMA.aksent2))
+        Skrift(HOVED, "s8 norm c" TEMA.dempet)
+        Reg(pn, Knapp(HOVED, "x" (x + 252) " y556 w240 h30", "Trio Oppgavelogg / UIA…",
+            ObjBindMethod(this, "VisTrioInnstillinger"), TEMA.aksent2))
+        Skrift(HOVED, "s10 bold c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" (x + b - 174) " y86 w130 h30", "Visualiseringer",
+            ObjBindMethod(this, "VisVisualiseringer"), TEMA.aksent))
+        this.Oppdater()
+        this.OppdaterTrioStatus()
+    }
+
+    ; Dashboard: Trio is the data source; controls refresh after each
+    ; 30-second UIA scan. "Oppdater nå" is optional and uses same scan.
+    VisVisualiseringer(*) {
+        if IsObject(this.VisualGui) {
+            try this.VisualGui.Destroy()
+            this.VisualGui := ""
+        }
+        v := Gui("+Owner" HOVED.Hwnd " -MaximizeBox", "QuickerKeys – Visualiseringer")
+        this.VisualGui := v
+        this.VisualKortK := [], this.VisualBarK := [], this.VisualTimeTallK := []
+        v.BackColor := TEMA.bg
+        Skrift(v, "s17 bold c" TEMA.tekst)
+        v.AddText("x22 y15 w710 h35 Background" TEMA.bg, "Statistikk og visualiseringer")
+        Skrift(v, "s9 norm c" TEMA.dempet)
+        this.VisualKildeK := v.AddText("x22 y52 w760 h24 Background" TEMA.bg,
+            "Trio · Leser automatisk hvert " this.TrioIntervall " sekund")
+
+        this.VisualKortK.Push(this.VisualKort(v, 22, 85, "Observerte oppgaver", TEMA.aksent))
+        this.VisualKortK.Push(this.VisualKort(v, 216, 85, "Med Koblet-verdi", TEMA.aksent2))
+        this.VisualKortK.Push(this.VisualKort(v, 410, 85, "IM-referanser", TEMA.paa))
+        this.VisualKortK.Push(this.VisualKort(v, 604, 85, "Behandling (kjent min)", TEMA.av))
+
+        Skrift(v, "s11 bold c" TEMA.tekst)
+        v.AddText("x22 y176 w730 h26 Background" TEMA.bg,
+            "Oppgaver per time · Trio (foreløpige observerte data)")
+        loop 10 {
+            klokke := Format("{:02}", A_Index + 7)
+            y := 211 + (A_Index - 1) * 28
+            Skrift(v, "s9 norm c" TEMA.tekst)
+            v.AddText("x22 y" y " w60 h20 Background" TEMA.bg, klokke ":00")
+            b := v.AddProgress("x88 y" (y + 2) " w518 h16 c" TEMA.aksent
+                . " Background" TEMA.kort " Range0-100", 0)
+            this.VisualBarK.Push(b)
+            this.VisualTimeTallK.Push(v.AddText("x622 y" y " w120 h20 Background" TEMA.bg, "—"))
+        }
+        Skrift(v, "s9 norm c" TEMA.dempet)
+        v.AddText("x22 y499 w730 h24 Background" TEMA.bg,
+            "Hele dagen inngår i totalen. Grafen viser kl. 08–18 (10 timeintervaller).")
+
+        Skrift(v, "s11 bold c" TEMA.tekst)
+        v.AddText("x22 y538 w730 h26 Background" TEMA.bg, "Trio – innlesingsstatus")
+        Skrift(v, "s9 norm c" TEMA.tekst)
+        this.VisualTrioTekst := v.AddEdit("x22 y570 w730 h106 ReadOnly -TabStop Multi VScroll Background" TEMA.kort,
+            "Venter på automatisk innlesing…")
+        Skrift(v, "s10 bold c" TEMA.tekst)
+        Knapp(v, "x22 y691 w175 h34", "Oppdater nå",
+            ObjBindMethod(this, "TrioSjekk"), TEMA.aksent)
+        Knapp(v, "x616 y691 w136 h34", "Lukk", (*) => v.Hide(), TEMA.av)
+        v.OnEvent("Close", (*) => v.Hide())
+        v.OnEvent("Escape", (*) => v.Hide())
+        this.OppdaterVisualiseringer()
+        v.Show("w810 h740")
+        ; Immediate initial read when opened for the first time; subsequent
+        ; refreshes come from the existing 30-second timer.
+        if (this.TrioSistSynk = "")
+            this.TrioSjekk()
+    }
+
+    VisualKort(gui, x, y, tittel, farge) {
+        Skrift(gui, "s10 norm c" TEMA.dempet)
+        gui.AddText("x" x " y" y " w180 h25 Background" TEMA.kort, " " tittel)
+        Skrift(gui, "s19 bold c" farge)
+        return gui.AddText("x" x " y" (y + 24) " w180 h44 Background" TEMA.kort, " —")
+    }
+
+    TestTrioRader(*) {
+        if !IsObject(this.VisualTrioTekst)
+            return
+        if this.TrioOpptatt {
+            this.VisualTrioTekst.Value := "En annen UIA-kontroll kjører. Prøv igjen etterpå."
+            return
+        }
+        this.TrioOpptatt := true
+        try {
+            this.VisualTrioTekst.Value := "Leser UIA-kontrollstruktur…"
+            trioHwnd := this.TrioLeser.FinnTrio()
+            loggHwnd := this.TrioLeser.FinnLoggvindu(trioHwnd)
+            resultat := this.TrioLeser.TestRadstruktur(loggHwnd)
+            this.VisualTrioTekst.Value := resultat.status "`r`n"
+                . StrReplace(resultat.detaljer, "`n", "`r`n")
+        } catch as feil {
+            this.VisualTrioTekst.Value := "Radtest feilet: " Type(feil)
+                . " (linje " feil.Line ")`r`nIngen kundedata ble kopiert."
+        } finally {
+            this.TrioOpptatt := false
+        }
+    }
+
+    KopierTrioRadtest(*) {
+        if !IsObject(this.VisualTrioTekst)
+            return
+        A_Clipboard := "QuickerKeys " APP_VERSJON " – anonym Trio-radtest`r`n"
+            . this.VisualTrioTekst.Value
+        Tip("Trio-radtest kopiert uten kundedata", 2100)
+    }
+
+    Melding(tekst) {
+        this.SisteBeskjed := tekst
+        this.Oppdater()
+        Tip(tekst, 2500)
+    }
+
+    StartKall(type, *) {
+        if (this.SamtaleType != "")
+            return this.Melding("Avslutt pågående samtale før du starter en ny.")
+        this.SamtaleType := type
+        this.SamtaleStart := A_Now
+        this.Viderekoblet := false
+        try this.LagreTilstand()
+        catch as feil {
+            this.SamtaleType := "", this.SamtaleStart := ""
+            return this.Melding("Kunne ikke lagre starttid: " feil.Message)
+        }
+        this.SisteBeskjed := ""
+        this.Oppdater()
+        Logg("Statistikk: startet " (type = "inn" ? "mottatt" : "utgående") " samtale (manuelt)")
+    }
+
+    MerkVidere(*) {
+        if (this.SamtaleType != "inn")
+            return this.Melding("Start en mottatt samtale før du merker viderekobling.")
+        this.Viderekoblet := true
+        try this.LagreTilstand()
+        catch as feil
+            return this.Melding("Kunne ikke lagre viderekobling: " feil.Message)
+        this.Oppdater()
+    }
+
+    AvsluttKall(*) {
+        if (this.SamtaleType = "")
+            return this.Melding("Ingen aktiv samtale å avslutte.")
+        sek := this.SekunderSiden(this.SamtaleStart)
+        try this.LagreHendelse(this.SamtaleType, sek, this.Viderekoblet)
+        catch as feil
+            return this.Melding("Samtalen ble ikke lagret: " feil.Message)
+        this.SamtaleType := "", this.SamtaleStart := "", this.Viderekoblet := false
+        try this.LagreTilstand()
+        catch as feil
+            Logg("Statistikk: FEIL ved tømming av aktiv samtale: " feil.Message)
+        this.SisteBeskjed := ""
+        this.Oppdater()
+        Logg("Statistikk: samtale registrert (" sek " sekunder)")
+    }
+
+    ; Delete only today's manual CSV entries, not active session INI/history/Trio.
+    TomDagensRegistreringer(*) {
+        if (this.SamtaleType != "" || this.SkriftStart != "") {
+            MsgBox "Avslutt eller forkast pågående samtale/skriftlig tid før dagens registreringer tømmes.",
+                APP_NAVN " – Statistikk", "Icon!"
+            return
+        }
+        fil := STATS_MAPPE "\" FormatTime(, "yyyy-MM-dd") ".csv"
+        if !FileExist(fil) {
+            this.Melding("Ingen registreringer i dag å slette.")
+            return
+        }
+        valg := MsgBox("Er du sikker på at du vil slette ALLE manuelt registrerte hendelser for i dag?"
+            . "`n`nDato: " FormatTime(, "dd.MM.yyyy")
+            . "`nDette sletter dagens CSV-statistikk (mottatt, ring ut, videresendt og skriftlig tid)."
+            . "`nDet påvirker ikke tidligere dager eller Trio sin Oppgavelogg."
+            . "`n`nSlettingen kan ikke angres.",
+            APP_NAVN " – Tøm dagens registreringer", "YesNo Icon! Default2")
+        if (valg != "Yes")
+            return
+        try {
+            FileDelete fil
+            this.SisteBeskjed := "Dagens manuelle registreringer er slettet."
+            Logg("Statistikk: dagens manuelle registreringer slettet av bruker")
+            this.Oppdater()
+        } catch as feil {
+            MsgBox "Kunne ikke slette dagens statistikkfil:`n" feil.Message,
+                APP_NAVN " – Statistikk", "Icon!"
+        }
+    }
+
+    SkriftToggle(*) {
+        if (this.SkriftStart = "") {
+            this.SkriftStart := A_Now
+            try this.LagreTilstand()
+            catch as feil {
+                this.SkriftStart := ""
+                return this.Melding("Kunne ikke starte skriftlig tid: " feil.Message)
+            }
+            this.SisteBeskjed := ""
+            Logg("Statistikk: startet skriftlig tid")
+        } else {
+            sek := this.SekunderSiden(this.SkriftStart)
+            try this.LagreHendelse("skriftlig", sek, false)
+            catch as feil
+                return this.Melding("Skriftlig tid ble ikke lagret: " feil.Message)
+            this.SkriftStart := ""
+            try this.LagreTilstand()
+            catch as feil
+                Logg("Statistikk: FEIL ved tømming av skriftlig tid: " feil.Message)
+            Logg("Statistikk: skriftlig tid registrert (" sek " sekunder)")
+            this.SisteBeskjed := ""
+        }
+        this.Oppdater()
+    }
+
+    Forkast(*) {
+        if (this.SamtaleType = "" && this.SkriftStart = "")
+            return this.Melding("Ingen pågående økter å forkaste.")
+        if (MsgBox("Forkaste pågående samtale og/eller skriftlig tid? Ingen ny CSV-rad opprettes.",
+            APP_NAVN " – Statistikk", "YesNo Icon? Default2") != "Yes")
+            return
+        this.SamtaleType := "", this.SamtaleStart := "", this.Viderekoblet := false, this.SkriftStart := ""
+        try this.LagreTilstand()
+        catch as feil
+            return this.Melding("Kunne ikke lagre forkasting: " feil.Message)
+        this.SisteBeskjed := ""
+        this.Oppdater()
+        Logg("Statistikk: pågående økter forkastet av bruker")
+    }
+
+    SekunderSiden(start) {
+        if (start = "")
+            return 0
+        try return Max(0, DateDiff(A_Now, start, "Seconds"))
+        return 0
+    }
+
+    Tid(sek) {
+        sek := Max(0, Integer(sek))
+        return Format("{:02}:{:02}:{:02}", sek // 3600, Mod(sek // 60, 60), Mod(sek, 60))
+    }
+
+    LagreHendelse(type, sek, videre) {
+        if !InStr("|inn|ut|skriftlig|", "|" type "|")
+            throw Error("Ugyldig statistikktype.")
+        if (sek < 0 || sek > 86400)
+            throw Error("Økten varer over 24 timer. Forkast den og registrer på nytt.")
+        fil := STATS_MAPPE "\" FormatTime(, "yyyy-MM-dd") ".csv"
+        if !FileExist(fil)
+            FileAppend("Dato,Tid,Type,VarighetSekunder,Viderekoblet,Kilde" Chr(13) Chr(10), fil, "UTF-8-RAW")
+        rad := FormatTime(, "yyyy-MM-dd") "," FormatTime(, "HH:mm:ss") "," type "," sek ","
+            . (videre ? "1" : "0") ",manuell" Chr(13) Chr(10)
+        FileAppend(rad, fil, "UTF-8-RAW")
+    }
+
+    LesDagen() {
+        result := {inn: 0, ut: 0, videre: 0, sekInn: 0, sekUt: 0, skriftSek: 0, rader: []}
+        fil := STATS_MAPPE "\" FormatTime(, "yyyy-MM-dd") ".csv"
+        if !FileExist(fil)
+            return result
+        tekst := StrReplace(FileRead(fil, "UTF-8"), Chr(13), "")
+        for rad in StrSplit(tekst, Chr(10)) {
+            c := StrSplit(rad, ",")
+            if (c.Length != 6 || c[1] = "Dato")
+                continue
+            try sek := Integer(c[4])
+            catch
+                continue
+            if (sek < 0 || sek > 86400)
+                continue
+            switch c[3] {
+                case "inn":
+                    result.inn += 1
+                    result.sekInn += sek
+                    if (c[5] = "1")
+                        result.videre += 1
+                case "ut":
+                    result.ut += 1
+                    result.sekUt += sek
+                case "skriftlig":
+                    result.skriftSek += sek
+                default:
+                    continue
+            }
+            result.rader.Push({tid: c[2], type: c[3], sek: sek, videre: c[5] = "1"})
+        }
+        return result
+    }
+
+
+    ; Gjentatt skanning av tilgjengelige Trio-rader. Dersom UIA bare
+    ; viser delmengder, samles nye oppgaver i RAM og dedupliseres på
+    ; oppgave-ID/tidspunkt. Ingen kunde-/telefon-/IM-verdier lagres.
+    OppdaterTrioData(loggHwnd) {
+        dag := FormatTime(, "yyyy-MM-dd")
+        if (this.TrioDato != dag) {
+            this.TrioOppgaver := Map()
+            this.TrioDato := dag
+        }
+        funn := this.TrioLeser.HentDagensData(loggHwnd)
+        this.TrioSistStatus := funn.status
+        this.TrioFeltDiagnose := funn.detaljer
+        this.TrioStatusTekst := funn.status
+        this.TrioFeil := !funn.ok
+        this.TrioSistKilde := funn.kilde
+        this.TrioSistKandidater := funn.kandidater
+        this.TrioSistBegrenset := funn.begrenset || InStr(funn.kilde, "UIA") > 0
+        this.TrioSistSynk := FormatTime(, "HH:mm:ss")
+        if funn.ok {
+            for nokkel, oppgave in funn.sett {
+                if this.TrioOppgaver.Has(nokkel) {
+                    gammel := this.TrioOppgaver[nokkel]
+                    if (!oppgave.videreKjent && gammel.videreKjent)
+                        oppgave.videre := gammel.videre, oppgave.videreKjent := true
+                    if (!oppgave.imKjent && gammel.imKjent)
+                        oppgave.im := gammel.im, oppgave.imKjent := true
+                    if (!oppgave.behandlingKjent && gammel.behandlingKjent)
+                        oppgave.sek := gammel.sek, oppgave.behandlingKjent := true
+                    if (!oppgave.koHarVerdi && gammel.koHarVerdi)
+                        oppgave.koSek := gammel.koSek, oppgave.koHarVerdi := true
+                }
+                this.TrioOppgaver[nokkel] := oppgave
+            }
+        }
+        this.OppdaterVisualiseringer()
+    }
+
+    TrioSummering() {
+        sum := {antall:0, videre:0, videreN:0, im:0, imN:0, sek:0, behandlingN:0, koSek:0, koN:0, timer:Map()}
+        loop 24
+            sum.timer[Format("{:02}", A_Index - 1)] := 0
+        for nokkel, post in this.TrioOppgaver {
+            sum.antall++
+            sum.videreN += post.videreKjent ? 1 : 0
+            sum.imN += post.imKjent ? 1 : 0
+            sum.videre += post.videre ? 1 : 0
+            sum.im += post.im ? 1 : 0
+            if post.behandlingKjent
+                sum.sek += post.sek, sum.behandlingN++
+            if post.koHarVerdi
+                sum.koSek += post.koSek, sum.koN++
+            if sum.timer.Has(post.time)
+                sum.timer[post.time]++
+        }
+        return sum
+    }
+
+    OppdaterVisualiseringer() {
+        if !IsObject(this.VisualKortK) || this.VisualKortK.Length != 4
+            return
+        if (this.TrioDato != FormatTime(, "yyyy-MM-dd")) {
+            this.TrioOppgaver := Map()
+            this.TrioDato := FormatTime(, "yyyy-MM-dd")
+        }
+        sum := this.TrioSummering()
+        if sum.antall {
+            this.VisualKortK[1].Text := " " sum.antall
+            this.VisualKortK[2].Text := sum.videreN ? " " sum.videre : " —"
+            this.VisualKortK[3].Text := sum.imN ? " " sum.im : " —"
+            this.VisualKortK[4].Text := sum.behandlingN ? " " Round(sum.sek / 60, 1) : " —"
+        } else {
+            for k in this.VisualKortK
+                k.Text := " —"
+        }
+        maks := 1
+        for t, ant in sum.timer
+            maks := Max(maks, ant)
+        for i, kontroll in this.VisualBarK {
+            klokke := Format("{:02}", i + 7)
+            ant := sum.timer[klokke]
+            kontroll.Value := Round(100 * ant / maks)
+            this.VisualTimeTallK[i].Text := sum.antall ? ant " oppgaver" : "—"
+        }
+        if IsObject(this.VisualKildeK) {
+            this.VisualKildeK.Text := "Trio · " FormatTime(, "dd.MM.yyyy")
+                . (this.TrioSistSynk != "" ? " · Sist lest " this.TrioSistSynk : "")
+                . " · FORELØPIGE/OBSERVERT, ikke fullstendig bekreftet"
+        }
+        if IsObject(this.VisualTrioTekst) {
+            tekst := "Automatisk innlesing hvert " this.TrioIntervall " sekund."
+                . "`r`n" this.TrioSistStatus
+                . "`r`nKilde: " (this.TrioSistKilde != "" ? this.TrioSistKilde : "ukjent")
+                . "`r`nKandidatrader ved siste lesing: " this.TrioSistKandidater
+                . "`r`nUnike oppgaver observert i RAM: " sum.antall
+                . "`r`nGjennomsnittlig køtid for validerte oppgaver: "
+                . (sum.koN ? Round(sum.koSek / sum.koN / 60, 1) " min" : "ukjent")
+                . "`r`nBehandlingstid kjent for " sum.behandlingN "/" sum.antall " oppgaver."
+                . "`r`nKoblet-felt lest for " sum.videreN "/" sum.antall
+                . "; Kommentar/IM for " sum.imN "/" sum.antall ". Koblet er ikke bekreftet videresending."
+                . "`r`n`r`n" StrReplace(this.TrioFeltDiagnose, "`n", "`r`n")
+                . "`r`nIngen rå kunde-, telefon- eller IM-verdier lagret."
+            if this.TrioSistBegrenset
+                tekst .= "`r`nMerk: UIA kan eksponere bare et utvalg av historikken."
+            this.VisualTrioTekst.Value := tekst
+        }
+    }
+
+    ; Ingen ekstra knapper eller brukerinndata: håndter Oppgavelogg automatisk.
+    ; Brukeren kan åpne/fokusere vinduet fritt. Etter at brukeren går
+    ; videre, flyttes det bakerst igjen etter 15 sekunder.
+    ; Ved 60 sekunder full inaktivitet kan det også legges bakerst mens
+    ; det fortsatt er aktivt. Minimering gjenopprettes uten fokus.
+    ; Manuell lukking respekteres i 30 sekunder før et nytt åpningsforsøk.
+    TrioApneTimer(*) {
+        if (!this.TrioAutoApne || this.TrioApneOpptatt || this.TrioOpptatt)
+            return
+        this.TrioApneOpptatt := true
+        try {
+            trioHwnd := this.TrioLeser.FinnTrio()
+            if !trioHwnd {
+                this.TrioLoggHwnd := 0
+                this.TrioLoggManglerSiden := 0
+                this.TrioLoggBakert := false
+                this.TrioLoggSistForsokTick := 0
+                return
+            }
+
+            loggHwnd := this.TrioLeser.FinnLoggvindu(trioHwnd)
+            na := A_TickCount
+            if loggHwnd {
+                this.TrioLoggManglerSiden := 0
+                if (this.TrioLoggHwnd != loggHwnd) {
+                    this.TrioLoggHwnd := loggHwnd
+                    this.TrioLoggSistAktivTick := na
+                    this.TrioLoggBakert := false
+                    this.TrioLoggSistForsokTick := 0
+                }
+                if !this.TrioBakgrunn
+                    return
+
+                aktiv := WinActive("ahk_id " loggHwnd) != 0
+                minimert := WinGetMinMax("ahk_id " loggHwnd) = -1
+                if (aktiv && A_TimeIdlePhysical < 60000) {
+                    this.TrioLoggSistAktivTick := na
+                    this.TrioLoggBakert := false
+                    return
+                }
+                ; Ikke forstyrr mens brukeren jobber i Oppgavelogg.
+                ; Etter Alt+Tab: 15 s. Mens vinduet fortsatt er aktivt:
+                ; 60 s uten fysisk aktivitet før det legges bakerst.
+                if (!aktiv && na - this.TrioLoggSistAktivTick < 15000)
+                    return
+                ; Vanlig bakgrunnsvindu kan flyttes mens brukeren jobber i SM.
+                ; Gjenoppretting fra minimering krever inaktivitet.
+                if (!aktiv && minimert && A_TimeIdlePhysical < 4000)
+                    return
+                if (this.TrioLoggBakert && !minimert && !aktiv)
+                    return
+                if (this.TrioLoggSistForsokTick && na - this.TrioLoggSistForsokTick < 60000)
+                    return
+
+                this.TrioLoggSistForsokTick := na
+                ; Normal aktivt vindu kan sendes bak etter lang inaktivitet.
+                ; Ellers passiv håndtering uten å stjele aktivt vindu.
+                if (aktiv) {
+                    try {
+                        WinMoveBottom "ahk_id " loggHwnd
+                        this.TrioLoggBakert := true
+                        this.TrioLoggSistForsokTick := 0
+                        this.TrioFeil := false
+                        this.TrioStatusTekst := "Oppgavelogg lagt bakerst etter 60 sekunder uten aktivitet."
+                    } catch as feil {
+                        this.TrioStatusTekst := "Kunne ikke legge Oppgavelogg bakerst."
+                        this.TrioFeil := true
+                        this.TrioDetaljer := this.TrioFeilBeskrivelse("Legg bakerst", feil)
+                    }
+                } else {
+                    resultat := this.TrioLeser.LeggBakgrunn(loggHwnd)
+                    this.TrioLoggBakert := resultat.ok
+                    if resultat.ok
+                        this.TrioLoggSistForsokTick := 0
+                    this.TrioStatusTekst := resultat.status
+                    this.TrioFeil := !resultat.ok
+                }
+                this.OppdaterTrioStatus()
+                return
+            }
+
+            ; Et kjent vindu ble lukket: gi brukeren 30 sekunder før
+            ; autoåpning. Hvis aldri sett før: vanlig oppstart etter 4 s.
+            if (this.TrioLoggHwnd != 0) {
+                this.TrioLoggHwnd := 0
+                this.TrioLoggManglerSiden := na
+                this.TrioLoggBakert := false
+            }
+            if (this.TrioLoggManglerSiden && na - this.TrioLoggManglerSiden < 30000)
+                return
+            if (A_TimeIdlePhysical < 4000)
+                return
+
+            resultat := this.TrioLeser.ApneVedBehov(this.TrioBakgrunn)
+            this.TrioStatusTekst := resultat.status
+            this.TrioFeil := InStr("|menyfeil|ikke-funnet|sperret|bakgrunn-feil|",
+                "|" resultat.kode "|") > 0
+            this.TrioDetaljer := "Trio Oppgavelogg: " resultat.status
+                . "`nUIA-struktur undersøkes hvert " this.TrioIntervall " sekund."
+            if resultat.logg {
+                this.TrioLoggHwnd := resultat.logg
+                this.TrioLoggSistAktivTick := na
+                this.TrioLoggBakert := (resultat.kode = "opprettet") && this.TrioBakgrunn
+                this.TrioLoggSistForsokTick := 0
+            }
+            if (this.TrioStatusTekst != this.TrioForrigeLogg) {
+                this.TrioForrigeLogg := this.TrioStatusTekst
+                Logg("Statistikk / Trio: " this.TrioStatusTekst)
+            }
+        } catch as feil {
+            this.TrioStatusTekst := "Feil under automatisk håndtering av Oppgavelogg."
+            this.TrioDetaljer := this.TrioFeilBeskrivelse("Oppgavelogg livssyklus", feil)
+            this.TrioFeil := true
+            if (this.TrioStatusTekst != this.TrioForrigeLogg) {
+                this.TrioForrigeLogg := this.TrioStatusTekst
+                Logg("Statistikk / Trio: " this.TrioDetaljer)
+            }
+        } finally {
+            this.TrioApneOpptatt := false
+            this.OppdaterTrioStatus()
+        }
+    }
+
+    ; Manual button checks an already-open Oppgavelogg regardless of focus.
+    ; It NEVER calls MenuSelect or creates a window by itself.
+    TrioSjekk(*) {
+        if this.TrioOpptatt
+            return
+        this.TrioOpptatt := true
+        this.TrioSistSjekket := A_Now
+        steg := "Finn Trio"
+        try {
+            trio := this.TrioLeser.FinnTrio()
+            if !trio {
+                this.TrioStatusTekst := "Fant ikke ett entydig Trio Attendant-hovedvindu."
+                this.TrioDetaljer := "Steg: Finn Trio"
+                    . "`nÅpne Trio Attendant. Hvis det ikke oppdages, må vindustittel/prosess identifiseres."
+                    . "`nIngen vinduer ble aktivert eller åpnet."
+                this.TrioFeil := true
+            } else {
+                steg := "Finn Oppgavelogg"
+                loggHwnd := this.TrioLeser.FinnLoggvindu(trio)
+                if !loggHwnd {
+                    this.TrioStatusTekst := "Trio funnet, men Oppgavelogg ble ikke gjenkjent."
+                    this.TrioDetaljer := "Steg: Finn Oppgavelogg"
+                        . "`nÅpne Vis > Oppgavelogg manuelt én gang og trykk Kjør UIA-test nå igjen."
+                        . "`nVinduet må ha Oppgavelogg i tittelen, og tilhøre samme programfil/PID."
+                    this.TrioFeil := true
+                } else {
+                    steg := "UIA: ElementFromHandle / ControlViewWalker"
+                    r := this.TrioLeser.Kartlegg(loggHwnd)
+                    this.TrioStatusTekst := r.status
+                    this.TrioDetaljer := "Steg: " steg "`n" r.detaljer
+                    this.TrioFeil := !r.ok
+                    this.OppdaterTrioData(loggHwnd)
+                }
+            }
+            if (this.TrioStatusTekst != this.TrioForrigeLogg) {
+                this.TrioForrigeLogg := this.TrioStatusTekst
+                Logg("Statistikk / Trio: " this.TrioStatusTekst)
+            }
+        } catch as feil {
+            this.TrioStatusTekst := "UIA-diagnose feilet under: " steg
+            this.TrioDetaljer := this.TrioFeilBeskrivelse(steg, feil)
+            this.TrioFeil := true
+            Logg("Statistikk / Trio: " this.TrioDetaljer)
+        } finally {
+            this.TrioOpptatt := false
+            this.OppdaterTrioStatus()
+        }
+    }
+
+    TrioFeilBeskrivelse(steg, feil) {
+        ; Only AHK error metadata. No title, cell values or stack trace.
+        melding := StrReplace(StrReplace(feil.Message, "`r", " "), "`n", " ")
+        return "Steg: " steg "`nAHK-feiltype: " Type(feil)
+            . "`nMelding: " SubStr(melding, 1, 180)
+            . "`nLinje: " feil.Line
+            . "`nIngen rad-/kundedata ble hentet."
+    }
+
+    OppdaterTrioStatus() {
+        if IsObject(this.TrioStatusK) {
+            vis := "Trio: " this.TrioStatusTekst
+            if (this.TrioFeil && !this.TrioVisFeil)
+                vis := "Trio: Feildetaljer er skjult – se diagnostikkvinduet."
+            this.TrioStatusK.Text := KortVerdi(vis, 91)
+            this.TrioStatusK.SetFont("c" (this.TrioFeil && this.TrioVisFeil ? NettFarge("feil") : TEMA.dempet))
+        }
+        this.OppdaterTrioDetaljer()
+    }
+
+    OppdaterTrioDetaljer() {
+        if !IsObject(this.TrioInfoK)
+            return
+        this.TrioInfoK.Value := "Sist undersøkt: " (this.TrioSistSjekket != "" ? FormatTime(this.TrioSistSjekket, "dd.MM.yyyy HH:mm:ss") : "ikke kjørt")
+            . "`r`n" this.TrioStatusTekst
+            . "`r`n`r`n" StrReplace(this.TrioDetaljer, "`n", "`r`n")
+            . "`r`n`r`nInnlesing: " this.TrioSistStatus
+            . "`r`n" StrReplace(this.TrioFeltDiagnose, "`n", "`r`n")
+            . "`r`nValiderte oppgaver samles automatisk i RAM, separat fra manuell CSV."
+    }
+
+    VisTrioInnstillinger(*) {
+        if IsObject(this.TrioGui) {
+            this.OppdaterTrioDetaljer()
+            this.TrioGui.Show()
+            return
+        }
+        v := Gui("+Owner" HOVED.Hwnd " -MinimizeBox", "Trio Oppgavelogg – UIA-diagnose")
+        this.TrioGui := v
+        v.BackColor := TEMA.bg
+        Skrift(v, "s13 bold c" TEMA.tekst)
+        v.AddText("x20 y14 w520 h28 Background" TEMA.bg, "Oppgavelogg – bakgrunn og diagnostikk")
+        Skrift(v, "s9 norm c" TEMA.dempet)
+        v.AddText("x20 y42 w520 h36 Background" TEMA.bg,
+            "Leser oppgaver automatisk. Statistikkfelt holdes i RAM; ingen rå kundeverdier eksporteres.")
+        Skrift(v, "s10 norm c" TEMA.tekst)
+        this.TrioAutoK := v.AddCheckBox("x20 y86 w520 h25"
+            . (this.TrioAutoApne ? " Checked" : ""), "Åpne Oppgavelogg automatisk når Trio er i ro")
+        this.TrioBakgrunnK := v.AddCheckBox("x20 y114 w520 h25"
+            . (this.TrioBakgrunn ? " Checked" : ""), "Legg Oppgavelogg bak andre vinduer (ikke minimer)")
+        this.TrioFeilK := v.AddCheckBox("x20 y142 w520 h25"
+            . (this.TrioVisFeil ? " Checked" : ""), "Vis feilstatus i Statistikk")
+        Skrift(v, "s10 norm c" TEMA.tekst)
+        v.AddText("x20 y180 w205 h26 +0x200 Background" TEMA.bg, "Oppdateringsintervall:")
+        Skrift(v, "s10 norm c000000")
+        this.TrioIntervallK := v.AddDropDownList("x230 y180 w150 R3", ["15 sekunder","30 sekunder","60 sekunder"])
+        this.TrioIntervallK.Choose(this.TrioIntervall = 15 ? 1 : this.TrioIntervall = 60 ? 3 : 2)
+        Skrift(v, "s9 norm c" TEMA.tekst)
+        this.TrioInfoK := v.AddEdit("x20 y217 w520 h156 ReadOnly Multi VScroll -E0x200 Background" TEMA.kort, "")
+        this.OppdaterTrioDetaljer()
+        Skrift(v, "s10 bold c" TEMA.tekst)
+        Knapp(v, "x20 y386 w155 h35", "Lagre innstillinger", ObjBindMethod(this, "LagreTrioInnstillinger"))
+        Knapp(v, "x185 y386 w160 h35", "Oppdater nå", ObjBindMethod(this, "TrioSjekk"), TEMA.aksent2)
+        Knapp(v, "x355 y386 w185 h35", "Kopier diagnose", ObjBindMethod(this, "KopierTrioDiagnose"), TEMA.aksent2)
+        Skrift(v, "s9 norm c" TEMA.dempet)
+        v.AddText("x20 y429 w520 h36 Background" TEMA.bg,
+            "UIA: Ikke minimer Oppgavelogg. Bakgrunnsmodus lar loggen forbli åpen, nederst i vindusrekkefølgen.")
+        v.OnEvent("Close", (*) => v.Hide())
+        v.OnEvent("Escape", (*) => v.Hide())
+        v.Show("w560 h475")
+    }
+
+    LagreTrioInnstillinger(*) {
+        intervallTekst := RegExReplace(this.TrioIntervallK.Text, "\D")
+        if !InStr("|15|30|60|", "|" intervallTekst "|")
+            return MsgBox("Velg 15, 30 eller 60 sekunder.", APP_NAVN, "Icon!")
+        intervall := Integer(intervallTekst)
+        this.TrioAutoApne := this.TrioAutoK.Value = 1
+        this.TrioBakgrunn := this.TrioBakgrunnK.Value = 1
+        this.TrioVisFeil := this.TrioFeilK.Value = 1
+        this.TrioIntervall := intervall
+        try {
+            SettInnst("Statistikk", "TrioAutoApne", this.TrioAutoApne ? "1" : "0")
+            SettInnst("Statistikk", "TrioBakgrunn", this.TrioBakgrunn ? "1" : "0")
+            SettInnst("Statistikk", "TrioIntervallSek", this.TrioIntervall)
+            SettInnst("Statistikk", "TrioVisFeil", this.TrioVisFeil ? "1" : "0")
+            SetTimer this.TrioCb, 0
+            SetTimer this.TrioCb, this.TrioIntervall * 1000
+            this.OppdaterTrioStatus()
+            Tip("Trio Oppgavelogg-innstillinger lagret", 2200)
+        } catch {
+            MsgBox("Kunne ikke lagre Trio-innstillingene. Se Logg.", APP_NAVN, "Icon!")
+        }
+    }
+
+    KopierTrioDiagnose(*) {
+        A_Clipboard := "QuickerKeys " APP_VERSJON " – anonym Trio UIA-diagnose"
+            . "`r`n" this.TrioStatusTekst
+            . "`r`n" StrReplace(this.TrioDetaljer, "`n", "`r`n")
+            . "`r`nInnlesingsstatus: " this.TrioSistStatus
+            . "`r`nKilde: " this.TrioSistKilde
+            . "`r`nKandidatrader vurdert: " this.TrioSistKandidater
+            . "`r`n" StrReplace(this.TrioFeltDiagnose, "`n", "`r`n")
+            . "`r`nUnike oppgaver observert: " this.TrioOppgaver.Count
+            . "`r`nMerknad: Foreløpige tall basert på tilgjengelig historikk."
+            . "`r`nIngen rå kundedata eller oppgavetekster er inkludert."
+        Tip("Anonym UIA-diagnose kopiert", 2400)
+    }
+
+    Tick(*) {
+        if IsObject(this.TilstandK) && this.TilstandK.Visible
+            this.Oppdater()
+    }
+
+    Oppdater() {
+        if !IsObject(this.Stat1)
+            return
+        try {
+            dag := this.LesDagen()
+            this.Stat1.Text := "Mottatt: " dag.inn "      Ring ut: " dag.ut "      Satt videre: " dag.videre
+            this.Stat2.Text := "Samtaletid: " this.Tid(dag.sekInn + dag.sekUt)
+                . "      Snitt mottatt: " (dag.inn ? Round(dag.sekInn / dag.inn / 60, 1) " min" : "—")
+            this.Stat3.Text := "Skriftlig tid: " this.Tid(dag.skriftSek)
+                . "      Totalt telefoner: " (dag.inn + dag.ut)
+            aktiv := this.SamtaleType = "" ? "Ingen pågående samtale"
+                : (this.SamtaleType = "inn" ? "Mottatt samtale" : "Utgående samtale")
+                    . "  " this.Tid(this.SekunderSiden(this.SamtaleStart))
+                    . (this.Viderekoblet ? "  ·  satt videre" : "")
+            skrift := this.SkriftStart = "" ? "Skriftlig tid: av"
+                : "Skriftlig tid: " this.Tid(this.SekunderSiden(this.SkriftStart)) " (pågår)"
+            this.TilstandK.Text := aktiv Chr(10) skrift
+                . (this.SisteBeskjed = "" ? "" : "  ·  " this.SisteBeskjed)
+            this.SkriftKnapp.Text := this.SkriftStart = "" ? "Start skriftlig tid" : "Avslutt skriftlig tid"
+            this.SkriftKnapp.Opt("Background" (this.SkriftStart = "" ? TEMA.aksent : TEMA.paa))
+            this.Liste.Opt("-Redraw")
+            this.Liste.Delete()
+            loop Min(dag.rader.Length, 4) {
+                item := dag.rader[dag.rader.Length - A_Index + 1]
+                navn := item.type = "inn" ? "Mottatt" : item.type = "ut" ? "Ring ut" : "Skriftlig"
+                this.Liste.Add(, item.tid, navn, this.Tid(item.sek), item.videre ? "Ja" : "")
+            }
+            this.Liste.Opt("+Redraw")
+        } catch as feil {
+            this.TilstandK.Text := "Statistikk kunne ikke leses: " feil.Message
+            Logg("Statistikk: FEIL " feil.Message)
+        }
+    }
 }
 
 ; =====================================================================
