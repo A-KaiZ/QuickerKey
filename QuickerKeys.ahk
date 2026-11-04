@@ -569,63 +569,95 @@ ByggLoggPanel() {
 ByggInnstillingerPanel() {
     pn := "Innstillinger", x := INNHOLD_X, b := INNHOLD_B
     PanelTittel(pn, "Innstillinger")
-
     rader := [
-        ["Autostart", "Start automatisk når Windows starter", VekslAutostart],
-        ["Skjult",    "Start skjult (bare ikonet ved klokka vises)", VekslStartSkjult]
+        ["Autostart", "Start med Windows", "Programmet starter av seg selv når du logger på.", VekslAutostart],
+        ["Skjult", "Start skjult", "Bare ikonet ved klokka vises når programmet starter.", VekslStartSkjult]
     ]
-    for i, rad in rader {
-        y := 128 + (i - 1) * 48
-        Skrift(HOVED, "s10 norm c" TEMA.tekst)
-        Reg(pn, HOVED.AddText("x" x " y" y " w" (b - 130) " h34 +0x200 Background" TEMA.bg, rad[2]))
+    y := 132
+    for rad in rader {
+        InnstRad(pn, x, y, b, rad[2], rad[3])
         Skrift(HOVED, "s10 bold c" TEMA.tekst)
-        APP_KTRL[rad[1]] := Reg(pn, Knapp(HOVED, "x" (x + b - 110) " y" y " w110 h34", "", rad[3]))
+        APP_KTRL[rad[1]] := Reg(pn, Knapp(HOVED, "x" (x + b - 112) " y" (y + 15) " w96 h34", "", rad[4]))
+        y += 76
     }
     OppdaterToggle(APP_KTRL["Autostart"], FileExist(AutostartLnk()) != "")
     OppdaterToggle(APP_KTRL["Skjult"], Innst("App", "StartSkjult", "0") = "1")
-
-    y := 128 + rader.Length * 48 + 8
-    Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    Reg(pn, HOVED.AddText("x" x " y" y " w" (b - 290) " h30 +0x200 Background" TEMA.bg, "Vis / skjul vinduet med:"))
+    InnstRad(pn, x, y, b, "Vis / skjul vinduet", "Hurtigtast som åpner programmet.", "", 290)
     Skrift(HOVED, "s10 norm c000000")
-    APP_KTRL["VisTast"] := Reg(pn, HOVED.AddHotkey("x" (x + b - 280) " y" (y + 2) " w160 h26", Innst("App", "VisTast", "^!m")))
+    APP_KTRL["VisTast"] := Reg(pn, HOVED.AddHotkey("x" (x + b - 276) " y" (y + 19) " w154 h26", Innst("App", "VisTast", "^!m")))
     Skrift(HOVED, "s10 bold c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" (x + b - 110) " y" y " w110 h30", "Bruk", LagreVisTast))
-
-    y += 64
+    Reg(pn, Knapp(HOVED, "x" (x + b - 112) " y" (y + 15) " w96 h34", "Bruk", LagreVisTast))
+    y += 76
+    InnstRad(pn, x, y, b, "Tema", "Fargene i programmet. Starter på nytt ved bytte.", "", 170)
     Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" x " y" y " w180 h34", "Åpne datamappen", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2))
-    Reg(pn, Knapp(HOVED, "x" (x + 192) " y" y " w180 h34", "Avslutt programmet", (*) => ExitApp(), TEMA.av))
-
-    y += 52
-    Skrift(HOVED, "s9 bold c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", "Importer konfigurasjon…", ImporterKonfigurasjon, TEMA.aksent))
-    Reg(pn, Knapp(HOVED, "x" (x + 198) " y" y " w132 h34", "Tema…", VisTemaer, TEMA.aksent2))
-    Reg(pn, Knapp(HOVED, "x" (x + 340) " y" y " w152 h34", "Last inn på nytt", (*) => Reload(), TEMA.aksent2))
-    y += 52
-    Skrift(HOVED, "s10 bold c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", NETT_PAA ? "Deaktiver Nettverk" : "Aktiver Nettverk"
-        , VekslNettverk, NETT_PAA ? TEMA.av : TEMA.aksent))
+    Reg(pn, Knapp(HOVED, "x" (x + b - 160) " y" (y + 15) " w144 h34", Innst("App", "Tema", "Midnatt") "   ▾", VisTemaer, TEMA.aksent2))
     Skrift(HOVED, "s9 norm c" TEMA.dempet)
-    Reg(pn, HOVED.AddText("x" (x + 198) " y" y " w" (b - 198) " h34 +0x200 Background" TEMA.bg
-        , NETT_PAA ? "Nettverksverktøy er aktivert." : "MAC-import for Cisco ISE."))
+    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 40) " w" (b - 140) " h22 +0x200 Background" TEMA.bg, "Utviklere: MAAUNI  ·  KAISAD"))
+    Skrift(HOVED, "s9 norm c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x + b - 112) " y" (APP_H - 46) " w112 h30", "Avansert…", VisAvansertApp, TEMA.aksent2))
+}
 
-    y += 48
-    Skrift(HOVED, "s10 bold c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" x " y" y " w188 h34", "DIPS-innstillinger", VisDipsInnstillinger, TEMA.aksent2))
-    Skrift(HOVED, "s9 norm c" TEMA.dempet)
-    Reg(pn, HOVED.AddText("x" (x + 198) " y" y " w" (b - 198) " h34 +0x200 Background" TEMA.bg
-        , "Personlig signatur og forhåndsvisning."))
-    Reg(pn, HOVED.AddText("x" x " y" (APP_H - 38) " w" b " h22 Background" TEMA.bg, "Utviklere: MAUUNI  ·  KAISAD"))
+InnstRad(pn, x, y, b, tittel, forklaring, gui := "", hoyreB := 128) {
+    g := IsObject(gui) ? gui : HOVED
+    Kort(pn, x, y, b, 64, g)
+    tb := b - 32 - hoyreB
+    Skrift(g, "s10 bold c" TEMA.tekst)
+    k1 := g.AddText("x" (x + 16) " y" (y + 11) " w" tb " h22 Background" TEMA.kort, tittel)
+    Skrift(g, "s9 norm c" TEMA.dempet)
+    k2 := g.AddText("x" (x + 16) " y" (y + 34) " w" tb " h18 +0x4000 Background" TEMA.kort, forklaring)
+    if (pn != "")
+        Reg(pn, k1), Reg(pn, k2)
+}
+
+VisAvansertApp(*) {
+    static av := ""
+    if IsObject(av)
+        try av.Destroy()
+    av := Gui("+Owner" HOVED.Hwnd " -MinimizeBox -MaximizeBox", "Avansert – " APP_NAVN)
+    av.BackColor := TEMA.bg
+    av.MarginX := 0, av.MarginY := 0
+    av.OnEvent("Escape", (*) => av.Destroy())
+    w := 560, x := 24, b := w - 48
+    Skrift(av, "s15 bold c" TEMA.tekst)
+    av.AddText("x" x " y20 w" b " h30 Background" TEMA.bg, "Avansert")
+    Skrift(av, "s9 norm c" TEMA.dempet)
+    av.AddText("x" x " y52 w" b " h20 Background" TEMA.bg, "Innstillinger du sjelden trenger å endre.")
+    rader := [
+        ["DIPS-signatur", "Brukernavn og tillegg for #dwa og #dwr.", "Åpne…", VisDipsInnstillinger, TEMA.aksent2],
+        ["Importer innstillinger", "Hent oppsett fra en annen QuickerKeys- eller QuickKey-fil.", "Importer…", ImporterKonfigurasjon, TEMA.aksent2],
+        ["Nettverk", NETT_PAA ? "Nettverksverktøyene (MAC-import) er på." : "Verktøy for MAC-import til Cisco ISE.", NETT_PAA ? "Slå av" : "Slå på", VekslNettverk, NETT_PAA ? TEMA.av : TEMA.aksent],
+        ["Oppstartslogo", "Vises når du starter programmet selv.", "", "", ""],
+        ["Velkomstguide", "Vis introduksjonen for nye brukere igjen.", "Vis", VisVelkommen, TEMA.aksent2],
+        ["Last inn på nytt", "Tar i bruk endringer gjort direkte i innstillingsfilen.", "Last inn", Omstart, TEMA.aksent2],
+        ["Datamappe", DATA_MAPPE, "Åpne", (*) => Run('"' DATA_MAPPE '"'), TEMA.aksent2]
+    ]
+    y := 88
+    for rad in rader {
+        InnstRad("", x, y, b, rad[1], rad[2], av)
+        Skrift(av, "s10 bold c" TEMA.tekst)
+        if (rad[1] = "Oppstartslogo") {
+            logoK := Knapp(av, "x" (x + b - 112) " y" (y + 15) " w96 h34", "", "")
+            logoK.OnEvent("Click", (k, *) => (SettInnst("App", "Logo", Innst("App", "Logo", "1") = "1" ? "0" : "1")
+                , OppdaterToggle(k, Innst("App", "Logo", "1") = "1")))
+            OppdaterToggle(logoK, Innst("App", "Logo", "1") = "1")
+        } else {
+            Knapp(av, "x" (x + b - 112) " y" (y + 15) " w96 h34", rad[3], rad[4], rad[5])
+        }
+        y += 72
+    }
+    Skrift(av, "s10 bold c" TEMA.tekst)
+    Knapp(av, "x" x " y" (y + 6) " w180 h36", "Avslutt programmet", (*) => ExitApp(), TEMA.av)
+    Knapp(av, "x" (x + b - 120) " y" (y + 6) " w120 h36", "Lukk", (*) => av.Destroy())
+    av.Show("w" w " h" (y + 62))
 }
 
 ; Sidetittel med «?»-knapp. medToggle = siden har PÅ/AV-knapp oppe til høyre.
-PanelTittel(pn, tekst, medToggle := false) {
-    Skrift(HOVED, "s14 bold c" TEMA.tekst)
-    tittel := Reg(pn, HOVED.AddText("x" INNHOLD_X " y84 w" (INNHOLD_B - 170) " h32 +0x200 Background" TEMA.bg, tekst))
-    Skrift(HOVED, "s12 bold c" TEMA.tekst)
-    hx := medToggle ? INNHOLD_X + INNHOLD_B - 110 - 44 : INNHOLD_X + INNHOLD_B - 34
-    Reg(pn, Knapp(HOVED, "x" hx " y86 w34 h30", "?", VisHjelp.Bind(pn), TEMA.aksent2))
+PanelTittel(pn, tekst, medToggle := false, tittelB := 0) {
+    Skrift(HOVED, "s16 bold c" TEMA.tekst)
+    tittel := Reg(pn, HOVED.AddText("x" INNHOLD_X " y82 w" (tittelB ? tittelB : INNHOLD_B - 170) " h34 +0x200 Background" TEMA.bg, tekst))
+    Skrift(HOVED, "s11 bold c" TEMA.tekst)
+    hx := medToggle ? INNHOLD_X + INNHOLD_B - 110 - 42 : INNHOLD_X + INNHOLD_B - 32
+    Reg(pn, Knapp(HOVED, "x" hx " y86 w32 h30", "?", VisHjelp.Bind(pn), TEMA.aksent2))
     return tittel
 }
 
@@ -703,28 +735,121 @@ Reg(panel, ktrl) {
 Knapp(gui, opt, tekst, callback, bakgrunn := "") {
     if (bakgrunn = "")
         bakgrunn := TEMA.aksent
-    ktrl := gui.AddText(opt " Center +0x200 Background" bakgrunn, tekst)
-    ktrl.OnEvent("Click", callback)
+    ktrl := gui.AddText(opt " Center +0x200 +0x100 Background" bakgrunn, tekst)
+    if (callback != "")
+        ktrl.OnEvent("Click", callback)
+    HOVER[ktrl.Hwnd] := {k: ktrl, n: bakgrunn, h: HoverFarge(bakgrunn)}
     return ktrl
+}
+
+SettBg(ktrl, farge) {
+    if !IsObject(ktrl)
+        return
+    try {
+        hwnd := ktrl.Hwnd
+        if HOVER.Has(hwnd) {
+            h := HOVER[hwnd]
+            h.n := farge, h.h := HoverFarge(farge)
+            farge := HOVER_AKTIV = hwnd ? h.h : farge
+        }
+        ktrl.Opt("Background" farge)
+        ktrl.Redraw()
+    }
 }
 
 OppdaterToggle(ktrl, paa) {
     if !IsObject(ktrl)
         return
     ktrl.Text := paa ? "●  PÅ" : "○  AV"
-    ktrl.Opt("Background" (paa ? TEMA.paa : TEMA.av))
-    ktrl.Redraw()
+    SettBg(ktrl, paa ? TEMA.paa : TEMA.av)
 }
 
 VisPanel(navn, *) {
+    global NAV_VALGT
     for panelNavn, liste in PANELER
         for ktrl in liste
             ktrl.Visible := (panelNavn = navn) && (!VIS_VILKAR.Has(ktrl) || VIS_VILKAR[ktrl]())
-    valgt := NAV_FOR.Has(navn) ? NAV_FOR[navn] : navn
-    for knappNavn, knapp in NAVKNAPPER {
-        knapp.Opt("Background" (knappNavn = valgt ? TEMA.aksent : TEMA.nav))
-        knapp.Redraw()
+    NAV_VALGT := NAV_FOR.Has(navn) ? NAV_FOR[navn] : navn
+    for knappNavn in NAVKNAPPER
+        NavTegn(knappNavn)
+}
+
+MusOver(wParam, lParam, msg, hwnd) {
+    global HOVER_AKTIV, NAV_HOVER
+    if (hwnd = HOVER_AKTIV)
+        return
+    if (NAV_DEL.Has(hwnd) && NAV_DEL.Has(HOVER_AKTIV) && NAV_DEL[hwnd] = NAV_DEL[HOVER_AKTIV]) {
+        HOVER_AKTIV := hwnd
+        return
     }
+    AvsluttHover()
+    if NAV_DEL.Has(hwnd) {
+        HOVER_AKTIV := hwnd
+        NAV_HOVER := NAV_DEL[hwnd]
+        NavTegn(NAV_HOVER)
+    } else if HOVER.Has(hwnd) {
+        HOVER_AKTIV := hwnd
+        h := HOVER[hwnd]
+        try {
+            h.k.Opt("Background" h.h)
+            h.k.Redraw()
+        }
+    } else {
+        return
+    }
+    SetTimer SjekkHover, 60
+}
+
+SjekkHover() {
+    MouseGetPos , , , &c, 2
+    if (c != HOVER_AKTIV)
+        AvsluttHover()
+}
+
+AvsluttHover() {
+    global HOVER_AKTIV, NAV_HOVER
+    SetTimer SjekkHover, 0
+    gammel := HOVER_AKTIV
+    HOVER_AKTIV := 0
+    if !gammel
+        return
+    if NAV_DEL.Has(gammel) {
+        navn := NAV_HOVER
+        NAV_HOVER := ""
+        NavTegn(navn)
+    } else if HOVER.Has(gammel) {
+        h := HOVER[gammel]
+        try {
+            h.k.Opt("Background" h.n)
+            h.k.Redraw()
+        } catch {
+            HOVER.Delete(gammel)
+        }
+    }
+}
+
+ErLyst() => Lysstyrke(TEMA.bg) > 140
+Lysstyrke(farge) => (Integer("0x" SubStr(farge, 1, 2)) * 299 + Integer("0x" SubStr(farge, 3, 2)) * 587 + Integer("0x" SubStr(farge, 5, 2)) * 114) / 1000
+HoverFarge(farge) => Lysstyrke(farge) > 150 ? Bland(farge, "000000", 0.08) : Bland(farge, "FFFFFF", 0.13)
+
+Bland(a, b, andel) {
+    ut := ""
+    loop 3 {
+        i := (A_Index - 1) * 2 + 1
+        fra := Integer("0x" SubStr(a, i, 2)), til := Integer("0x" SubStr(b, i, 2))
+        ut .= Format("{:02X}", Round(fra + (til - fra) * andel))
+    }
+    return ut
+}
+
+RundeHjorner(hwnd, radius := 16) {
+    rc := Buffer(16, 0)
+    if !DllCall("GetWindowRect", "Ptr", hwnd, "Ptr", rc)
+        return
+    w := NumGet(rc, 8, "Int") - NumGet(rc, 0, "Int"), h := NumGet(rc, 12, "Int") - NumGet(rc, 4, "Int")
+    r := Round(radius * A_ScreenDPI / 96)
+    rgn := DllCall("CreateRoundRectRgn", "Int", 0, "Int", 0, "Int", w + 1, "Int", h + 1, "Int", r, "Int", r, "Ptr")
+    DllCall("SetWindowRgn", "Ptr", hwnd, "Ptr", rgn, "Int", true)
 }
 
 VisHoved(*) {
@@ -799,13 +924,17 @@ SettAktiv(vt, paa, lagre := true) {
             A_TrayMenu.Uncheck(vt.Navn)
     }
     OppdaterOversikt(vt)
+    OppdaterToppStatus()
 }
 
 OppdaterOversikt(vt) {
     if !OVERSIKT.Has(vt.Id)
         return
     status := vt.Aktiv ? vt.StatusTekst : "Slått av"
-    OVERSIKT[vt.Id].status.Text := vt.Beskrivelse "`n" (status != "" ? "• " status : "")
+    try {
+        OVERSIKT[vt.Id].status.SetFont("c" (vt.Aktiv ? TEMA.paa : TEMA.dempet))
+        OVERSIKT[vt.Id].status.Text := status != "" ? "●  " status : ""
+    }
 }
 
 ; Fire paletter. Tema leses fra INI ved oppstart, og endringer trer i kraft etter Reload().
@@ -815,16 +944,16 @@ TemaPalett(navn) {
     switch navn {
         case "Grafitt":
             return {bg:"191B22", kort:"282B35", nav:"111319", aksent:"655DD6", aksent2:"42435F"
-                , tekst:"F2F3F7", dempet:"AEB5C3", paa:"279D76", av:"566071", linje:"39404D"}
+                , tekst:"F2F3F7", dempet:"AEB5C3", paa:"279D76", av:"566071", linje:"39404D", feil:"FF6B6B"}
         case "Skog":
             return {bg:"10251F", kort:"1A362D", nav:"0B1C18", aksent:"267E6B", aksent2:"285D50"
-                , tekst:"F0F8F2", dempet:"A4C2B5", paa:"259D77", av:"546D64", linje:"33594A"}
+                , tekst:"F0F8F2", dempet:"A4C2B5", paa:"259D77", av:"546D64", linje:"33594A", feil:"FF6B6B"}
         case "Lys":
             return {bg:"F1F5F9", kort:"E2EAF3", nav:"CBD9EA", aksent:"A7D4FF", aksent2:"D2E4F5"
-                , tekst:"12243D", dempet:"405E7A", paa:"B9E6D0", av:"C6D0DD", linje:"ADBED2"}
+                , tekst:"12243D", dempet:"405E7A", paa:"B9E6D0", av:"C6D0DD", linje:"ADBED2", feil:"C62828"}
         default:
             return {bg:"0F1E3A", kort:"16294D", nav:"0B1730", aksent:"2F7BEA", aksent2:"24497F"
-                , tekst:"E8EEF9", dempet:"8FA3C7", paa:"1FA97A", av:"56637D", linje:"1E3560"}
+                , tekst:"E8EEF9", dempet:"8FA3C7", paa:"1FA97A", av:"56637D", linje:"1E3560", feil:"FF6B6B"}
     }
 }
 
