@@ -288,11 +288,11 @@ class DipsSignaturDialog {
         Skrift(g, "s9 c" TEMA.dempet)
         g.AddText("x24 y140 w452 h20 Background" TEMA.bg, "Brukernavn i signaturen")
         Skrift(g, "s10 c" TEMA.tekst)
-        this.Bruker := g.AddEdit("x24 y164 w452 h30 Background" TEMA.kort, profil.bruker)
+        this.Bruker := g.AddEdit("x24 y164 w452 h30 Limit40 Background" TEMA.kort, profil.bruker)
         Skrift(g, "s9 c" TEMA.dempet)
         g.AddText("x24 y212 w452 h20 Background" TEMA.bg, "Tillegg for #dwr (valgfritt)")
         Skrift(g, "s10 c" TEMA.tekst)
-        this.Tillegg := g.AddEdit("x24 y236 w452 h30 Background" TEMA.kort, profil.tillegg)
+        this.Tillegg := g.AddEdit("x24 y236 w452 h30 Limit80 Background" TEMA.kort, profil.tillegg)
         Skrift(g, "s10 bold c" TEMA.tekst)
         g.AddText("x24 y288 w452 h22 Background" TEMA.bg, "Forhåndsvisning")
         Skrift(g, "s10 c" TEMA.tekst, "Consolas")
@@ -340,6 +340,8 @@ class DipsSignaturDialog {
 
     Lagre(*) {
         try {
+            if (!this.Auto.Value && Trim(this.Bruker.Value) = "")
+                throw Error("Fyll inn eget brukernavn, eller velg automatisk Windows-brukernavn.")
             DipsLagreProfil(this.Auto.Value ? "" : this.Bruker.Value, this.Tillegg.Value)
             this.Vindu.Destroy()
             Logg("DIPS: personlige signaturinnstillinger lagret")
@@ -2244,7 +2246,7 @@ class VT_SMKontakt extends VT_Base {
         Varsel("Trio Attendant", verdi, "→ fylles inn i Service Manager")
         ok := this.Fyll(verdi, "attendant")
         st.Fylt := ok
-        st.Tekst := ok ? "fylt inn i Service Manager " FormatTime(, "HH:mm:ss") "" : "innfylling feilet – se Logg"
+        st.Tekst := ok ? "fylt inn i Service Manager " FormatTime(, "HH:mm:ss") : "innfylling feilet – se Logg"
         this.Sjekk()
     }
 
@@ -2414,7 +2416,7 @@ class VT_SMKontakt extends VT_Base {
                     this.VarselWeb(les.bruker)
                     ok := this.Fyll(les.bruker, kilde)
                     st.Fylt := ok
-                    st.Tekst := ok ? "fylt inn i Service Manager " FormatTime(, "HH:mm:ss") "" : "innfylling feilet – se Logg"
+                    st.Tekst := ok ? "fylt inn i Service Manager " FormatTime(, "HH:mm:ss") : "innfylling feilet – se Logg"
                 } else {
                     st.Tekst := "lest – fylles ikke inn (" (this.Aktiv ? "Kontakt-feltet er ikke lært" : "SM Kontakt er AV") ")"
                 }
@@ -2683,7 +2685,7 @@ class VT_SMKontakt extends VT_Base {
             return Tip("Kontakt-feltet er ikke lært – trykk «Lær oppsett» først")
         if this.Fyll(bruker, kilde) && kilde != "" {
             this.Tilst[kilde].Fylt := true
-            this.Tilst[kilde].Tekst := "fylt inn manuelt " FormatTime(, "HH:mm:ss") ""
+            this.Tilst[kilde].Tekst := "fylt inn manuelt " FormatTime(, "HH:mm:ss")
         }
     }
 

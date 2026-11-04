@@ -30,7 +30,7 @@ HotfixType(tekst, hwnd, expected) {
 RunHotfixTests() {
     global INI_FIL := A_ScriptDir "\test.ini", TEKST_MAPPE := A_ScriptDir
     global LOGG_MAPPE := A_ScriptDir, LOGG_LINJER := [], APP_KTRL := Map(), OVERSIKT := Map()
-    global APP_NAVN := "QuickerKeys tests", DIPS_INI_FIL := A_ScriptDir "\DIPS.ini"
+    global APP_NAVN := "QuickerKeys", DIPS_INI_FIL := A_ScriptDir "\DIPS.ini"
     fixturePid := 0, tf := "", dlg := "", code := 0
     try {
         HotfixAssert(TekstflytSignatur("#dwa", "TEST", "", "20261104120000") == "(test) 041126", "signature without clipboard")
@@ -204,13 +204,17 @@ RunDipsUiTests() {
     ui.Bruker.Value := "MiXeD"
     ui.Tillegg.Value := "Avd7"
     ui.OppdaterForhandsvisning()
-    HotfixAssert(ui.Forhandsvisning.Value == "#dwa  (mixed) " FormatTime(, "ddMMyy") "`r`n#dwr  (mixed) " FormatTime(, "ddMMyy") " Avd7"
+    HotfixAssert(StrReplace(ui.Forhandsvisning.Value, "`r`n", "`n") == "#dwa  (mixed) " FormatTime(, "ddMMyy") "`n#dwr  (mixed) " FormatTime(, "ddMMyy") " Avd7"
         , "live preview matches actual signatures")
     ui.Auto.Value := 1
     ui.VekslAutomatisk()
     HotfixAssert(!ui.Bruker.Enabled && InStr(ui.Forhandsvisning.Value, "(" StrLower(A_UserName) ")"), "automatic mode disables custom field and previews Windows account")
     ui.Auto.Value := 0
     ui.VekslAutomatisk()
+    original := FileRead(DIPS_INI_FIL)
+    ui.Bruker.Value := ""
+    ui.Lagre()
+    HotfixAssert(FileRead(DIPS_INI_FIL) == original && WinExist("ahk_id " ui.Vindu.Hwnd), "empty custom username is rejected without saving or closing")
     ui.Bruker.Value := "demobruker"
     ui.Tillegg.Value := "D2358"
     ui.OppdaterForhandsvisning()
