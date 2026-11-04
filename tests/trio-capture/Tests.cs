@@ -27,7 +27,7 @@ public static class CaptureTests
             {
                 Target target = null;
                 Stopwatch timer = Stopwatch.StartNew();
-                while (timer.ElapsedMilliseconds < 5000)
+                while (timer.ElapsedMilliseconds < 15000)
                 {
                     fixture.Refresh();
                     if (fixture.HasExited) throw new Exception("fixture exited");

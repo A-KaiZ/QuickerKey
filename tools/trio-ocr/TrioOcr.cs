@@ -251,6 +251,7 @@ namespace QuickerKeys.Ocr
     {
         public readonly OcrStatus Status;
         public EngineException(OcrStatus status) { Status = status; }
+        public EngineException(OcrStatus status, Exception inner) : base("OCR engine failure", inner) { Status = status; }
     }
 
     public sealed class Engine
@@ -302,7 +303,7 @@ namespace QuickerKeys.Ocr
                 }
                 catch (OperationCanceledException) { throw new EngineException(OcrStatus.Cancelled); }
                 catch (EngineException) { throw; }
-                catch { throw new EngineException(OcrStatus.EngineFailure); }
+                catch (Exception error) { throw new EngineException(OcrStatus.EngineFailure, error); }
                 finally
                 {
                     Array.Clear(png, 0, png.Length);
