@@ -29,7 +29,12 @@ public sealed class FixtureForm : Form
         Shown += delegate { List.Items[2].Selected = true; List.Focus(); };
         if (mode == "native") List.Dock = DockStyle.Fill;
     }
-    protected override void OnPaint(PaintEventArgs e) { base.OnPaint(e); DrawPrivate(e.Graphics); }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        if (mode == "blank") e.Graphics.Clear(Color.White);
+        else DrawPrivate(e.Graphics);
+    }
     private void DrawPrivate(Graphics graphics)
     {
         graphics.Clear(Color.White);
