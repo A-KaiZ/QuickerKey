@@ -983,7 +983,7 @@ LagreTema(vindu, navn) {
         SettInnst("App", "Tema", navn)
         Logg("Endret tema til " navn)
         vindu.Destroy()
-        Reload()
+        Omstart()
     } catch as feil {
         MsgBox "Kunne ikke lagre tema: " feil.Message, APP_NAVN, "Icon!"
     }
@@ -1034,7 +1034,7 @@ ImporterKonfigurasjon(*) {
         for entry in endringer
             SettInnst(entry.seksjon, entry.nokkel, entry.verdi)
         Logg("Importerte " endringer.Length " INI-verdier fra ekstern fil")
-        Reload()
+        Omstart()
     } catch as feil {
         MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
     }
@@ -1174,7 +1174,7 @@ ImporterGammelQuickKey(fil) {
             SettInnst("TrioSnarveier", "HKCopy", kopitast)
         SettInnst("TrioSnarveier", "Aktiv", "1")
         Logg("QuickKey v1.05: importerte " importerte.Length " Trio-snarveier; kildefil beholdt")
-        Reload()
+        Omstart()
     } catch as feil {
         MsgBox "Import feilet:`n" feil.Message, APP_NAVN, "Icon!"
     }
@@ -1219,7 +1219,7 @@ VekslAutostart(*) {
     if FileExist(lnk)
         FileDelete lnk
     else
-        FileCreateShortcut A_ScriptFullPath, lnk, A_ScriptDir
+        FileCreateShortcut A_ScriptFullPath, lnk, A_ScriptDir, "/autostart"
     OppdaterToggle(APP_KTRL["Autostart"], FileExist(lnk) != "")
 }
 
@@ -1279,6 +1279,86 @@ Tip(melding, ms := 1800) {
     SetTimer () => ToolTip(), -ms
 }
 
+
+
+; --- v3.12.0 release: silent reload and first-run guidance ---
+Omstart(*) {
+    try SettInnst("App", "StilleOmstart", "1")
+    Reload()
+}
+
+ManuellStart() {
+    stille := Innst("App", "StilleOmstart", "0") = "1"
+    if stille {
+        try SettInnst("App", "StilleOmstart", "0")
+        return false
+    }
+    for arg in A_Args
+        if (arg = "/autostart")
+            return false
+    return A_TickCount > 120000
+}
+
+OppdaterAutostartSnarvei() {
+    lnk := AutostartLnk()
+    if !FileExist(lnk)
+        return
+    try {
+        FileGetShortcut lnk, &mal, , &arg
+        if (mal != A_ScriptFullPath || arg != "/autostart") {
+            FileCreateShortcut A_ScriptFullPath, lnk, A_ScriptDir, "/autostart"
+            Logg("Autostart-snarveien er oppdatert til denne versjonen")
+        }
+    }
+}
+
+EtterLogo(fn) {
+    if LOGO_AKTIV
+        LOGO_KO.Push(fn)
+    else
+        fn.Call()
+}
+
+VisLogo() {
+    global LOGO, LOGO_AKTIV
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow", "QuickerKeys oppstart")
+    g.BackColor := TEMA.nav
+    Skrift(g, "s28 bold c" TEMA.tekst)
+    g.AddText("x10 y35 w420 h55 Center +0x200 Background" TEMA.nav, "QuickerKeys")
+    Skrift(g, "s10 c" TEMA.dempet)
+    g.AddText("x10 y94 w420 h34 Center Background" TEMA.nav, "by MAAUNI and KAISAD")
+    g.Show("NoActivate w440 h155")
+    RundeHjorner(g.Hwnd, 22)
+    LOGO := g
+    LOGO_AKTIV := true
+    SetTimer LogoFerdig, -1400
+}
+
+LogoFerdig() {
+    global LOGO, LOGO_AKTIV, LOGO_KO
+    if IsObject(LOGO)
+        try LOGO.Destroy()
+    LOGO := ""
+    LOGO_AKTIV := false
+    ko := LOGO_KO, LOGO_KO := []
+    for fn in ko
+        try fn.Call()
+}
+
+VisVelkommen(*) {
+    g := Gui("+Owner" HOVED.Hwnd " -MinimizeBox", "Velkommen til QuickerKeys")
+    g.BackColor := TEMA.bg
+    Skrift(g, "s16 bold c" TEMA.tekst)
+    g.AddText("x22 y20 w460 h34 Background" TEMA.bg, "Velkommen til QuickerKeys")
+    Skrift(g, "s10 c" TEMA.tekst)
+    g.AddText("x22 y68 w460 h120 Background" TEMA.bg
+        , "1. Slå på verktøyene på Oversikt.`n`n2. Lær oppsett i SM Kontakt.`n`n3. Lukk vinduet når du er ferdig. Verktøyene kjører videre.")
+    Skrift(g, "s10 bold c" TEMA.tekst)
+    Knapp(g, "x22 y205 w224 h38", "Sett opp SM Kontakt", (*) => (g.Destroy(), VisHoved(), VisPanel("SM Kontakt")), TEMA.aksent2)
+    Knapp(g, "x330 y205 w150 h38", "Kom i gang", (*) => g.Destroy())
+    g.OnEvent("Escape", (*) => g.Destroy())
+    g.Show("w502 h266")
+}
 
 ; =====================================================================
 ;  NETTVERK – egne verktøy. Av som standard; aktiveres via Innstillinger.
@@ -1541,13 +1621,13 @@ VekslNettverk(*) {
     if NETT_PAA {
         SettInnst("App", "Nettverk", "0")
         Logg("Nettverk-siden slått av")
-        Reload()
+        Omstart()
         return
     }
     SettInnst("App", "Nettverk", "1")
     SettInnst("App", "NettverkApne", "1")
     Logg("Nettverk-siden slått på")
-    Reload()
+    Omstart()
 }
 
 ; =====================================================================
