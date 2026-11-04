@@ -116,21 +116,6 @@ public static class OcrTests
             Frame frame = Render(scale, scale != 1.0);
             try
             {
-                try { engine.Read(frame.Image, frame.Layout, Field.Time, null, CancellationToken.None).GetAwaiter().GetResult(); }
-                catch (EngineException error) {
-                    Console.WriteLine("SYNTHETIC engine exception: " + (error.InnerException == null ? error.Status.ToString() : error.InnerException.GetType().Name + ": " + error.InnerException.Message));
-                    byte[] diagnosticPng = Engine.Prepare(frame.Image, frame.Layout, Field.Time, null);
-                    ProcessStartInfo info = new ProcessStartInfo(Path.Combine(engine.Directory, "tesseract.exe"), "stdin stdout --oem 1 --psm 6 -l eng tsv") {
-                        UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-                    info.EnvironmentVariables["TESSDATA_PREFIX"] = Path.Combine(engine.Directory, "tessdata");
-                    using (Process direct = Process.Start(info)) {
-                        var stdout = direct.StandardOutput.ReadToEndAsync(); var stderr = direct.StandardError.ReadToEndAsync();
-                        direct.StandardInput.BaseStream.Write(diagnosticPng, 0, diagnosticPng.Length); direct.StandardInput.Close();
-                        if (!direct.WaitForExit(10000)) { direct.Kill(); throw new Exception("Synthetic direct OCR timed out"); }
-                        Console.WriteLine("SYNTHETIC direct exit=" + direct.ExitCode + " stderr=" + stderr.Result + " stdoutChars=" + stdout.Result.Length);
-                    }
-                    Array.Clear(diagnosticPng, 0, diagnosticPng.Length); throw;
-                }
                 Report report = reader.Read(frame.Image, frame.Layout, Day, CancellationToken.None).GetAwaiter().GetResult();
                 Console.WriteLine("GOLDEN scale=" + scale + " rows=" + report.Observations.Count + " status=" + report.Status + " low=" + report.LowConfidence + " invalidDate=" + report.InvalidDate);
                 Require(report.Status == OcrStatus.Read && report.Observations.Count >= 3, "real engine reads the synthetic numeric fields at scale " + scale);
@@ -190,7 +175,7 @@ public static class OcrTests
             ProcessStartInfo echoInfo = new ProcessStartInfo(args[2]) { WorkingDirectory = Path.GetDirectoryName(args[2]) };
             using (BinaryProcess echo = BinaryProcess.Start(echoInfo)) using (MemoryStream returned = new MemoryStream()) {
                 echo.Input.Write(binary, 0, binary.Length); echo.Input.Close(); echo.Output.CopyTo(returned);
-                Require(echo.Child.WaitForExit(2000) && returned.ToArray().SequenceEqual(binary), "binary PNG signature and arbitrary bytes cross the process boundary without a BOM");
+                Require(echo.WaitForExit(2000) && echo.ExitCode == 0 && returned.ToArray().SequenceEqual(binary), "binary PNG signature and arbitrary bytes cross the process boundary without a BOM");
             }
             Require(engine.Available, "portable engine and model are present"); GoldenTests(engine);
             foreach (string fixture in args.Skip(3)) Live(args[0], fixture, engine);

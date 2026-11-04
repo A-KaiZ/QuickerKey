@@ -26,11 +26,24 @@ namespace QuickerKeys.Ocr
         [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CreatePipe(out IntPtr read, out IntPtr write, ref Security security, int size);
         [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetHandleInformation(IntPtr handle, int mask, int flags);
         [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetExitCodeProcess(IntPtr handle, out uint exitCode);
+        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool TerminateProcess(IntPtr handle, uint exitCode);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern bool CreateProcess(
             string application, StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity, bool inherit,
             int flags, IntPtr environment, string directory, ref Startup startup, out Created created);
-        public Process Child;
+        private IntPtr child;
         public FileStream Input, Output, Error;
+        public bool WaitForExit(int milliseconds)
+        {
+            uint result = WaitForSingleObject(child, checked((uint)milliseconds));
+            if (result == UInt32.MaxValue) throw new Win32Exception(Marshal.GetLastWin32Error());
+            return result == 0;
+        }
+        public uint ExitCode
+        {
+            get { uint code; if (!GetExitCodeProcess(child, out code)) throw new Win32Exception(Marshal.GetLastWin32Error()); return code; }
+        }
         private static void Close(ref IntPtr handle) { if (handle != IntPtr.Zero) CloseHandle(handle); handle = IntPtr.Zero; }
         public static BinaryProcess Start(ProcessStartInfo info)
         {
@@ -53,7 +66,8 @@ namespace QuickerKeys.Ocr
                 StringBuilder command = new StringBuilder("\"" + info.FileName + "\" " + info.Arguments);
                 if (!CreateProcess(info.FileName, command, IntPtr.Zero, IntPtr.Zero, true, 0x08000400, environment,
                     info.WorkingDirectory, ref startup, out created)) throw new Win32Exception(Marshal.GetLastWin32Error());
-                process.Child = Process.GetProcessById(created.Pid);
+                // Retain the CreateProcess handle, including when the child exits immediately.
+                process.child = created.Process; created.Process = IntPtr.Zero;
                 process.Input = new FileStream(new SafeFileHandle(inWrite, true), FileAccess.Write, 4096, false); inWrite = IntPtr.Zero;
                 process.Output = new FileStream(new SafeFileHandle(outRead, true), FileAccess.Read, 4096, false); outRead = IntPtr.Zero;
                 process.Error = new FileStream(new SafeFileHandle(errRead, true), FileAccess.Read, 4096, false); errRead = IntPtr.Zero;
@@ -69,7 +83,7 @@ namespace QuickerKeys.Ocr
         }
         public void Dispose()
         {
-            if (Child != null) { try { if (!Child.HasExited) Child.Kill(); Child.WaitForExit(500); } catch { } Child.Dispose(); Child = null; }
+            if (child != IntPtr.Zero) { try { if (!WaitForExit(0)) TerminateProcess(child, 1); WaitForExit(500); } catch { } Close(ref child); }
             if (Input != null) { Input.Dispose(); Input = null; }
             if (Output != null) { Output.Dispose(); Output = null; }
             if (Error != null) { Error.Dispose(); Error = null; }

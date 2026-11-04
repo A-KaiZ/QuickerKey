@@ -5,6 +5,12 @@ New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 & (Join-Path $PSScriptRoot 'build.ps1') -OutputDirectory (Join-Path $OutputDirectory 'TrioOCR')
 Copy-Item (Join-Path $repo 'QuickerKeys.ahk') $OutputDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot 'README.md') (Join-Path $OutputDirectory 'README.md') -Force
+$sourceRoot = Join-Path $OutputDirectory 'TrioOCR/source'
+Copy-Item (Join-Path $repo 'QuickerKeys.ahk'),(Join-Path $repo 'README.md') $sourceRoot -Force
+Copy-Item (Join-Path $repo 'tests') $sourceRoot -Recurse -Force
+$sourceDocs = Join-Path $sourceRoot 'docs'
+New-Item -ItemType Directory -Force -Path $sourceDocs | Out-Null
+Copy-Item (Join-Path $repo 'docs/QA-trio-ocr-v3.13.md') $sourceDocs -Force
 $runtime = Join-Path $OutputDirectory 'Runtime'
 New-Item -ItemType Directory -Force -Path $runtime | Out-Null
 $ahkZip = Join-Path $env:TEMP 'quickerkeys-ahk-v2.0.19.zip'

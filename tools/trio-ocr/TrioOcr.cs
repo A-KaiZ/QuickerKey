@@ -297,7 +297,7 @@ namespace QuickerKeys.Ocr
                     if (await Task.WhenAny(combined, Task.Delay(6000, cancel)).ConfigureAwait(false) != combined)
                         throw new EngineException(cancel.IsCancellationRequested ? OcrStatus.Cancelled : OcrStatus.Timeout);
                     await combined.ConfigureAwait(false);
-                    if (!process.Child.WaitForExit(500) || process.Child.ExitCode != 0) throw new EngineException(OcrStatus.EngineFailure);
+                    if (!process.WaitForExit(500) || process.ExitCode != 0) throw new EngineException(OcrStatus.EngineFailure);
                     string text = Encoding.UTF8.GetString(output.Result);
                     Array.Clear(output.Result, 0, output.Result.Length); Array.Clear(error.Result, 0, error.Result.Length);
                     return ParseTsv(text, layout.Columns[field]);
