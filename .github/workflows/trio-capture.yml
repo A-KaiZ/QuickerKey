@@ -1,0 +1,29 @@
+name: Trio capture probe (Windows)
+on:
+  pull_request:
+    paths:
+      - 'tools/trio-capture/**'
+      - 'tests/trio-capture/**'
+      - '.github/workflows/trio-capture.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  capture-probe:
+    runs-on: windows-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build standalone capture probe
+        shell: pwsh
+        run: ./tools/trio-capture/build.ps1 -OutputDirectory "$env:RUNNER_TEMP/TrioCaptureProbe"
+      - name: Test visible and covered capture, freshness, blank content and cancellation
+        shell: pwsh
+        run: ./tests/trio-capture/run-tests.ps1 -Probe "$env:RUNNER_TEMP/TrioCaptureProbe/TrioCaptureProbe.exe"
+      - name: Publish portable probe with complete source
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrioCaptureProbe-P0-Windows-x64
+          path: ${{ runner.temp }}/TrioCaptureProbe/
+          retention-days: 30
+          if-no-files-found: error

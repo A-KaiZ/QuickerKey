@@ -1,0 +1,31 @@
+name: QuickerKeys 3.13 sandbox OCR (Windows)
+on:
+  pull_request:
+    paths:
+      - 'QuickerKeys.ahk'
+      - 'tools/trio-ocr/**'
+      - 'tools/trio-capture/**'
+      - 'tests/trio-ocr/**'
+      - '.github/workflows/trio-ocr.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sandbox:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build complete QuickerKeys sandbox with portable OCR
+        shell: pwsh
+        run: ./tools/trio-ocr/build-sandbox.ps1 -OutputDirectory "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1"
+      - name: Test real OCR, dynamic geometry and row validation
+        shell: pwsh
+        run: ./tests/trio-ocr/run-tests.ps1 -Probe "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1/TrioOCR/TrioOcrProbe.exe"
+      - name: Publish test package with full source
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickerKeys-3.13-sandbox1-Windows-x64
+          path: ${{ runner.temp }}/QuickerKeys-3.13-sandbox1/
+          retention-days: 30
+          if-no-files-found: error

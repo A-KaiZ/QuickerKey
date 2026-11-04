@@ -24,13 +24,14 @@ VerktoyListe() => [
     VT_Tekstflyt(),
     VT_SMKontakt(),
     VT_TrioSnarveier(),
-    VT_Vindusbytter()
+    VT_Vindusbytter(),
+    VT_TrioOCR()
 ]
 
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12.0"
+global APP_VERSJON := "3.13-sandbox1"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560", feil: "FF6B6B"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -133,7 +134,7 @@ class VT_Base {
 FinnDataMappe() {
     ; Fast, isolert datamappe uavhengig av hvor QuickerKeys.ahk kjøres fra.
     ; Import fra gamle QuickKey skal aldri flytte programmets datamappe.
-    mappe := A_AppData "\QuickerKeys"
+    mappe := A_AppData "\QuickerKeysSandbox313"
     if !DirExist(mappe)
         DirCreate mappe
     return mappe
@@ -147,6 +148,10 @@ LagMappestruktur() {
         if !DirExist(mappe)
             DirCreate mappe
     }
+
+    ; Sandbox bruker egne data og importerer ikke ordinære profiler automatisk.
+    if InStr(APP_VERSJON, "sandbox")
+        return meldinger
 
     gamleMapper := [DATA_MAPPE]
     if (StrLower(A_ScriptDir) != StrLower(DATA_MAPPE))
@@ -368,6 +373,8 @@ class DipsSignaturDialog {
 }
 
 LukkGamleSkript() {
+    if InStr(APP_VERSJON, "sandbox")
+        return []
     lukket := []
     forrige := A_DetectHiddenWindows
     DetectHiddenWindows true
@@ -1212,7 +1219,7 @@ StartQuickerKeys(*) {
 }
 
 ; ---- App-innstillinger ----
-AutostartLnk() => A_Startup "\" APP_NAVN ".lnk"
+AutostartLnk() => A_Startup "\QuickerKeysSandbox313.lnk"
 
 VekslAutostart(*) {
     lnk := AutostartLnk()
@@ -5024,6 +5031,37 @@ TrioTastFraTekst(tekst) {
 ;  Opptil fire vinduer, hver med sin egen hurtigtast. Trykk tasten –
 ;  så kommer vinduet fram (gjenopprettes hvis det er minimert).
 ; =====================================================================
+class VT_TrioOCR extends VT_Base {
+    Navn := "Trio OCR-test"
+    Beskrivelse := "Eksperimentell innlesing av dagens synlige oppgaver fra Trio."
+
+    ByggPanel(gui, x, y, b) {
+        Skrift(gui, "s10 bold c" TEMA.tekst)
+        this.Leg(Knapp(gui, "x" x " y" y " w260 h42", "Åpne Trio OCR-test", ObjBindMethod(this, "Apne")))
+        Skrift(gui, "s10 norm c" TEMA.tekst)
+        this.Leg(gui.AddText("x" x " y" (y + 64) " w" b " h120 Background" TEMA.bg,
+            "1. Åpne Oppgavelogg uten minimering.`n2. Finn loggvinduet i testen og velg Les utsnitt.`n3. Del den anonyme diagnosen etter prøven.`n`nTallene gjelder bare dagens synlige rader i det leste bildet."))
+        Skrift(gui, "s9 norm c" TEMA.dempet)
+        this.Leg(gui.AddText("x" x " y" (y + 204) " w" b " h100 Background" TEMA.bg,
+            "Dette er sandbox for v3.13, basert på offisiell v3.12.`nOCR kjøres lokalt. Ingen bilder eller rå celleverdier lagres.`nAutomatisk dashboard og full historikk er ikke aktivert."))
+    }
+    Start() => this.SettStatus("Klar for manuell OCR-prøve")
+    Stopp() => this.SettStatus("Manuell OCR-prøve")
+    Hjelp() => "Testpakken må pakkes helt ut. Åpne OCR-testen herfra, finn Oppgavelogg og les ett utsnitt. Test bildehenting åpner P0-prøven. Ikke kjør ordinær QuickerKeys samtidig med sandboxen: hurtigtaster kan overlappe."
+    HjelperFil() => A_ScriptDir "\TrioOCR\TrioOcrProbe.exe"
+    Apne(*) {
+        fil := this.HjelperFil()
+        if !FileExist(fil) {
+            MsgBox "OCR-programmet mangler. Pakk ut hele QuickerKeys 3.13-sandbox ZIP-filen og start derfra.", "Trio OCR-test", "Icon!"
+            return
+        }
+        try Run '"' fil '"', A_ScriptDir "\TrioOCR"
+        catch {
+            MsgBox "OCR-testen kunne ikke startes. Windows x64 og .NET Framework 4.8 kreves.", "Trio OCR-test", "Icon!"
+        }
+    }
+}
+
 class VT_Vindusbytter extends VT_Base {
     Navn := "Vindusbytter"
     Beskrivelse := "Hopp rett til et vindu med en hurtigtast – opptil fire vinduer."
