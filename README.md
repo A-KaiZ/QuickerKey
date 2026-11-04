@@ -10,6 +10,21 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Vindusbytter:** Opptil fire vanlige programmer/vinduer og nettleserfaner.
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 
+## v3.12.0 – offisiell stabil versjonslinje (4. november 2026)
+
+Denne release-grenen er uavhengig av den åpne eksperimentelle Trio-oppgavelogg-grenen.
+
+- Oppdatert programversjon til `3.12.0`.
+- Ny oversikt med kort, ikoner og status for aktive verktøy.
+- Navigasjon og innstillinger er reorganisert med eget Avansert-vindu.
+- Oppstart støtter introduksjon første gang, valgfri oppstartslogo og stille omstart.
+- Autostart-snarvei oppdateres til aktiv skriptbane.
+- Beholder personlige DIPS-profiler, `#dwa`/`#dwr`, Alt+F3 og eksisterende Trio-/Service Manager-funksjoner fra main.
+
+**Avgrensning:** Ingen kode for oppgavelogg, dashboard, statistikk, OCR eller bakgrunnsfangst inngår. Dette arbeidet fortsetter i separat forsøksgren og kan bli v3.13 etter verifisert funksjon.
+
+**QA:** Kjør Windows AutoHotkey v2-parsing og eksisterende hotfix-tester i GitHub Actions. Verifiser GUI, autostart, signaturer og Trio-snarveier på arbeidsmaskinen før produksjonsbruk.
+
 ## v3.11.3 – personlige DIPS-innstillinger og ryddigere grensesnitt
 
 **Innstillinger → DIPS-innstillinger** samler brukernavn, valgfritt tillegg for `#dwr` og en forhåndsvisning av begge signaturene. Samme dialog kan åpnes fra Tekstflyt.
