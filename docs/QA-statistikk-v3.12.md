@@ -1,6 +1,28 @@
 # QuickerKeys Statistikk v3.12 — QA og avgrensninger
 
 
+## RC14 – sjekk feilstatus og ANSI/Unicode før flere parserendringer
+
+**RC13 i faktisk Trio:** `SysListView32`, Win32, 200 rader, 13 kolonner, OwnerData=nei. Både standard native tekstlesing og alle prøvde UIA-tekstkilder gir tomt. Windows Forms-filterfeilen forklarer dermed ikke dette miljøet.
+
+Kildekontroll av AutoHotkey v2.0.19 `source/lib/win.cpp` viste at enkelte WriteProcessMemory/SendMessageTimeout/ReadProcessMemory-feil gir tomme felter uten unntak fra ListViewGetContent. RC14 har derfor en avgrenset kontrollert protokollrute og eksporterer feilstatus, ikke flere tilfeldige datoformater.
+
+- ANSI (`LVM_GETITEMTEXTA`) og Unicode (`LVM_GETITEMTEXTW`) prøves på opptil fire unike tidsrader. En variant må gi et gyldig helt tidsstempel før den brukes videre. Ingen tekstvariant velges ut fra radantall eller synlig tegning.
+- LVITEM-layout tilpasses 32-/64-bits mål. Kun en nyallokert buffer for dokumenterte ListView-anrop leses tilbake. Ingen DLL-/kodeinjeksjon, private pekertrær eller skanning. Ingen sikkerhetsnivåer eller meldingsfiltre endres.
+- Hvert leseanrop registrerer skrivefeil, meldingsfeil/tidsavbrudd og lesefeil med numerisk Windows-kode. Vellykket melding med tomt svar er et separat utfall. Buffer/håndtak frigjøres også ved feil.
+- Kompatibilitetsruten har en kooperativ sekssekundersgrense og 250 ms meldingsfrist per kall. Langvarige eller delvise utvalg merkes begrenset. Avkortede felter brukes ikke som komplette statistikkmålinger.
+- Dagens filter og begrenset datalagring beholdes. Suksess i syntetiske tester beviser ikke teksttilgang i faktisk Trio.
+
+Denne grenen er også oppdatert med main `e88e9ff` (personlige DIPS-innstillinger, signaturfikser, Alt+F3 og profesjonell nettverks-UI). Mergekonflikter løses med begge funksjonssettene beholdt; de separate hastefikstestene skal kjøre sammen med Trio-testene.
+
+### Tester
+
+32- og 64-bits Windows Forms-fixture som returnerer tomt på Unicode-meldinger, men tekst på ANSI: leseren skal gjenfinne to dagens oppgaver og korrekt varighet. En separat owner-drawn fixture tegner tidsverdier fra privat tilstand og lagrer tomme ListView-strenger: begge meldinger skal gi tomt, uten fabrikkert oppgavetelling. Tidligere native/UIA-/kalender-/langloggtester og main sine DIPS-/hotkeytester skal bestå.
+
+### Faktisk Trio-test
+
+Start **3.12-rc14** og del ved fortsatt feil bare «Native protokollfeil» og «LVM_GETITEMTEXTW/A»-linjene samt «Native liste». Dette avklarer om anrop feiler, om ANSI gir tekst, eller om begge protokoller leveres og gir tomme svar. Ingen rå kundedata eller minnedump trengs. **Draft beholdes; ingen merge til main.**
+
 ## RC13 – klassefilter for direkte WinForms-ListView-lesing
 
 **RC12 i faktisk Trio:** Name, Value, LegacyName, LegacyValue og radnavn er tomme BSTR-er; TextPattern er utilgjengelig. Dette bekrefter at de prøvde UIA-kildene ikke gir tidsverdier. Det beviser ikke at native ListView-meldinger er prøvd, fordi denne ruten tidligere krevde eksakt klassenavn `SysListView32`.

@@ -11,7 +11,7 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 - **Statistikk (PR #9):** Automatisk, foreløpig innlesing fra Trio Oppgavelogg til eget dashboard, manuell skriftlig tid og UIA-diagnostikk.
 
-## v3.12-rc13 – Statistikk + Trio Oppgavelogg (PR #9)
+## v3.12-rc14 – Statistikk + Trio Oppgavelogg (PR #9)
 
 En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **Siste registreringer i dag** er det en liten rød **🗑**-knapp med bekreftelse. Den sletter kun dagens fullførte manuelle CSV-statistikk etter eksplisitt Ja, og blokkeres hvis en samtale eller skriftlig tid fortsatt pågår. Den nye **Trio Oppgavelogg / UIA…**-knappen åpner en konfigurasjonsdialog for automatisk innlesing og skrivebeskyttet diagnose av **Trio Attendant 10.1.35**.
 
@@ -27,6 +27,12 @@ En egen **Statistikk**-fane gir manuelle samtaletellere og skriftlig tid. Ved **
 Hvis standardmenyen ikke er tilgjengelig, loggen har en annen prosess-ID, eller vinduet ikke gjenkjennes, vises status. For å unngå gjentatte popup-vinduer blir et mislykket automatisk åpningsforsøk ikke gjentatt i samme Trio-prosess før omstart.
 
 **Innlesing og diagnose (RC11):** Hvert 30. sekund leses tilgjengelige oppgaver. Oppgaver identifiseres fra **Tidspunkt** og **Oppgave / Oppgave-ID**. Behandlingstid er en separat, valgfri måling. Ingen fast antakelse om 13 kolonner eller behandlingstid i kolonne 9. Standard Win32 ListView leses kolonnevis med kobling mellom vist og logisk kolonnerekkefølge; egendefinert UIA-liste leses via HeaderItem og cellenes plassering. Tomme felt bevarer sin plass. Nested ListItem-celler behandles innen raden; ListItem-per-celle kan samles når de har identisk vertikal radplassering. Ingen glidende sammenslåing på tvers av rader. Tvetydig kolonnemapping eller motstridende celleverdier avvises.
+
+**RC14 – kontrollerte ListView-anrop når standardlesing returnerer tomt:** AutoHotkeys standardfunksjon kan returnere tomme felter etter enkelte interne API-feil. Hvis standardruten ikke gir tidsverdier, prøves et lite utvalg med både `LVM_GETITEMTEXTW` og `LVM_GETITEMTEXTA`, med kontroll av OpenProcess, WriteProcessMemory, SendMessageTimeout og ReadProcessMemory. Bare den dokumenterte tekstbufferen som er opprettet for leseanropet leses tilbake; ingen skanning av applikasjonens interne data. Gyldig tidsformat kreves før en alternativ variant brukes til dagens oppgaver. Bufferen og prosesshåndtaket frigjøres etter forsøket.
+
+Diagnosen viser kall, tomme svar, tekstsvar og feil/steg/kode per variant. Den skiller dermed tom tekst fra et API-anrop som feiler. Fravær av OwnerData er ikke en garanti for at tekst er lagret i kontrollen. En kontroll kan tegne private tekstverdier uten å eksponere dem gjennom de prøvde API-ene.
+
+**Oppdatert med main:** Denne testfilen inkluderer v3.11.3-endringene for personlige DIPS-profiler, små bokstaver i signaturbrukernavn, `#dwa`/`#dwr`, Alt+F3 for fem minutters etterarbeid og oppryddingen i nettverksinnstillingene. Den gamle statistikkgrenen skal ikke erstatte disse hasteendringene.
 
 **RC13 – direkte lesing av Windows Forms-lister:** Den native leseren godtok tidligere bare det eksakte klassenavnet `SysListView32`. Den forsøker nå også `WindowsForms10.SysListView32.app...` og tilsvarende registrerte Windows Forms-varianter via samme `ListViewGetContent`-backend. Ingen UIA-celletekst er nødvendig for denne ruten; overskriftskoblingen brukes som før. Dagens datofilter og vist/logisk kolonnerekkefølge beholdes. Dette retter en konkret klassefilterfeil, men Trios faktiske HWND-klasse er ennå ikke bekreftet.
 
@@ -86,11 +92,42 @@ Native overskrifter kan kobles med tilgjengelige MSAA-child-ID-er og `HDM_ORDERT
 - **Feilsøking uten skjermbilder:** Eksisterende «Kopier diagnose»-knapp inkluderer nå en anonym oppsummering av innlesingsstatus, kilde, vurderte rader og antall observerte oppgaver. Ingen rå oppgave-ID, telefonnummer, kundenummer eller IM-referanser deles.
 
 **Viktig:** Kun statisk kodekontroll er utført i utviklingsmiljøet. RC8 må verifiseres mot den virkelige Trio Attendant 10.1.35 UIA-strukturen før tallene kan regnes som komplette. Ingen endring i Trio, ingen automatisk saksoppretting og ingen merge til `main`.
-## v3.11 – Nettverk og UIA-feltgjenkjenning (nå i main)
+
+## v3.11.3 – personlige DIPS-innstillinger og ryddigere grensesnitt
+
+**Innstillinger → DIPS-innstillinger** samler brukernavn, valgfritt tillegg for `#dwr` og en forhåndsvisning av begge signaturene. Samme dialog kan åpnes fra Tekstflyt.
+
+- **Automatisk brukernavn:** bruker den innloggede Windows-kontoen, med små bokstaver.
+- **Eget brukernavn:** fjern krysset for automatisk brukernavn og lagre ønsket verdi.
+- **Tillegg for `#dwr`:** `D2358` er standard. Tillegget kan endres eller tømmes. Store/små bokstaver beholdes i tillegget og utklippstavleteksten.
+- **Personlig profil:** lagres separat i `Innstillinger\DIPS.ini` og knyttes til Windows-kontoen. En profil uten kontotilknytning eller fra en annen konto brukes ikke; standarden blir den innloggede Windows-brukeren.
+- **Konfigurasjonsimport:** importerer generelle programinnstillinger og snarveier. Den endrer ikke DIPS-profilen, og importerer verken eldre `[User] Username`, `[Tekstflyt] Initialer` eller nye personlige signaturverdier. Ved overgang fra v3.11.1/v3.11.2 brukes Windows-brukernavnet; et eventuelt eget signaturnavn settes på nytt i DIPS-innstillingene.
+
+«Aktiver Nettverk» / «Deaktiver Nettverk» erstatter «Nettverksgeni?». Fyrverkerianimasjonen er fjernet. Innstillinger har norsk temavelger, DIPS-knapp og samlet utviklerkreditering. Meldinger og statuslinjer bruker nøytral ordlyd uten dekorative bekreftelsessymboler.
+
+Windows-testene dekker full AHK-parsing, kontoavgrensning, importfiltrering, lagring, validering, faktiske tekstutvidelser med eget/tomt signaturtillegg og forhåndsvisning i den native DIPS-dialogen. Skjermbilder av Innstillinger og DIPS-dialogen lagres som CI-artefakter for visuell kontroll. Faktisk Trio/Citrix må fortsatt prøves i jobbmiljøet.
+
+## Historisk: v3.11.2 – små bokstaver i signaturen
+
+Initialene i `#dwa` og `#dwr` settes alltid inn med små bokstaver, også når de lagrede initialene eller Windows-brukernavnet har store bokstaver. Eksempel: `(TOENGV) 041126` blir `(toengv) 041126`. Utklippstavlens tekst og `D2358` beholder sin opprinnelige skrivemåte.
+
+## Historisk: v3.11.1 – signaturer og fem minutter etterarbeid
+
+- **`#dwa` + Mellomrom/Enter:** `(initialer) ddMMyy`. Utklippstavlens tekst legges til når den inneholder nøyaktig ni tegn, som i den gamle egendefinerte koden.
+- **`#dwr` + Mellomrom/Enter:** `(initialer) ddMMyy D2358`.
+- Begge signaturer er innebygd i Tekstflyt og virker også når Excel-filen mangler. De følger Tekstflyt PÅ/AV. Excel-rader med samme navn overstyres uten å endre arbeidsboken.
+- Sett egne initialer under **Tekstflyt → Initialer / signatur → Lagre initialer**. Windows-brukernavnet brukes som standard. Eldre `[User] Username` støttes i aktiv INI og via **Importer konfigurasjon**; en eksplisitt `[Tekstflyt] Initialer` har prioritet.
+- **Alt+F3:** nytt alternativ **Etterarbeid – 5 minutter** under Trio Snarveier. Standardtasten er aktiv hvis den ikke har konflikt med andre lagrede QuickerKeys-snarveier. Eksisterende snarvei for etterarbeid beholdes. Tasten kan endres eller slås av.
+- Femminuttersvalget finner en entydig, lesbar varighet i en ComboBox/ListBox i Trios «Sett inn»-dialog, velger og verifiserer den før Ctrl+Enter. Uleselig eller tvetydig valg lar dialogen stå åpen for manuelt valg. Det brukes ingen antakelse om antall piltrykk.
+
+**Verifikasjon:** Windows-testene parser hele programmet og tester signaturer, faktiske tekstutvidelser i et separat testvindu, Excel-synkronisering, PÅ/AV, utklippstavle og varighetsvalg i native testkontroller. Faktisk Trio/Citrix må fortsatt prøves i jobbmiljøet. Hvis Trio bruker en annen kontrolltype, kan Alt+F3 åpne dialogen uten å bekrefte automatisk.
+
+## v3.11 – Nettverk og UIA-feltgjenkjenning (historikk)
+
 
 Denne oppdateringen bygger videre på v3.8 i `main`.
 
-- **Nettverk:** Valgfri side via Innstillinger → «Nettverksgeni?», av som standard.
+- **Nettverk:** Valgfri side via Innstillinger → «Aktiver Nettverk», av som standard.
 - **MAC Import:** Bygger CSV for Cisco ISE-endepunkter med 31 kolonner, MAC-parsing, duplikatfjerning, validering og eksplisitt bekreftelse. Skriver fil lokalt; gjør ingen endringer i ISE.
 - **SM Kontakt:** Lærer UIA-signaturer for Kontakt-feltet (ControlType, Name, AutomationId og ClassName). Finner feltet på nytt ved kjøring og bruker Tab + Enter. Eldre oppsett med trygge koordinater beholdes.
 - **Trio Snarveier:** IM Search kan identifiseres med UIA-signatur, med koordinatfallback for eldre konfig.
@@ -109,7 +146,7 @@ Denne oppdateringen bygger videre på v3.8 i `main`.
 
 **Start QuickerKeys** på Oversikt bekrefter antall aktive verktøy, registrerte Trio-snarveier og lastede hurtigtekster. Programmet starter fortsatt tilgjengelige, aktiverte verktøy ved vanlig oppstart.
 
-**Themes…** tilbyr Midnatt, Grafitt, Skog og Lys. **Last inn på nytt** laster manuelt redigerte INI-verdier.
+**Tema…** tilbyr Midnatt, Grafitt, Skog og Lys. **Last inn på nytt** laster manuelt redigerte INI-verdier.
 
 **Edge/Service Manager:** UI Automation forsøker å aktivere riktig fane og verifiserer fanetittelen før innskriving. Ingen garanti mot alle UI-endringer; se QA-testene.
 
@@ -129,6 +166,7 @@ Denne oppdateringen bygger videre på v3.8 i `main`.
 
 QuickerKeys legger alltid egne data i `%AppData%\QuickerKeys` (normalt `C:\Users\<bruker>\AppData\Roaming\QuickerKeys`), med:
 - `Innstillinger\QuickerKeys.ini`
+- `Innstillinger\DIPS.ini` (personlig signaturprofil)
 - `Tekstflyt\Tekstflyt.xlsx`
 - `Logg\YYYY-MM-DD.log`
 

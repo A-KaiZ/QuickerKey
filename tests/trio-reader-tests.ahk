@@ -52,6 +52,10 @@ class TrioNativeOnlyTestLeser extends TrioOppgaveloggDiagnose {
     }
 }
 
+class TrioCheckedNativeTestLeser extends TrioNativeOnlyTestLeser {
+    LesUiaRader(liste,schema,out,slutt) => []
+}
+
 RunTrioTests() {
     fixturePid := 0, exitCode := 0
     try {
@@ -283,6 +287,35 @@ RunTrioTests() {
             ProcessWaitClose fixturePid, 5
             fixturePid := 0
         }
+        for host in [A_WinDir "\System32\WindowsPowerShell\v1.0\powershell.exe"
+            ,A_WinDir "\SysWOW64\WindowsPowerShell\v1.0\powershell.exe"] {
+            Run('"' host '" -NoProfile -STA -File "' A_ScriptDir '\trio-winforms-fixture.ps1" -AnsiOnly',,, &fixturePid)
+            hwnd := WinWait("QuickerKeys synthetic WinForms fixture ahk_pid " fixturePid,,15)
+            TrioAssert(hwnd != 0,"ANSI-only fixture opened")
+            Sleep 350
+            ansiResult := TrioCheckedNativeTestLeser().HentDagensData(hwnd)
+            FileAppend(ansiResult.status "`n" ansiResult.detaljer "`n","*","UTF-8")
+            TrioAssert(ansiResult.ok && ansiResult.sett.Count = 2 && ansiResult.andreDager = 1,
+                "checked ANSI backend recovers two daily tasks without Unicode/UIA")
+            TrioAssert(ansiResult.nativeForsok[1].probeValgt = "A" && ansiResult.nativeForsok[1].prober[1].tomme > 0,
+                "Unicode empty versus ANSI readable is explicit")
+            for taskKey, taskPost in ansiResult.sett
+                TrioAssert(taskPost.sek = 150,"checked ANSI duration correct across target bitness")
+            ProcessClose fixturePid
+            ProcessWaitClose fixturePid,5
+            fixturePid := 0
+        }
+        host := A_WinDir "\System32\WindowsPowerShell\v1.0\powershell.exe"
+        Run('"' host '" -NoProfile -STA -File "' A_ScriptDir '\trio-winforms-fixture.ps1" -EmptyDraw',,, &fixturePid)
+        hwnd := WinWait("QuickerKeys synthetic WinForms fixture ahk_pid " fixturePid,,15)
+        TrioAssert(hwnd != 0,"private owner-drawn text fixture opened")
+        Sleep 350
+        noText := TrioCheckedNativeTestLeser().HentDagensData(hwnd)
+        FileAppend(noText.status "`n" noText.detaljer "`n","*","UTF-8")
+        TrioAssert(!noText.ok && noText.sett.Count = 0 && noText.nativeForsok[1].prober.Length = 2,
+            "painted private text is not invented as task data")
+        for probe in noText.nativeForsok[1].prober
+            TrioAssert(probe.feil = 0 && probe.tomme > 0,"checked native empty responses distinguished from API failures")
         FileAppend("ALL TRIO TESTS PASSED`n", "*", "UTF-8")
     } catch as err {
         FileAppend("FAIL " err.Message " (line " err.Line ")`n", "**", "UTF-8")
