@@ -35,7 +35,10 @@ public static class CaptureTests
                     {
                         Target candidate = new Target { Window = fixture.MainWindowHandle, ProcessId = fixture.Id, ProcessStartUtc = fixture.StartTime.ToUniversalTime().Ticks };
                         IntPtr list;
-                        if (Discovery.Validate(candidate, out list)) { target = candidate; break; }
+                        if (Discovery.Validate(candidate, out list)) {
+                            ViewState ready = ViewState.Read(list);
+                            if (ready.Rows == 8 && ready.Columns == 13 && ready.SelectedCount == 1 && ready.FirstSelected == 2) { target = candidate; break; }
+                        }
                     }
                     Thread.Sleep(40);
                 }
@@ -82,7 +85,7 @@ public static class CaptureTests
                 {
                     Require(Discovery.Find().Any(t => t.Window == target.Window), "discovery finds the separate-process ListView target");
                     CaptureResult visible = Capture(target, 3500);
-                    Require(visible.Status == CaptureStatus.Image && visible.Varied && HasColor(visible, Color.Lime) && HasColor(visible, Color.Blue), "visible capture contains private painted content");
+                    Require(visible.Status == CaptureStatus.Image && visible.Varied && HasColor(visible, Color.Lime) && HasColor(visible, Color.Blue), "visible capture contains private painted content (status=" + visible.Status + ", varied=" + visible.Varied + ", rows=" + visible.Rows + ", cols=" + visible.Columns + ")");
                     Require(visible.Rows == 8 && visible.Columns == 13, "native metadata is retained");
                     Require(PreviewMatches(visible), "user preview preserves captured pixel color and position"); visible.ClearPixels();
                     Native.Rect rect; Native.GetWindowRect(target.Window, out rect);

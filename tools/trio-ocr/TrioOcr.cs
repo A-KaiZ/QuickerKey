@@ -303,7 +303,7 @@ namespace QuickerKeys.Ocr
                 }
                 catch (OperationCanceledException) { throw new EngineException(OcrStatus.Cancelled); }
                 catch (EngineException) { throw; }
-                catch (Exception error) { throw new EngineException(OcrStatus.EngineFailure, error); }
+                catch (Exception failure) { throw new EngineException(OcrStatus.EngineFailure, failure); }
                 finally
                 {
                     Array.Clear(png, 0, png.Length);
