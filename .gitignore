@@ -13,3 +13,4 @@
 *.ahk~
 Thumbs.db
 .DS_Store
+tests/output/
