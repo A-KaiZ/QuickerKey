@@ -4799,14 +4799,9 @@ class TrioOppgaveloggDiagnose {
                         continue
                     }
                     forsok.steg := "kolonneoverskrifter"
-                    schema := this.LesKolonner(UiaFraVindu(hdr))
+                    schema := this.LesNativeKolonner(hdr,forsok.kolonner)
                     if !this.HarIdentitetsfelt(schema.kart) {
-                        forsok.steg := "Tidspunkt/Oppgave-ID ikke koblet"
-                        continue
-                    }
-                    antKol := forsok.kolonner
-                    if (antKol != schema.kolonner.Length) {
-                        forsok.steg := "native/UIA kolonneantall er ulike"
+                        forsok.steg := "Tidspunkt/Oppgave-ID ikke koblet til native indeks"
                         continue
                     }
                     forsok.steg := "ListViewGetContent"
@@ -4814,8 +4809,8 @@ class TrioOppgaveloggDiagnose {
                     for visIndex, kol in schema.kolonner {
                         if (kol.key = "")
                             continue
-                        logisk := SendMessage(0x120F, visIndex - 1, 0, hdr) ; HDM_ORDERTOINDEX
-                        if (logisk < 0 || logisk >= antKol)
+                        logisk := kol.nativeIndex
+                        if (logisk < 0 || logisk >= forsok.kolonner)
                             continue
                         verdier := StrSplit(ListViewGetContent("Col" (logisk + 1), ctrl,
                             "ahk_id " loggHwnd), "`n", "`r")
@@ -4873,6 +4868,39 @@ class TrioOppgaveloggDiagnose {
             out.status := "Feil under Trio-lesing: " Type(feil) " (linje " feil.Line ")."
         }
         return this.AvsluttLesing(out)
+    }
+
+    LesNativeKolonner(headerHwnd, antKol) {
+        rot := UiaFraVindu(headerHwnd)
+        kolonner := [], kart := Map(), indekser := Map(), duplikat := Map()
+        ; The native SysHeader32 accessibility proxy's child IDs correspond
+        ; to logical HDITEM indexes + 1. No screen rectangle is required.
+        for el in UiaFinnAlle(rot,50035) {
+            id := UiaTall(el,30091) ; LegacyIAccessible.ChildId
+            if (id < 1 || id > antKol || indekser.Has(id))
+                continue
+            indekser[id] := true
+            navn := UiaStreng(el,30005), key := this.KolonneKey(navn)
+            kolonner.Push({key:key,navn:this.OverskriftTilDiagnose(navn),nativeIndex:id-1})
+            if (key != "") {
+                if kart.Has(key)
+                    duplikat[key] := true
+                kart[key] := true
+            }
+        }
+        for key in duplikat
+            kart.Delete(key)
+        if this.HarIdentitetsfelt(kart)
+            return {kolonner:kolonner,kart:kart}
+        ; Providers without logical child IDs can still use the previous
+        ; display geometry, but ONLY with the complete visible header set.
+        schema := this.LesKolonner(rot)
+        if (schema.kolonner.Length = antKol && this.HarIdentitetsfelt(schema.kart)) {
+            for i, kol in schema.kolonner
+                kol.nativeIndex := SendMessage(0x120F,i-1,0,headerHwnd)
+            return schema
+        }
+        return {kolonner:kolonner,kart:Map()}
     }
 
     ErNativeListeklasse(klasse) {
@@ -5534,7 +5562,7 @@ class TrioOppgaveloggDiagnose {
         feltNavn := Map("tidspunkt","Tidspunkt", "oppgave","Oppgave-ID", "behandling","Behandlingstid"
             , "ko","Køtid", "koblet","Koblet", "kommentar","Kommentar/IM")
         tekst := "Dagens datofilter: " SubStr(out.datoIDag,7,2) "." SubStr(out.datoIDag,5,2) "." SubStr(out.datoIDag,1,4)
-            . "`nKolonner med lesbar plassering: " out.kolonner.Length
+            . "`nKolonner kartlagt: " out.kolonner.Length
         for key, navn in feltNavn
             tekst .= "`n" navn ": " (out.kart.Has(key) ? "koblet" : "mangler eller tvetydig plassering")
                 . " | felt undersøkt: " (out.funnfelt.Has(key) ? out.funnfelt[key] : 0)
