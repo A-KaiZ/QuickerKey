@@ -10,6 +10,10 @@ AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service M
 - **Vindusbytter:** Opptil fire vanlige programmer/vinduer og nettleserfaner.
 - **Nettverk (valgfritt):** MAC Import for å generere endepunkt-CSV til Cisco ISE.
 
+## v3.11.2 – små bokstaver i signaturen
+
+Initialene i `#dwa` og `#dwr` settes alltid inn med små bokstaver, også når de lagrede initialene eller Windows-brukernavnet har store bokstaver. Eksempel: `(TOENGV) 041126` blir `(toengv) 041126`. Utklippstavlens tekst og `D2358` beholder sin opprinnelige skrivemåte.
+
 ## v3.11.1 – signaturer og fem minutter etterarbeid
 
 - **`#dwa` + Mellomrom/Enter:** `(initialer) ddMMyy`. Utklippstavlens tekst legges til når den inneholder nøyaktig ni tegn, som i den gamle egendefinerte koden.
