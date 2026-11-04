@@ -1,6 +1,6 @@
 # Utkast: automatisk Trio-statistikk med lokal OCR
 
-Dato: 04.11.2026. Status: **løsningsutkast, ikke implementert**. Gjelder PR #9 og grenen `feature/statistikk-v3.12`, med RC14 (`52c0875`) som kodegrunnlag. Ingen ny appversjon eller merge til main inngår i dette utkastet.
+Dato: 04.11.2026. Status: **P0-fangstprøve implementert separat; OCR-import fortsatt et løsningsutkast**. Gjelder PR #9 og grenen `feature/statistikk-v3.12`, med RC14 (`52c0875`) som appgrunnlag. Ingen ny appversjon eller merge til main inngår. [Kjørbar P0-prøve, kildekode og fremgangsmåte](../tools/trio-capture/README.md).
 
 ## 1. Målet
 
@@ -34,15 +34,15 @@ Fangstadapter velges først etter den faktiske prøven. Ingen av fangstmetodene 
 
 ### Prosessgrense og avhengigheter
 
-AHK beholder GUI og planlegging. En separat lokal worker utfører fangst og OCR. Hjelperen leveres og testes sammen med prototypen; brukeren skal ikke trenge Python. Endelig byggverktøy og binærpakking avgjøres ved implementering av fangstprøven, før en testutgave distribueres.
+AHK beholder GUI og planlegging i den planlagte integrasjonen. P0 er nå et separat C#-/Windows Forms-verktøy for Windows x64 og .NET Framework 4.8, med GUI og kortlivet worker i samme EXE. Det bygges med Windows sin .NET Framework-kompilator og trenger ikke Python eller NuGet. Kjørbar fil, full kildekode og SHA-256 pakkes som CI-artefakt. P0 inneholder ingen OCR; motoren og integrasjonen kommer først etter godkjent faktisk fangstprøve.
 
 Bildedata sendes i minnet til OCR, og resultatet sendes tilbake gjennom lokal IPC. Tesseracts dokumenterte TSV-format gir tekst, plassering og konfidens. Ingen midlertidige PNG-/TSV-filer skal være nødvendig i normal drift. Versjoner, språkmodell, lisensinformasjon og integritetskontroll inngår i leveransen. Manglende motor gir en tydelig status, uten automatisk nedlasting eller installasjon.
 
-Det tillates én aktiv worker. Foreslått startbudsjett er to sekunder for fangst og seks sekunder totalt per syklus; dette er mål som må måles, ikke dokumenterte ytelsesgarantier. Hovedappen kan avbryte en worker som overskrider fristen. **PrintWindow er synkron og involverer også målprogrammets vindusbehandling; det å avslutte workeren garanterer ikke at alt arbeid i Trio avbrytes.** En prøve som gjør Trio tregt eller uresponsivt diskvalifiserer denne fangstruten.
+Det tillates én aktiv worker. P0 har en 3,5-sekunders ventefrist i forelderen og en 5-sekunders egenfristsikring i workeren. Selve PrintWindow-tiden rapporteres separat; dette er ikke samme mål som total oppstart/overføring. Budsjett for senere fangst og OCR fastsettes etter målingene. **PrintWindow er synkron og involverer også målprogrammets vindusbehandling; det å avslutte workeren garanterer ikke at alt arbeid i Trio avbrytes.** En prøve som gjør Trio tregt eller uresponsivt diskvalifiserer denne fangstruten.
 
 ## 4. Første port: fersk bakgrunnsfangst
 
-Lag først en isolert fangstprøve, uten statistikkimport eller endring av dagens automatiske leser.
+Den isolerte fangstprøven P0.1 er implementert uten statistikkimport eller endring av dagens automatiske leser. Følgende faktiske Trio-prøve gjenstår; syntetiske Windows-tester kan ikke erstatte den.
 
 1. Finn nøyaktig ett Oppgavelogg-vindu i den identifiserte Trio-prosessen. Registrer PID, HWND, listetype, klientområde, DPI, vindustilstand og metadata for kolonnene.
 2. Hent et bilde mens loggen er synlig. Bruk bilde-/OCR-kontroll til å bekrefte identitetskolonner og lesbare rader. En lys bakgrunn eller et ikke-tomt bitmap alene beviser ingenting.

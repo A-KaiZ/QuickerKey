@@ -1,12 +1,12 @@
 # QuickerKeys Statistikk v3.12 — QA og avgrensninger
 
-## Status 04.11.2026: tekstinnlesing blokkert, OCR under utforming
+## Status 04.11.2026: tekstinnlesing blokkert, separat P0-fangstprøve
 
 Den faktiske RC14-testen bekrefter at fire Unicode- og fire ANSI-prøver alle gir tomt svar uten registrerte API-feil. UIA-tekstkildene er også tomme. Flere like diagnoser eller parserendringer er ikke neste teststeg.
 
 En separat OCR-prøve på et direkte skjermbilde ga samsvar for dato/tid, oppgave-ID, behandlingstid og køtid på 12 synlige rader fra dagens dato (48 kontrollerte felt). Dette var Tesseract på Linux med manuelt avgrensede kolonner, ikke en implementert QuickerKeys-import. Windows-fangst bak andre vinduer og historikkdekning er uprøvd.
 
-[Løsningsutkast for lokal OCR, porter og implementeringsrekkefølge](Trio-OCR-utkast-v3.12.md). Appen forblir RC14; ingen ny fangst- eller OCR-rute er implementert. PR #9 forblir Draft.
+[Løsningsutkast for lokal OCR, porter og implementeringsrekkefølge](Trio-OCR-utkast-v3.12.md). Appen forblir RC14 uten ny integrert fangst-/OCR-rute. [Det separate P0.1-verktøyet](../tools/trio-capture/README.md) prøver PrintWindow i en avgrenset worker og viser bildet i RAM, uten lagring eller OCR. Brukeren kan kontrollere synlig, dekket og oppdatert logg og kopiere en anonym diagnose. Faktisk Trio-QA gjenstår. PR #9 forblir Draft.
 
 
 ## RC14 – sjekk feilstatus og ANSI/Unicode før flere parserendringer
