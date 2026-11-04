@@ -228,7 +228,7 @@ namespace QuickerKeys.Ocr
                 if (IsDisposed) return;
                 if (DateTime.Today != date) report = new Report { Status = OcrStatus.DateChanged };
                 diagnostic = "QuickerKeys Trio OCR " + OcrProgram.Version + "\r\nMotor: Tesseract 5.5.0 (pakket lokalt)"
-                    + "\r\nDagens filter: " + date.ToString("dd.MM.yyyy") + "\r\nFangst: PrintWindow | layout: UIA-overskrifter og radrektangler"
+                    + "\r\nDagens filter: " + date.ToString("dd.MM.yyyy") + "\r\nFangst: PrintWindow | UIA: overskrifter/radbånd | Win32: kolonnerekkefølge/bredde"
                     + "\r\nKolonner koblet: " + frame.Layout.Columns.Count + " | synlige radbånd: " + frame.Layout.Rows.Count
                     + "\r\nVarighet inkl. nedtelling (ms): " + elapsed.ElapsedMilliseconds + "\r\n" + report.Summary()
                     + "\r\nIngen bilder, rå celleverdier, ID-er eller bildesignaturer i denne diagnosen.";

@@ -146,10 +146,19 @@ public static class OcrTests
                 while (timer.ElapsedMilliseconds < 15000)
                 {
                     target = Discovery.Find().FirstOrDefault(t => t.ProcessId == process.Id);
-                    if (target != null) break; Thread.Sleep(50);
+                    if (target != null) {
+                        IntPtr list;
+                        if (Discovery.Validate(target, out list)) {
+                            ViewState state = ViewState.Read(list);
+                            if (state.Rows == 5 && state.Columns == 13 && state.SelectedCount == 1 && state.FirstSelected == 1) break;
+                        }
+                        target = null;
+                    }
+                    Thread.Sleep(50);
                 }
                 Require(target != null, "live fixture discovered: " + Path.GetFileName(fixture));
-                Thread.Sleep(150);
+                // Match the production GUI's five-second countdown, including first paint/UIA startup.
+                Thread.Sleep(5000);
                 Frame frame = FrameWorker.Run(executable, target, CancellationToken.None).GetAwaiter().GetResult();
                 try
                 {

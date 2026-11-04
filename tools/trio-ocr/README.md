@@ -16,10 +16,11 @@ Sandboxen bruker egen datamappe (`AppData\Roaming\QuickerKeysSandbox313`) og ege
 
 ## Hva P1 gjør
 
-- Henter ett nytt bilde og layout i en avgrenset worker. UIA brukes bare for kolonneoverskrifter og radrektangler, aldri for radtekst.
+- Henter ett nytt bilde og layout i en avgrenset worker. UIA brukes bare for kolonneoverskrifter og radrektangler, aldri for radtekst. Win32-meldinger leser bare kolonnerekkefølge og full kolonnebredde, fordi UIA kan oppgi et smalere område rundt overskriftsteksten.
 - Krever en uendret layout før og etter fangst. Kolonner kobles etter navn og plassering, ikke faste koordinater fra et skjermbilde.
 - Leser bare tidspunkt, oppgave-ID, behandlingstid og køtid optisk. Andre bildefelt sendes ikke til Tesseract. Etter datolesingen hvitmaskeres historiske/avviste rader før ID- og tidskolonnene behandles.
 - Bruker lokal Tesseract 5.5.0 med medfølgende engelsk modell. Pakkens motor kommer fra en versjons- og SHA-256-festet upstream-utgave; ingen installasjon eller nedlasting skjer ved bruk.
+- Normaliserer radbakgrunnen fra den vanligste lysverdien og fjerner kanttilknyttede fokusrammer før OCR. Tegn som berører kanten blir ikke rekonstruert.
 - Kobler tekst til én rad og én kolonne ut fra geometrien. Tekst som krysser grenser gir konflikt, ikke sammenslåing med naboceller.
 - Krever hele `dd.MM.yyyy HH:mm:ss` og ni sifre i ID, i samsvar med oppsettet vi har observert. Uleselige varigheter blir ukjente; faktisk `00:00` er kjent null.
 - Konfidens under 60 avvises i denne eksperimentelle profilen. Dette er et avvisningsfilter, ikke en sannsynlighet for at teksten er riktig. Formatvaliderte tall kan fortsatt inneholde systematiske OCR-feil.
