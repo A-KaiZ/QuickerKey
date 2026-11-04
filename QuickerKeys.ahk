@@ -17,7 +17,7 @@ SendMode "Input"
 ;  • Nytt verktøy? Lag en klasse som «extends VT_Base» (se malen helt
 ;    nederst) og legg den til i VerktoyListe() rett under her.
 ;  • Nettverk-siden (Nettverk + MAC Import for Cisco ISE) er av som standard.
-;    Slås på under Innstillinger → «Aktiver Nettverk».
+;    Slås på under Innstillinger → Avansert… → Nettverk.
 ; =====================================================================
 
 VerktoyListe() => [
@@ -30,25 +30,34 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.11.3"
-global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560"}
+global APP_VERSJON := "3.12.0"
+global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560", feil: "FF6B6B"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
 global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
 global LOGG_MAPPE  := DATA_MAPPE "\Logg"
 global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
 global DIPS_INI_FIL := INNST_MAPPE "\DIPS.ini"
-global HOVED := "", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
+global HOVED := "", APP_B := 760, APP_H := 580, INNHOLD_X := 196, INNHOLD_B := 532
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global VIS_VILKAR := Map()                   ; controls shown only when context needs them
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
 global NETT_PAA := false, NETT := Map()
 global NAV_FOR := Map()
+global HOVER := Map(), HOVER_AKTIV := 0
+global NAV_DEL := Map(), NAV_VALGT := "", NAV_HOVER := ""
+global TOPP_STATUS := ""
+global LOGO_AKTIV := false, LOGO_KO := []
+global FORSTE_GANG := false, LOGO := ""
 
 ; ---------------- Oppstart ----------------
 global FLYTTET := LagMappestruktur()
+FORSTE_GANG := !FileExist(INI_FIL)
 SikreIni()
 TEMA := TemaPalett(Innst("App", "Tema", "Midnatt"))
+MANUELL_START := ManuellStart()
+if (MANUELL_START && Innst("App", "Logo", "1") = "1")
+    VisLogo()
 NETT_PAA := Innst("App", "Nettverk", "0") = "1"
 RyddGamleLogger()
 lukketListe := LukkGamleSkript()
@@ -56,6 +65,8 @@ Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser 
 VERKTOY_LISTE := VerktoyListe()
 ByggHovedvindu()
 ByggTrayMeny()
+OnMessage(0x200, MusOver)
+OppdaterAutostartSnarvei()
 Logg(APP_NAVN " " APP_VERSJON " startet  –  mappe: " DATA_MAPPE)
 for linje in FLYTTET
     Logg(linje)
@@ -70,11 +81,14 @@ if (NETT_PAA && Innst("App", "NettverkApne", "0") = "1") {
     VisHoved()
 } else {
     VisPanel("Oversikt")
-    if (Innst("App", "StartSkjult", "0") = "1")
+    if (Innst("App", "StartSkjult", "0") = "1" && !FORSTE_GANG)
         Logg("Startet skjult – åpne med ikonet ved klokka eller hurtigtasten")
     else
-        VisHoved()
+        EtterLogo(VisHoved)
 }
+if FORSTE_GANG
+    EtterLogo(VisVelkommen)
+OppdaterToppStatus()
 
 
 ; =====================================================================
@@ -400,13 +414,13 @@ FeilFanger(feil, modus) {
 ;  HOVEDVINDU
 ; =====================================================================
 ByggHovedvindu() {
-    global HOVED, APP_H
+    global HOVED, APP_H, TOPP_STATUS
     antall := VERKTOY_LISTE.Length
     navValg := ["Oversikt"]
     for vt in VERKTOY_LISTE
         navValg.Push(vt.Navn)
     navValg.Push("Logg", "Innstillinger")
-    APP_H := Max(560, 156 + antall * 96 + 24, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 40))
+    APP_H := Max(580, 156 + antall * 96 + 32, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 56))
 
     HOVED := Gui("-MaximizeBox", APP_NAVN)
     HOVED.BackColor := TEMA.bg
@@ -414,21 +428,15 @@ ByggHovedvindu() {
     HOVED.OnEvent("Close", HovedLukk)
     HOVED.OnEvent("Escape", (*) => HOVED.Hide())
 
-    ; --- Topp ---
-    Skrift(HOVED, "s16 bold c" TEMA.tekst)
-    HOVED.AddText("x0 y0 w" (APP_B - 240) " h64 +0x200 Background" TEMA.kort, "   " APP_NAVN)
-    Skrift(HOVED, "s9 norm c" TEMA.dempet)
-    HOVED.AddText("x" (APP_B - 240) " y0 w240 h64 +0x200 Right Background" TEMA.kort
-        , antall " verktøy  ·  v" APP_VERSJON "   ")
+    Skrift(HOVED, "s15 bold c" TEMA.tekst)
+    HOVED.AddText("x0 y0 w160 h46 +0x200 Background" TEMA.nav, "  " APP_NAVN)
+    Skrift(HOVED, "s8 norm c" TEMA.dempet)
+    HOVED.AddText("x0 y46 w160 h38 Background" TEMA.nav, "    v" APP_VERSJON)
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    TOPP_STATUS := HOVED.AddText("x" (APP_B - 330) " y26 w300 h20 Right Background" TEMA.bg, "")
 
-    ; --- Meny til venstre ---
-    Skrift(HOVED, "s10 norm c" TEMA.tekst)
-    HOVED.AddText("x0 y64 w160 h20 Background" TEMA.nav)
-    for i, navn in navValg {
-        knapp := HOVED.AddText("x0 y" (84 + (i - 1) * 44) " w160 h44 +0x200 Background" TEMA.nav, "    " navn)
-        knapp.OnEvent("Click", VisPanel.Bind(navn))
-        NAVKNAPPER[navn] := knapp
-    }
+    for i, navn in navValg
+        LagNavKnapp(navn, 84 + (i - 1) * 44)
     bunnY := 84 + navValg.Length * 44
     if NETT_PAA {
         nettY := APP_H - 52
@@ -438,9 +446,7 @@ ByggHovedvindu() {
         HOVED.AddText("x16 y" linjeY " w128 h1 Background" TEMA.linje)
         HOVED.AddText("x144 y" linjeY " w16 h1 Background" TEMA.nav)
         HOVED.AddText("x0 y" (linjeY + 1) " w160 h" (nettY - linjeY - 1) " Background" TEMA.nav)
-        knapp := HOVED.AddText("x0 y" nettY " w160 h44 +0x200 Background" TEMA.nav, "    Nettverk")
-        knapp.OnEvent("Click", VisPanel.Bind("Nettverk"))
-        NAVKNAPPER["Nettverk"] := knapp
+        LagNavKnapp("Nettverk", nettY)
         HOVED.AddText("x0 y" (nettY + 44) " w160 h" (APP_H - nettY - 44) " Background" TEMA.nav)
     } else {
         HOVED.AddText("x0 y" bunnY " w160 h" (APP_H - bunnY) " Background" TEMA.nav)
@@ -455,27 +461,86 @@ ByggHovedvindu() {
         ByggNettverkPanel()
 }
 
-ByggOversikt() {
-    pn := "Oversikt", x := INNHOLD_X, b := INNHOLD_B
-    PanelTittel(pn, "Oversikt")
-    Skrift(HOVED, "s10 bold c" TEMA.tekst)
-    Reg(pn, Knapp(HOVED, "x" (x+b-195) " y87 w195 h34", "Start QuickerKeys", StartQuickerKeys))
-    for i, vt in VERKTOY_LISTE {
-        y := 132 + (i - 1) * 96
-        Skrift(HOVED, "s12 bold c" TEMA.tekst)
-        navnK := Reg(pn, HOVED.AddText("x" x " y" y " w" (b - 240) " h26 Background" TEMA.bg, vt.Navn))
-        navnK.OnEvent("Click", VisPanel.Bind(vt.Navn))
-        Skrift(HOVED, "s9 norm c" TEMA.dempet)
-        statusK := Reg(pn, HOVED.AddText("x" x " y" (y + 28) " w" (b - 240) " h56 Background" TEMA.bg, vt.Beskrivelse))
-        Skrift(HOVED, "s10 bold c" TEMA.tekst)
-        toggleK := Reg(pn, Knapp(HOVED, "x" (x + b - 226) " y" (y + 20) " w100 h34", "", VekslVerktoy.Bind(vt)))
-        Skrift(HOVED, "s10 norm c" TEMA.tekst)
-        Reg(pn, Knapp(HOVED, "x" (x + b - 116) " y" (y + 20) " w116 h34", "Åpne  →", VisPanel.Bind(vt.Navn), TEMA.aksent2))
-        Reg(pn, HOVED.AddText("x" x " y" (y + 88) " w" b " h1 Background" TEMA.linje))
-        OVERSIKT[vt.Id] := {status: statusK, toggle: toggleK}
+LagNavKnapp(navn, y) {
+    stripe := HOVED.AddText("x0 y" y " w4 h44 Background" TEMA.nav)
+    Skrift(HOVED, "s12 c" TEMA.dempet, "Segoe MDL2 Assets")
+    ikon := HOVED.AddText("x4 y" y " w40 h44 Center +0x200 +0x100 Background" TEMA.nav, NavIkon(navn))
+    Skrift(HOVED, "s10 c" TEMA.dempet)
+    etikett := HOVED.AddText("x44 y" y " w116 h44 +0x200 +0x100 Background" TEMA.nav, navn)
+    for k in [ikon, etikett] {
+        k.OnEvent("Click", VisPanel.Bind(navn))
+        NAV_DEL[k.Hwnd] := navn
+    }
+    NAVKNAPPER[navn] := {stripe: stripe, ikon: ikon, etikett: etikett}
+}
+
+NavIkon(navn) {
+    static ikoner := Map("Oversikt", 0xE80F, "Tekstflyt", 0xE70F, "SM Kontakt", 0xE77B, "Trio Snarveier", 0xE765
+        , "Vindusbytter", 0xE8A7, "Logg", 0xE7C3, "Innstillinger", 0xE713, "Nettverk", 0xE968)
+    return ikoner.Has(navn) ? Chr(ikoner[navn]) : Chr(0xE10C)
+}
+
+NavTegn(navn) {
+    if !NAVKNAPPER.Has(navn)
+        return
+    n := NAVKNAPPER[navn]
+    valgt := (navn = NAV_VALGT)
+    bg := valgt ? TEMA.kort : (navn = NAV_HOVER ? HoverFarge(TEMA.nav) : TEMA.nav)
+    try {
+        n.stripe.Opt("Background" (valgt ? (ErLyst() ? TEMA.tekst : TEMA.aksent) : bg))
+        n.ikon.Opt("Background" bg)
+        n.ikon.SetFont("c" (valgt ? (ErLyst() ? TEMA.tekst : TEMA.aksent) : TEMA.dempet))
+        n.etikett.Opt("Background" bg)
+        n.etikett.SetFont((valgt ? "bold" : "norm") " s10 c" (valgt ? TEMA.tekst : TEMA.dempet))
+        for k in [n.stripe, n.ikon, n.etikett]
+            k.Redraw()
     }
 }
 
+OppdaterToppStatus() {
+    if !IsObject(TOPP_STATUS)
+        return
+    paa := 0
+    for vt in VERKTOY_LISTE
+        paa += vt.Aktiv ? 1 : 0
+    alle := paa = VERKTOY_LISTE.Length
+    try {
+        TOPP_STATUS.SetFont("c" (alle ? TEMA.paa : TEMA.dempet))
+        TOPP_STATUS.Text := "●  " (alle ? "Alle " paa " verktøy er på" : paa " av " VERKTOY_LISTE.Length " verktøy er på")
+    }
+}
+
+Kort(pn, x, y, b, h, gui := "") {
+    g := IsObject(gui) ? gui : HOVED
+    ktrl := g.AddText("x" x " y" y " w" b " h" h " +0x4000000 Background" TEMA.kort)
+    return pn = "" ? ktrl : Reg(pn, ktrl)
+}
+
+ByggOversikt() {
+    pn := "Oversikt", x := INNHOLD_X, b := INNHOLD_B
+    PanelTittel(pn, "Oversikt", false, 240)
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x + b - 224) " y86 w180 h30", "Start QuickerKeys", StartQuickerKeys))
+    tb := b - 56 - 216
+    for i, vt in VERKTOY_LISTE {
+        y := 132 + (i - 1) * 96
+        Kort(pn, x, y, b, 84)
+        Skrift(HOVED, "s16 c" (ErLyst() ? TEMA.tekst : TEMA.aksent), "Segoe MDL2 Assets")
+        Reg(pn, HOVED.AddText("x" (x + 14) " y" (y + 12) " w32 h32 Center +0x200 Background" TEMA.kort, NavIkon(vt.Navn)))
+        Skrift(HOVED, "s12 bold c" TEMA.tekst)
+        navnK := Reg(pn, HOVED.AddText("x" (x + 56) " y" (y + 10) " w" tb " h24 Background" TEMA.kort, vt.Navn))
+        navnK.OnEvent("Click", VisPanel.Bind(vt.Navn))
+        Skrift(HOVED, "s9 norm c" TEMA.dempet)
+        beskK := Reg(pn, HOVED.AddText("x" (x + 56) " y" (y + 36) " w" tb " h18 +0x4000 Background" TEMA.kort, vt.Beskrivelse))
+        Skrift(HOVED, "s9 norm c" TEMA.dempet)
+        statusK := Reg(pn, HOVED.AddText("x" (x + 56) " y" (y + 56) " w" tb " h18 +0x4000 Background" TEMA.kort, ""))
+        Skrift(HOVED, "s10 bold c" TEMA.tekst)
+        toggleK := Reg(pn, Knapp(HOVED, "x" (x + b - 208) " y" (y + 25) " w92 h34", "", VekslVerktoy.Bind(vt)))
+        Skrift(HOVED, "s10 norm c" TEMA.tekst)
+        Reg(pn, Knapp(HOVED, "x" (x + b - 108) " y" (y + 25) " w92 h34", "Åpne  →", VisPanel.Bind(vt.Navn), TEMA.aksent2))
+        OVERSIKT[vt.Id] := {status: statusK, beskrivelse: beskK, toggle: toggleK}
+    }
+}
 ByggVerktoyPanel(vt) {
     pn := vt.Navn, x := INNHOLD_X, b := INNHOLD_B
     PanelTittel(pn, vt.Navn, true)
