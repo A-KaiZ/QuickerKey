@@ -20,7 +20,7 @@ HotfixType(tekst, hwnd, expected) {
     deadline := A_TickCount + 3000
     while (A_TickCount < deadline) {
         Sleep 30
-        if (ControlGetText("Edit1", "ahk_id " hwnd) = expected)
+        if (ControlGetText("Edit1", "ahk_id " hwnd) == expected)
             return true
     }
     FileAppend("Expected [" expected "] actual [" ControlGetText("Edit1", "ahk_id " hwnd) "]`n", "*", "UTF-8")
@@ -33,11 +33,12 @@ RunHotfixTests() {
     global APP_NAVN := "QuickerKeys tests"
     fixturePid := 0, tf := "", dlg := "", code := 0
     try {
-        HotfixAssert(TekstflytSignatur("#dwa", "TEST", "", "20261104120000") = "(TEST) 041126", "signature without clipboard")
-        HotfixAssert(TekstflytSignatur("#DWA", "TEST", "123456789", "20261104120000") = "(TEST) 041126 123456789", "nine characters and case insensitive code")
+        HotfixAssert(TekstflytSignatur("#dwa", "TEST", "", "20261104120000") == "(test) 041126", "signature without clipboard")
+        HotfixAssert(TekstflytSignatur("#DWA", "TEST", "123456789", "20261104120000") == "(test) 041126 123456789", "nine characters and case insensitive code")
         for klipp in ["12345678", "1234567890", ""]
-            HotfixAssert(TekstflytSignatur("#dwa", "TEST", klipp, "20261104120000") = "(TEST) 041126", "other clipboard lengths omitted")
-        HotfixAssert(TekstflytSignatur("#dwr", "TEST", "123456789", "20260101000100") = "(TEST) 010126 D2358", "dwr fixed suffix and current date formatting")
+            HotfixAssert(TekstflytSignatur("#dwa", "TEST", klipp, "20261104120000") == "(test) 041126", "other clipboard lengths omitted")
+        HotfixAssert(TekstflytSignatur("#dwr", "TEST", "123456789", "20260101000100") == "(test) 010126 D2358", "dwr fixed suffix and current date formatting")
+        HotfixAssert(TekstflytSignatur("#dwa", "TeSt", "ABcd12345", "20261104120000") == "(test) 041126 ABcd12345", "mixed-case initials lowercased and clipboard case preserved")
         rejected := false
         try TekstflytSignatur("#dwa", "", "")
         catch
@@ -58,21 +59,21 @@ RunHotfixTests() {
         hwnd := WinWait("QuickerKeys synthetic editor ahk_pid " fixturePid, , 5)
         HotfixAssert(hwnd, "external editor fixture started")
         A_Clipboard := "123456789"
-        HotfixAssert(HotfixType("#dwa ", hwnd, "(TEST) " FormatTime(, "ddMMyy") " 123456789"), "actual dwa hotstring without workbook")
+        HotfixAssert(HotfixType("#dwa ", hwnd, "(test) " FormatTime(, "ddMMyy") " 123456789"), "actual dwa hotstring without workbook")
         Sleep 400
         HotfixAssert(A_Clipboard = "123456789", "clipboard text restored after paste")
-        HotfixAssert(HotfixType("#dwr{Enter}", hwnd, "(TEST) " FormatTime(, "ddMMyy") " D2358"), "actual dwr hotstring with Enter")
+        HotfixAssert(HotfixType("#dwr{Enter}", hwnd, "(test) " FormatTime(, "ddMMyy") " D2358"), "actual dwr hotstring with Enter")
         tf.Lagre("Initialer", "NEXT")
         A_Clipboard := "short"
-        HotfixAssert(HotfixType("#DWA ", hwnd, "(NEXT) " FormatTime(, "ddMMyy")), "initials update immediately and uppercase trigger works")
+        HotfixAssert(HotfixType("#DWA ", hwnd, "(next) " FormatTime(, "ddMMyy")), "initials update immediately and uppercase trigger works")
         tf.ExcelFil := A_ScriptDir "\codes.xlsx"
         XlsxSkriv(tf.ExcelFil, [["#dwa", "WRONG"], ["#hello", "hello"]])
         HotfixAssert(tf.Sync(), "workbook loaded alongside signatures")
         HotfixAssert(HotfixType("#hello ", hwnd, "hello"), "ordinary Excel expansion unchanged")
-        HotfixAssert(HotfixType("#dwa ", hwnd, "(NEXT) " FormatTime(, "ddMMyy")), "Excel cannot override signature")
+        HotfixAssert(HotfixType("#dwa ", hwnd, "(next) " FormatTime(, "ddMMyy")), "Excel cannot override signature")
         XlsxSkriv(tf.ExcelFil, [["#hello", "hello"]])
         HotfixAssert(tf.Sync(), "workbook signature row removed")
-        HotfixAssert(HotfixType("#dwa ", hwnd, "(NEXT) " FormatTime(, "ddMMyy")), "removing Excel row cannot disable signature")
+        HotfixAssert(HotfixType("#dwa ", hwnd, "(next) " FormatTime(, "ddMMyy")), "removing Excel row cannot disable signature")
         tf.Aktiv := false
         HotfixAssert(HotfixType("#dwa ", hwnd, "#dwa "), "Tekstflyt off disables builtins")
         tf.Stopp()
