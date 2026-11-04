@@ -21,7 +21,17 @@ jobs:
         run: ./tools/trio-ocr/build-sandbox.ps1 -OutputDirectory "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1"
       - name: Test real OCR, dynamic geometry and row validation
         shell: pwsh
+        env:
+          QK_SYNTHETIC_DIAGNOSTICS: ${{ runner.temp }}/TrioOcrSyntheticDiagnostics
         run: ./tests/trio-ocr/run-tests.ps1 -Probe "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1/TrioOCR/TrioOcrProbe.exe"
+      - name: Publish synthetic fixture diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrioOcr-Synthetic-Diagnostics
+          path: ${{ runner.temp }}/TrioOcrSyntheticDiagnostics/
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Publish test package with full source
         uses: actions/upload-artifact@v4
         with:

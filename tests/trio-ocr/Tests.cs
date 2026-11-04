@@ -156,7 +156,8 @@ public static class OcrTests
                     Require(frame.Image.Status == CaptureStatus.Image && frame.Layout != null, "layout and capture come from the real native target (status=" + frame.Image.Status + ")");
                     Require(frame.Layout.Columns.Count == 4 && frame.Layout.Rows.Count == 5, "UIA provides all four headers and five row bands after column movement");
                     Report report = new Reader(engine).Read(frame.Image, frame.Layout, DateTime.Today, CancellationToken.None).GetAwaiter().GetResult();
-                    Console.WriteLine("LIVE rows=" + report.Observations.Count + " status=" + report.Status + " invalidDate=" + report.InvalidDate + " low=" + report.LowConfidence);
+                    Console.WriteLine("LIVE rows=" + report.Observations.Count + " status=" + report.Status + " invalidDate=" + report.InvalidDate + " low=" + report.LowConfidence + " missing=" + report.MissingCore + " conflicts=" + report.Conflicts);
+                    if (report.Observations.Count < 3) SaveSyntheticDiagnostic(frame, engine, fixture);
                     Require(report.Observations.Count >= 3 && report.Observations.All(o => o.Id == (123456781 + o.Time.Second - 10).ToString() && o.HandlingSeconds == 150 && o.QueueSeconds == 10),
                         "native capture to local OCR returns only correct tasks");
                     Require(report.OtherDays == 1, "live previous-day row is excluded");
@@ -164,6 +165,23 @@ public static class OcrTests
                 finally { frame.Clear(); }
             }
             finally { if (!process.HasExited) { process.Kill(); process.WaitForExit(1000); } }
+        }
+    }
+    private static void SaveSyntheticDiagnostic(Frame frame, Engine engine, string fixture)
+    {
+        // This method is called only for the test process launched above, never an existing Trio window.
+        string directory = Environment.GetEnvironmentVariable("QK_SYNTHETIC_DIAGNOSTICS");
+        if (String.IsNullOrEmpty(directory)) return;
+        Directory.CreateDirectory(directory); string prefix = Path.GetFileNameWithoutExtension(fixture);
+        using (Bitmap image = frame.Image.MakeBitmap()) image.Save(Path.Combine(directory, prefix + ".png"), ImageFormat.Png);
+        Console.WriteLine("SYNTHETIC body=" + frame.Layout.Body + " rows=" + String.Join(";", frame.Layout.Rows));
+        foreach (var column in frame.Layout.Columns)
+        {
+            byte[] png = Engine.Prepare(frame.Image, frame.Layout, column.Key, null);
+            File.WriteAllBytes(Path.Combine(directory, prefix + "-" + column.Key + ".png"), png); Array.Clear(png, 0, png.Length);
+            var words = engine.Read(frame.Image, frame.Layout, column.Key, null, CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine("SYNTHETIC field=" + column.Key + " bounds=" + column.Value + " words=" + words.Count);
+            foreach (var word in words) Console.WriteLine("SYNTHETIC word=" + word.Text + " bounds=" + word.Bounds + " confidence=" + word.Confidence);
         }
     }
     [STAThread] public static int Main(string[] args)
