@@ -5056,8 +5056,14 @@ class VT_TrioOCR extends VT_Base {
             return
         }
         try Run '"' fil '"', A_ScriptDir "\TrioOCR"
-        catch {
-            MsgBox "OCR-testen kunne ikke startes. Windows x64 og .NET Framework 4.8 kreves.", "Trio OCR-test", "Icon!"
+        catch as feil {
+            kode := (feil is OSError) ? feil.Number : A_LastError
+            melding := "OCR-testen kunne ikke startes."
+            if kode
+                melding .= "`nFeilkode fra Windows: " kode
+            melding .= "`n`nDette er ikke en kontroll av Windows-arkitektur eller .NET-versjon."
+                . "`nHvis Windows viser et sikkerhetsvarsel, må programmet vurderes gjennom virksomhetens vanlige godkjenningsordning."
+            MsgBox melding, "Trio OCR-test", "Icon!"
         }
     }
 }

@@ -4,6 +4,14 @@ Denne pakken bygger på den offisielle QuickerKeys 3.12.0-utgaven. Pakk ut hele 
 
 Sandboxen bruker egen datamappe (`AppData\Roaming\QuickerKeysSandbox313`) og egen autostartsnarvei. Den importerer ikke ordinære profiler automatisk. Avslutt den vanlige QuickerKeys mens du tester, slik at to utgaver ikke konkurrerer om de samme hurtigtastene. Den offisielle 3.12-utgaven og dens datamappe beholdes.
 
+## Startfil og Windows-varsler
+
+**Start-QuickerKeys.cmd** er startfilen: den velger pakkens mappe og starter `Runtime\AutoHotkey64.exe` med `QuickerKeys.ahk`. Selve CMD-filen installerer ingenting, laster ikke ned noe og endrer ikke sikkerhetsinnstillinger. Den er ment å startes, ikke redigeres.
+
+`TrioOcrProbe.exe` og `TrioCaptureProbe.exe` i denne prototypen er ikke Authenticode-signert. Nye/usignerte programmer kan gi SmartScreen-varsel eller bli blokkert av virksomhetens programkontroll. En SHA-256-kontroll bekrefter filintegritet, ikke at programmet er godkjent av virksomheten. For jobbbruk må pakken vurderes og distribueres gjennom virksomhetens vanlige ordning, med godkjent signering og/eller regler fra IT etter deres policy. Signering alene garanterer ikke at SmartScreen aldri viser varsel. Hele pakken, inkludert tredjepartsmotoren, inngår i vurderingen.
+
+Feil ved oppstart viser Windows-feilkoden når den er tilgjengelig. En slik oppstartsfeil er ikke en kontroll av Windows-arkitektur eller installert .NET-versjon.
+
 ## Prøv på jobb
 
 1. Åpne Trio Oppgavelogg uten å minimere vinduet.
