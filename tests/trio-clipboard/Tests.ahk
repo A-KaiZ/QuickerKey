@@ -21,7 +21,9 @@ RunClipboardProbeTests() {
         ProbeRequire(!state.Armed && InStr(state.Report, "Rader med tekst: 1"), "an explicitly armed fresh copy is summarized once")
         ClipboardProbeCopy(state, view)
         ProbeRequire(A_Clipboard = state.Report && !InStr(A_Clipboard, "123456789"), "copy action publishes only the anonymous report")
-    } finally { A_Clipboard := saved }
+    } finally {
+        A_Clipboard := saved
+    }
     FileAppend "PASS total=10`n", "*", "UTF-8"
     ExitApp 0
 }
