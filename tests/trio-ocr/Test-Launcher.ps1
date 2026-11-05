@@ -1,5 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$Package, [Parameter(Mandatory=$true)][string]$AutoHotkey)
 $ErrorActionPreference = 'Stop'
+$AutoHotkey = [IO.Path]::GetFullPath($AutoHotkey)
+$Package = [IO.Path]::GetFullPath($Package)
 Add-Type @'
 using System;
 using System.Text;
