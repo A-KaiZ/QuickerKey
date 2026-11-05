@@ -1,0 +1,52 @@
+name: QuickerKeys 3.13 sandbox OCR (Windows)
+on:
+  pull_request:
+    paths:
+      - 'QuickerKeys.ahk'
+      - 'tools/trio-ocr/**'
+      - 'tools/trio-capture/**'
+      - 'tools/trio-clipboard/**'
+      - 'tests/trio-ocr/**'
+      - 'tests/trio-clipboard/**'
+      - '.github/workflows/trio-ocr.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sandbox:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build complete QuickerKeys sandbox with portable OCR
+        shell: pwsh
+        run: ./tools/trio-ocr/build-sandbox.ps1 -OutputDirectory "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1"
+      - name: Prepare AutoHotkey for isolated launcher tests
+        shell: pwsh
+        run: ./tools/trio-ocr/prepare-test-runtime.ps1 -OutputDirectory "$env:RUNNER_TEMP/QuickerKeysTestRuntime"
+      - name: Test anonymous clipboard format probe
+        shell: pwsh
+        run: ./tests/trio-clipboard/run-tests.ps1 -AutoHotkey "$env:RUNNER_TEMP/QuickerKeysTestRuntime/AutoHotkey64.exe"
+      - name: Test existing association and optional CMD startup
+        shell: pwsh
+        run: ./tests/trio-ocr/Test-Launcher.ps1 -Package "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1" -AutoHotkey "$env:RUNNER_TEMP/QuickerKeysTestRuntime/AutoHotkey64.exe"
+      - name: Test real OCR, dynamic geometry and row validation
+        shell: pwsh
+        env:
+          QK_SYNTHETIC_DIAGNOSTICS: ${{ runner.temp }}/TrioOcrSyntheticDiagnostics
+        run: ./tests/trio-ocr/run-tests.ps1 -Probe "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1/TrioOCR/TrioOcrProbe.exe"
+      - name: Publish synthetic fixture diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrioOcr-Synthetic-Diagnostics
+          path: ${{ runner.temp }}/TrioOcrSyntheticDiagnostics/
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Publish test package with full source
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickerKeys-3.13-sandbox1-Windows-x64
+          path: ${{ runner.temp }}/QuickerKeys-3.13-sandbox1/
+          retention-days: 30
+          if-no-files-found: error
