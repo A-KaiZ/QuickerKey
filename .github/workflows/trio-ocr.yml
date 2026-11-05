@@ -19,9 +19,12 @@ jobs:
       - name: Build complete QuickerKeys sandbox with portable OCR
         shell: pwsh
         run: ./tools/trio-ocr/build-sandbox.ps1 -OutputDirectory "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1"
-      - name: Test actual CMD launch and startup failure reporting
+      - name: Prepare AutoHotkey for isolated launcher tests
         shell: pwsh
-        run: ./tests/trio-ocr/Test-Launcher.ps1 -Package "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1"
+        run: ./tools/trio-ocr/prepare-test-runtime.ps1 -OutputDirectory "$env:RUNNER_TEMP/QuickerKeysTestRuntime"
+      - name: Test existing association and optional CMD startup
+        shell: pwsh
+        run: ./tests/trio-ocr/Test-Launcher.ps1 -Package "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1" -AutoHotkey "$env:RUNNER_TEMP/QuickerKeysTestRuntime/AutoHotkey64.exe"
       - name: Test real OCR, dynamic geometry and row validation
         shell: pwsh
         env:

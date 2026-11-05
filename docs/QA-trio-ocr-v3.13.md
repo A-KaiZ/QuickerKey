@@ -4,9 +4,9 @@ Grunnlag: offisiell 3.12.0, main-commit `021e335e4b1a8a66a188b5a1f2be4a04d2707cc
 
 ## Testbar leveranse
 
-Pakk ut hele ZIP-filen og start **Start-QuickerKeys.cmd**. Velg **Trio OCR-test → Åpne Trio OCR-test → Finn Oppgavelogg → Les utsnitt (5 s)**. Loggen må være åpen og ikke minimert. Knappen starter én avlesning; ingen automatisk polling eller scrolling inngår.
+Pakk ut hele ZIP-filen og åpne **QuickerKeys.ahk** med den vanlige administrerte AutoHotkey v2-løsningen. Velg **Trio OCR-test → Åpne Trio OCR-test → Finn Oppgavelogg → Les utsnitt (5 s)**. Loggen må være åpen og ikke minimert. Knappen starter én avlesning; ingen automatisk polling eller scrolling inngår.
 
-Sandboxen har egen datamappe, egen autostartsnarvei og automatisk profilimport er slått av. Avslutt vanlig QuickerKeys før prøven for å unngå overlappende hurtigtaster. Full kode, versjonsfestet AutoHotkey-runtime, Tesseract-motor og veiledning følger pakken.
+Sandboxen har egen datamappe, egen autostartsnarvei og automatisk profilimport er slått av. Avslutt vanlig QuickerKeys før prøven for å unngå overlappende hurtigtaster. Full kode, Tesseract-motor og veiledning følger pakken.
 
 ## Det som må bevises
 

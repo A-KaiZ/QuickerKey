@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Package)
+param([Parameter(Mandatory=$true)][string]$Package, [Parameter(Mandatory=$true)][string]$AutoHotkey)
 $ErrorActionPreference = 'Stop'
 Add-Type @'
 using System;
@@ -10,6 +10,7 @@ public static class QuickerKeysLaunchWindow {
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int count);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("shell32.dll")] public static extern void SHChangeNotify(int value, uint flags, IntPtr first, IntPtr second);
     public static int Find() {
         int process = 0;
         EnumWindows(delegate(IntPtr window, IntPtr unused) {
@@ -27,20 +28,25 @@ function Require([bool]$Value, [string]$Label) {
     if (!$Value) { throw $Label }
     Write-Host "PASS $Label"
 }
-function Invoke-Launcher([string]$Directory, [string]$File, [bool]$ExpectWindow) {
-    $runtime = Join-Path $Directory 'Runtime/AutoHotkey64.exe'
-    $info = [Diagnostics.ProcessStartInfo]::new($env:ComSpec, ('/d /c ""' + (Join-Path $Directory $File) + '""'))
-    $info.UseShellExecute = $false
-    $info.CreateNoWindow = $true
-    $info.RedirectStandardInput = $true
-    $info.RedirectStandardOutput = $true
-    $info.RedirectStandardError = $true
-    $info.StandardOutputEncoding = [Text.Encoding]::UTF8
-    $info.StandardErrorEncoding = [Text.Encoding]::UTF8
+function Invoke-Launch([string]$Directory, [bool]$Document, [bool]$ExpectWindow) {
+    $info = if ($Document) {
+        [Diagnostics.ProcessStartInfo]::new((Join-Path $Directory 'QuickerKeys.ahk'))
+    } else {
+        [Diagnostics.ProcessStartInfo]::new($env:ComSpec, ('/d /c ""' + (Join-Path $Directory 'Start-QuickerKeys.cmd') + '""'))
+    }
+    $info.UseShellExecute = $Document
+    $info.WorkingDirectory = $Directory
+    if (!$Document) {
+        $info.CreateNoWindow = $true
+        $info.RedirectStandardInput = $true
+        $info.RedirectStandardOutput = $true
+        $info.RedirectStandardError = $true
+    }
     $process = [Diagnostics.Process]::Start($info)
-    $stdout = $process.StandardOutput.ReadToEndAsync()
-    $stderr = $process.StandardError.ReadToEndAsync()
-    $process.StandardInput.Close() # Let PAUSE finish after a failure in this noninteractive test.
+    if (!$Document) {
+        $stdout = $process.StandardOutput.ReadToEndAsync(); $stderr = $process.StandardError.ReadToEndAsync()
+        $process.StandardInput.Close()
+    }
     $found = $false
     try {
         if ($ExpectWindow) {
@@ -49,58 +55,52 @@ function Invoke-Launcher([string]$Directory, [string]$File, [bool]$ExpectWindow)
                 $appPid = [QuickerKeysLaunchWindow]::Find()
                 if ($appPid -gt 0) {
                     $candidate = Get-Process -Id $appPid -ErrorAction SilentlyContinue
-                    if ($candidate -and $candidate.Path -eq $runtime) { $found = $true; break }
+                    if ($candidate -and $candidate.Path -eq $AutoHotkey) { $found = $true; break }
                 }
                 Start-Sleep -Milliseconds 100
             }
-            Start-Sleep -Milliseconds 300
         }
     } finally {
-        Get-Process -Name AutoHotkey64 -ErrorAction SilentlyContinue | Where-Object Path -eq $runtime | Stop-Process -Force
-        if (!$process.WaitForExit(10000)) { $process.Kill($true); throw 'Launcher did not return after app exit.' }
+        Get-Process -Name AutoHotkey64 -ErrorAction SilentlyContinue | Where-Object Path -eq $AutoHotkey | Stop-Process -Force
+        if ($process -and !$process.WaitForExit(10000)) { $process.Kill($true); throw 'Launcher did not return after app exit.' }
     }
     try {
-        return [PSCustomObject]@{ Window = $found; Code = $process.ExitCode; Output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult() }
-    } finally { $process.Dispose() }
+        return [PSCustomObject]@{ Window = $found; Code = $(if ($process) { $process.ExitCode } else { 0 });
+            Output = $(if ($Document) { '' } else { $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult() }) }
+    } finally { if ($process) { $process.Dispose() } }
 }
 $temp = Join-Path $env:TEMP ('quickerkeys-launcher-' + [Guid]::NewGuid())
+$progId = 'QuickerKeys.CI.' + [Guid]::NewGuid().ToString('N')
+$classes = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Classes')
+$extension = $classes.OpenSubKey('.ahk', $true)
+$hadExtension = $null -ne $extension
+$oldDefault = if ($extension) { $extension.GetValue('') } else { $null }
+$oldKind = if ($null -ne $oldDefault) { $extension.GetValueKind('') } else { $null }
 try {
+    # Isolated CI user only: stand in for an existing, configured AutoHotkey association.
+    # No association is installed or modified by the user package or its launcher.
+    if (!$extension) { $extension = $classes.CreateSubKey('.ahk') }
+    $command = $classes.CreateSubKey($progId + '\shell\open\command')
+    try { $command.SetValue('', ('"' + $AutoHotkey + '" "%1" %*')) } finally { $command.Dispose() }
+    $extension.SetValue('', $progId)
+    [QuickerKeysLaunchWindow]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
     $full = Join-Path $temp 'pakke med mellomrom ! & (ø)'
     New-Item -ItemType Directory -Path $full -Force | Out-Null
     Copy-Item (Join-Path $Package '*') $full -Recurse
-    $normal = Invoke-Launcher $full 'Start-QuickerKeys.cmd' $true
-    $extra = ''
-    if (!$normal.Window) { $extra = (Invoke-Launcher $full 'Start-QuickerKeys-Diagnose.cmd' $true).Output }
-    Require ($normal.Window -and $normal.Code -eq 0) ('normal CMD starts the real unmodified app from a special-character path: ' + $normal.Output + $extra)
-
-    $settings = Join-Path $env:APPDATA 'QuickerKeysSandbox313/Innstillinger/QuickerKeys.ini'
-    [IO.File]::WriteAllText($settings, "[App]`r`nStartSkjult=1`r`nLogo=0`r`n")
-    $diagnostic = Invoke-Launcher $full 'Start-QuickerKeys-Diagnose.cmd' $true
-    Require ($diagnostic.Window -and $diagnostic.Output.Contains('QK_STARTUP window-shown')) ('diagnostic launches the real app and reveals a hidden main window: ' + $diagnostic.Output)
-
-    $broken = Join-Path $temp 'incomplete package'
-    New-Item -ItemType Directory -Path $broken | Out-Null
-    Copy-Item (Join-Path $full 'Start-QuickerKeys*.cmd') $broken
-    Copy-Item (Join-Path $full 'QuickerKeys.ahk') $broken
-    $missing = Invoke-Launcher $broken 'Start-QuickerKeys-Diagnose.cmd' $false
-    Require ($missing.Code -eq 2 -and $missing.Output.Contains('QK_STARTUP MISSING_RUNTIME')) 'missing bundled runtime is reported before launch'
-    $missingNormal = Invoke-Launcher $broken 'Start-QuickerKeys.cmd' $false
-    Require ($missingNormal.Code -eq 2 -and $missingNormal.Output.Contains('QK_STARTUP MISSING_RUNTIME')) 'normal launcher reports an incomplete extraction'
-    Copy-Item (Join-Path $full 'Runtime') $broken -Recurse
-    Remove-Item (Join-Path $broken 'QuickerKeys.ahk')
-    $missingScript = Invoke-Launcher $broken 'Start-QuickerKeys-Diagnose.cmd' $false
-    Require ($missingScript.Code -eq 2 -and $missingScript.Output.Contains('QK_STARTUP MISSING_SCRIPT')) 'missing main script is distinguished from a runtime failure'
-
-    [IO.File]::WriteAllText((Join-Path $broken 'QuickerKeys.ahk'), "#Requires AutoHotkey v2.0`r`nif (`r`n")
-    $syntax = Invoke-Launcher $broken 'Start-QuickerKeys-Diagnose.cmd' $false
-    Require ($syntax.Code -ne 0 -and $syntax.Output.Contains('Error:') -and $syntax.Output.Contains('QK_STARTUP PROCESS_EXIT')) 'AutoHotkey syntax errors and process exit are visible in the diagnostic'
-
-    $app = [IO.File]::ReadAllText((Join-Path $full 'QuickerKeys.ahk'))
-    $app = $app.Replace('global APP_NAVN    :=', "throw OSError(5)`r`nglobal APP_NAVN    :=")
-    [IO.File]::WriteAllText((Join-Path $broken 'QuickerKeys.ahk'), $app, [Text.UTF8Encoding]::new($true))
-    $runtimeFailure = Invoke-Launcher $broken 'Start-QuickerKeys-Diagnose.cmd' $false
-    Require ($runtimeFailure.Code -eq 1 -and $runtimeFailure.Output.Contains('QK_STARTUP ERROR type=OSError') -and $runtimeFailure.Output.Contains('win32=5')) 'startup runtime errors report their type, line and Windows code before normal logging is ready'
-    Require (@(Get-Process -Name TrioOcrProbe,TrioCaptureProbe -ErrorAction SilentlyContinue).Count -eq 0) 'startup diagnosis never starts an OCR or capture helper'
+    Require (!(Test-Path (Join-Path $full 'Runtime'))) 'user package does not contain a second AutoHotkey runtime'
+    $direct = Invoke-Launch $full $true $true
+    Require $direct.Window 'opening the main AHK script through its registered application starts the actual GUI'
+    $normal = Invoke-Launch $full $false $true
+    Require ($normal.Window -and $normal.Code -eq 0) ('optional CMD uses the same association without a bundled runtime: ' + $normal.Output)
+    Require (@(Get-Process -Name TrioOcrProbe,TrioCaptureProbe -ErrorAction SilentlyContinue).Count -eq 0) 'normal startup never launches an OCR or capture helper'
+    Remove-Item (Join-Path $full 'QuickerKeys.ahk')
+    $missing = Invoke-Launch $full $false $false
+    Require ($missing.Code -eq 2 -and $missing.Output.Contains('QK_STARTUP MISSING_SCRIPT')) 'missing script is reported without trying an alternate executable'
 } finally {
+    if ($null -ne $oldDefault) { $extension.SetValue('', $oldDefault, $oldKind) } else { $extension.DeleteValue('', $false) }
+    $extension.Dispose()
+    if (!$hadExtension) { $classes.DeleteSubKeyTree('.ahk', $false) }
+    $classes.DeleteSubKeyTree($progId, $false); $classes.Dispose()
+    [QuickerKeysLaunchWindow]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)
     Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
 }

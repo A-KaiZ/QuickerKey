@@ -1,18 +1,18 @@
 # QuickerKeys 3.13 sandbox · lokal Trio OCR-test P1.0
 
-Denne pakken bygger på den offisielle QuickerKeys 3.12.0-utgaven. Pakk ut hele ZIP-filen og start **Start-QuickerKeys.cmd**, velg **Trio OCR-test** i sidemenyen og trykk **Åpne Trio OCR-test**. Hjelpeprogrammer, OCR-motor og en versjonsfestet AutoHotkey v2-runtime følger med; ingen installasjon er nødvendig. OCR-programmene krever Windows x64 og .NET Framework 4.8.
+Denne pakken bygger på den offisielle QuickerKeys 3.12.0-utgaven. Pakk ut hele ZIP-filen og åpne **QuickerKeys.ahk** med den vanlige, administrerte AutoHotkey v2-løsningen. **Start-QuickerKeys.cmd** er valgfri og åpner bare den samme AHK-filen gjennom Windows' eksisterende filtilknytning. Pakken installerer ingen filtilknytning og inneholder ikke en ekstra AutoHotkey-runtime. Velg deretter **Trio OCR-test → Åpne Trio OCR-test**. OCR-hjelpeprogrammene og den lokale motoren følger med, men må være tillatt av virksomhetens policy. De krever Windows x64 og .NET Framework 4.8.
 
 Sandboxen bruker egen datamappe (`AppData\Roaming\QuickerKeysSandbox313`) og egen autostartsnarvei. Den importerer ikke ordinære profiler automatisk. Avslutt den vanlige QuickerKeys mens du tester, slik at to utgaver ikke konkurrerer om de samme hurtigtastene. Den offisielle 3.12-utgaven og dens datamappe beholdes.
 
 ## Startfil og Windows-varsler
 
-**Start-QuickerKeys.cmd** er startfilen: den velger pakkens mappe og starter `Runtime\AutoHotkey64.exe` med `QuickerKeys.ahk`. Selve CMD-filen installerer ingenting, laster ikke ned noe og endrer ikke sikkerhetsinnstillinger. Den er ment å startes, ikke redigeres.
+**QuickerKeys.ahk** er hovedfilen. Åpne den slik du vanligvis åpner AHK-skript. Den valgfrie CMD-filen bruker samme filtilknytning; den starter ingen medfølgende AutoHotkey-EXE, laster ikke ned noe og endrer ikke sikkerhetsinnstillinger. Dersom tilknytningen åpner en teksteditor eller ikke finnes, må den vanlige administrerte AutoHotkey-løsningen brukes. IWC-/Liquit-identifikatorer alene er ikke nok til å utlede et støttet oppstartskall, og ingen slike kall er lagt inn.
 
 `TrioOcrProbe.exe` og `TrioCaptureProbe.exe` i denne prototypen er ikke Authenticode-signert. Nye/usignerte programmer kan gi SmartScreen-varsel eller bli blokkert av virksomhetens programkontroll. En SHA-256-kontroll bekrefter filintegritet, ikke at programmet er godkjent av virksomheten. For jobbbruk må pakken vurderes og distribueres gjennom virksomhetens vanlige ordning, med godkjent signering og/eller regler fra IT etter deres policy. Signering alene garanterer ikke at SmartScreen aldri viser varsel. Hele pakken, inkludert tredjepartsmotoren, inngår i vurderingen.
 
 Feil ved oppstart viser Windows-feilkoden når den er tilgjengelig. En slik oppstartsfeil er ikke en kontroll av Windows-arkitektur eller installert .NET-versjon.
 
-Hvis startvinduet bare blinker, prøv først **Ctrl+Alt+M** eller QuickerKeys-ikonet ved klokka for å se om appen allerede kjører skjult. **Start-QuickerKeys-Diagnose.cmd** beholder konsollvinduet og viser hvor oppstarten stopper. Den bruker samme AutoHotkey og samme komplette app, viser hovedvinduet også ved «Start skjult», og starter ingen OCR-hjelper. Meldinger som begynner med `QK_STARTUP` inneholder bare oppstartssteg, feiltype, linjenummer og eventuell Windows-feilkode. Lastingsfeil fra AutoHotkey kan også vises. Diagnosen endrer ikke sikkerhetsinnstillinger eller godkjenninger. Vinduet står åpent mens appen kjører; ved feil blir det stående til en tast trykkes.
+Hvis ingen hovedrute vises, prøv **Ctrl+Alt+M** eller QuickerKeys-ikonet ved klokka for å se om appen allerede kjører skjult. At en valgfri CMD-fil lukker seg, bekrefter bare at filåpningen er sendt videre; det beviser ikke at AutoHotkey har startet. En blokkering av en AutoHotkey-EXE gjelder dette oppstartsteget. En senere blokkering av OCR-hjelperen er en separat begrensning.
 
 ## Prøv på jobb
 
