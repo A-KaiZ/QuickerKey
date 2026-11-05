@@ -17,7 +17,10 @@ $ahkZip = Join-Path $env:TEMP 'quickerkeys-ahk-v2.0.19.zip'
 if (!(Test-Path $ahkZip)) { Invoke-WebRequest 'https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.19/AutoHotkey_2.0.19.zip' -OutFile $ahkZip }
 if ((Get-FileHash $ahkZip -Algorithm SHA256).Hash -ne '4E0D0E65655066A646A210951320FEAEF0729A3597177131ADAEC4066BEF5869') { throw 'AutoHotkey runtime digest mismatch.' }
 Expand-Archive $ahkZip $runtime -Force
-[IO.File]::WriteAllText((Join-Path $OutputDirectory 'Start-QuickerKeys.cmd'), "@echo off`r`ncd /d `"%~dp0`"`r`nstart `"`" `"%~dp0Runtime\AutoHotkey64.exe`" `"%~dp0QuickerKeys.ahk`"`r`n", [Text.Encoding]::ASCII)
+foreach ($name in @('Start-QuickerKeys.cmd','Start-QuickerKeys-Diagnose.cmd')) {
+    $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot $name)).Replace("`r`n", "`n").Replace("`n", "`r`n")
+    [IO.File]::WriteAllText((Join-Path $OutputDirectory $name), $text, [Text.Encoding]::ASCII)
+}
 [IO.File]::WriteAllLines((Join-Path $OutputDirectory 'FILES.sha256'), @(Get-ChildItem $OutputDirectory -Recurse -File | Where-Object Name -ne 'FILES.sha256' | Sort-Object FullName | ForEach-Object {
     (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.FullName.Substring($OutputDirectory.TrimEnd('\','/').Length + 1).Replace('\','/')
 }))

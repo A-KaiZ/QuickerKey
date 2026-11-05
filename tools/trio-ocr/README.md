@@ -12,6 +12,8 @@ Sandboxen bruker egen datamappe (`AppData\Roaming\QuickerKeysSandbox313`) og ege
 
 Feil ved oppstart viser Windows-feilkoden når den er tilgjengelig. En slik oppstartsfeil er ikke en kontroll av Windows-arkitektur eller installert .NET-versjon.
 
+Hvis startvinduet bare blinker, prøv først **Ctrl+Alt+M** eller QuickerKeys-ikonet ved klokka for å se om appen allerede kjører skjult. **Start-QuickerKeys-Diagnose.cmd** beholder konsollvinduet og viser hvor oppstarten stopper. Den bruker samme AutoHotkey og samme komplette app, viser hovedvinduet også ved «Start skjult», og starter ingen OCR-hjelper. Meldinger som begynner med `QK_STARTUP` inneholder bare oppstartssteg, feiltype, linjenummer og eventuell Windows-feilkode. Lastingsfeil fra AutoHotkey kan også vises. Diagnosen endrer ikke sikkerhetsinnstillinger eller godkjenninger. Vinduet står åpent mens appen kjører; ved feil blir det stående til en tast trykkes.
+
 ## Prøv på jobb
 
 1. Åpne Trio Oppgavelogg uten å minimere vinduet.

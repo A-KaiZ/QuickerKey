@@ -29,6 +29,7 @@ VerktoyListe() => [
 ]
 
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
+OppstartsDiagnose("script-running")
 
 global APP_NAVN    := "QuickerKeys"
 global APP_VERSJON := "3.13-sandbox1"
@@ -53,10 +54,12 @@ global FORSTE_GANG := false, LOGO := ""
 
 ; ---------------- Oppstart ----------------
 global FLYTTET := LagMappestruktur()
+OppstartsDiagnose("data-folders-ready")
 FORSTE_GANG := !FileExist(INI_FIL)
 SikreIni()
+OppstartsDiagnose("settings-ready")
 TEMA := TemaPalett(Innst("App", "Tema", "Midnatt"))
-MANUELL_START := ManuellStart()
+MANUELL_START := !OppstartsDiagnoseAktiv() && ManuellStart()
 if (MANUELL_START && Innst("App", "Logo", "1") = "1")
     VisLogo()
 NETT_PAA := Innst("App", "Nettverk", "0") = "1"
@@ -66,6 +69,7 @@ Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser 
 VERKTOY_LISTE := VerktoyListe()
 ByggHovedvindu()
 ByggTrayMeny()
+OppstartsDiagnose("gui-created")
 OnMessage(0x200, MusOver)
 OppdaterAutostartSnarvei()
 Logg(APP_NAVN " " APP_VERSJON " startet  –  mappe: " DATA_MAPPE)
@@ -90,6 +94,10 @@ if (NETT_PAA && Innst("App", "NettverkApne", "0") = "1") {
 if FORSTE_GANG
     EtterLogo(VisVelkommen)
 OppdaterToppStatus()
+if OppstartsDiagnoseAktiv() {
+    VisHoved()
+    OppstartsDiagnose("window-shown")
+}
 
 
 ; =====================================================================
@@ -399,7 +407,26 @@ LukkGamleSkript() {
     return lukket
 }
 
+OppstartsDiagnoseAktiv() {
+    for arg in A_Args
+        if (arg = "/startup-diagnostic")
+            return true
+    return false
+}
+
+OppstartsDiagnose(steg) {
+    if OppstartsDiagnoseAktiv()
+        try FileAppend "QK_STARTUP " steg "`n", "*", "UTF-8"
+}
+
 FeilFanger(feil, modus) {
+    if OppstartsDiagnoseAktiv() {
+        melding := "QK_STARTUP ERROR type=" Type(feil) " line=" feil.Line
+        if (feil is OSError)
+            melding .= " win32=" feil.Number
+        try FileAppend melding "`n", "**", "UTF-8"
+        ExitApp 1
+    }
     static siste := ""
     melding := ""
     try melding := feil.Message
