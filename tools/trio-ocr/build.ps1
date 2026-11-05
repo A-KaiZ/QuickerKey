@@ -12,7 +12,7 @@ $source = Join-Path $OutputDirectory 'source/ocr'
 New-Item -ItemType Directory -Force -Path $source | Out-Null
 Copy-Item (Join-Path $PSScriptRoot '*.cs'),(Join-Path $PSScriptRoot '*.ps1') $source -Force
 Copy-Item (Join-Path $PSScriptRoot 'README.md') (Join-Path $OutputDirectory 'OCR-README.md') -Force
-foreach ($module in @('trio-capture','trio-ocr')) {
+foreach ($module in @('trio-capture','trio-ocr','trio-clipboard')) {
     $moduleSource = Join-Path $OutputDirectory ("source/tools/$module")
     New-Item -ItemType Directory -Force -Path $moduleSource | Out-Null
     Copy-Item (Join-Path $repo "tools/$module/*") $moduleSource -Force -Recurse

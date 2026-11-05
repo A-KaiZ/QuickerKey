@@ -5,7 +5,9 @@ on:
       - 'QuickerKeys.ahk'
       - 'tools/trio-ocr/**'
       - 'tools/trio-capture/**'
+      - 'tools/trio-clipboard/**'
       - 'tests/trio-ocr/**'
+      - 'tests/trio-clipboard/**'
       - '.github/workflows/trio-ocr.yml'
   workflow_dispatch:
 permissions:
@@ -22,6 +24,9 @@ jobs:
       - name: Prepare AutoHotkey for isolated launcher tests
         shell: pwsh
         run: ./tools/trio-ocr/prepare-test-runtime.ps1 -OutputDirectory "$env:RUNNER_TEMP/QuickerKeysTestRuntime"
+      - name: Test anonymous clipboard format probe
+        shell: pwsh
+        run: ./tests/trio-clipboard/run-tests.ps1 -AutoHotkey "$env:RUNNER_TEMP/QuickerKeysTestRuntime/AutoHotkey64.exe"
       - name: Test existing association and optional CMD startup
         shell: pwsh
         run: ./tests/trio-ocr/Test-Launcher.ps1 -Package "$env:RUNNER_TEMP/QuickerKeys-3.13-sandbox1" -AutoHotkey "$env:RUNNER_TEMP/QuickerKeysTestRuntime/AutoHotkey64.exe"

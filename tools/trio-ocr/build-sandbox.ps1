@@ -5,6 +5,7 @@ if (Test-Path (Join-Path $OutputDirectory 'Runtime')) { throw 'Old bundled runti
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 & (Join-Path $PSScriptRoot 'build.ps1') -OutputDirectory (Join-Path $OutputDirectory 'TrioOCR')
 Copy-Item (Join-Path $repo 'QuickerKeys.ahk') $OutputDirectory -Force
+Copy-Item (Join-Path $repo 'tools/trio-clipboard/QuickerKeys-Kopieringstest.ahk') $OutputDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot 'README.md') (Join-Path $OutputDirectory 'README.md') -Force
 $sourceRoot = Join-Path $OutputDirectory 'TrioOCR/source'
 Copy-Item (Join-Path $repo 'QuickerKeys.ahk'),(Join-Path $repo 'README.md') $sourceRoot -Force
