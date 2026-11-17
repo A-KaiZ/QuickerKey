@@ -617,7 +617,7 @@ SakStatistikk() {
             continue
         antall := Integer(m[2])
         resultat.totalt += antall
-        if (m[1] >= grense && m[1] <= iDag)
+        if (StrCompare(m[1], grense) >= 0 && StrCompare(m[1], iDag) <= 0)
             resultat.siste7 += antall
     }
     return resultat
