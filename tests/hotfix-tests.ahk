@@ -31,6 +31,7 @@ RunHotfixTests() {
     global INI_FIL := A_ScriptDir "\test.ini", TEKST_MAPPE := A_ScriptDir
     global LOGG_MAPPE := A_ScriptDir, LOGG_LINJER := [], APP_KTRL := Map(), OVERSIKT := Map()
     global APP_NAVN := "QuickerKeys", DIPS_INI_FIL := A_ScriptDir "\DIPS.ini"
+    global NETT_PAA := false, MF_TAST := "^!n"   ; production globals initialized after test injection
     fixturePid := 0, tf := "", dlg := "", code := 0
     try {
         HotfixAssert(TekstflytSignatur("#dwa", "TEST", "", "20261104120000") == "(test) 041126", "signature without clipboard")
