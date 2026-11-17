@@ -118,6 +118,24 @@ RunHotfixTests() {
         IniWrite "!F3", INI_FIL, "App", "VisTast"
         trio := VT_TrioSnarveier()
         HotfixAssert(trio.Hent("EnabledHKetterarbeid5") = "off", "default shortcut conflict does not displace existing key")
+        ; Saksteller: test in isolated temporary folder; never touch user's counter.
+        global SAK_FIL := A_ScriptDir "\\counter-test.ini"
+        if FileExist(SAK_FIL)
+            FileDelete SAK_FIL
+        HotfixAssert(SakAntall() = 0, "counter starts at zero")
+        SakEndre(1)
+        SakEndre(5)
+        HotfixAssert(SakAntall() = 6, "counter increment and batch increment")
+        SakEndre(-1)
+        HotfixAssert(SakAntall() = 5, "counter undo one")
+        SakEndre(-20)
+        HotfixAssert(SakAntall() = 0, "counter cannot become negative")
+        SakEndre(3)
+        HotfixAssert(SakStatistikk().totalt = 3, "counter total persisted")
+        IniWrite 2, SAK_FIL, "Dager", FormatTime(DateAdd(A_Now, -1, "Days"), "yyyy-MM-dd")
+        HotfixAssert(SakStatistikk().siste7 = 5, "counter last-seven-days aggregation")
+        HotfixAssert(SakAntall() = 3, "counter today independent of yesterday")
+        FileDelete SAK_FIL
         RunDipsUiTests()
     } catch as feil {
         FileAppend(feil.Message " at line " feil.Line "`n" feil.Stack "`n", "*", "UTF-8")
