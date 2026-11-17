@@ -213,7 +213,7 @@ RunDipsUiTests() {
             avansertKnapp := ctrl
     }
     HotfixAssert(IsObject(avansertKnapp), "v3.12 advanced settings entry exists")
-    HotfixAssert(InStr(HjelpTekst("Innstillinger"), "DIPS-signatur"), "advanced settings documents DIPS")
+    HotfixAssert(InStr(HjelpTekst("Innstillinger"), "DIPS-innstillinger"), "advanced settings documents DIPS")
     HotfixAssert(!InStr(WinGetText("ahk_id " HOVED.Hwnd), "Nettverksgeni"), "professional settings labels")
     HotfixCapture(HOVED.Hwnd, "ui-settings")
     DipsLagreProfil("demobruker", "D2358")
