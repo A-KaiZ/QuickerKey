@@ -1693,7 +1693,7 @@ MfKopier(rad) {
     if (forrige && forrige != rad && forrige <= MF.liste.Length)
         lv.Modify(forrige, "Col2", MfStatusTekst(forrige))
     lv.Modify(rad, "Select Focus Vis Col2", MfStatusTekst(rad))
-    Varsel("Kopiert · MAC-adresse  (" rad " av " MF.liste.Length ")", mac)
+    Varsel("Kopiert · MAC-adresse  (" rad " av " MF.liste.Length ")", mac, "")
 }
 
 MfKopierNeste() {
