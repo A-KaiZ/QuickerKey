@@ -205,16 +205,15 @@ RunDipsUiTests() {
     VisPanel("Innstillinger")
     HOVED.Show("w" APP_B " h" APP_H)
     Sleep 200
-    dipsKnapp := "", nettKnapp := ""
+    avansertKnapp := ""
     for ctrl in PANELER["Innstillinger"] {
         ctrl.GetPos(&x, &y, &w, &h)
         HotfixAssert(y + h <= APP_H, "settings control remains inside window")
-        if (ctrl.Text = "DIPS-innstillinger")
-            dipsKnapp := ctrl
-        if (ctrl.Text = "Aktiver Nettverk")
-            nettKnapp := ctrl
+        if (ctrl.Text = "Avansert…")
+            avansertKnapp := ctrl
     }
-    HotfixAssert(IsObject(dipsKnapp) && IsObject(nettKnapp), "settings has DIPS and neutral network actions")
+    HotfixAssert(IsObject(avansertKnapp), "v3.12 advanced settings entry exists")
+    HotfixAssert(InStr(HjelpTekst("Innstillinger"), "DIPS-signatur"), "advanced settings documents DIPS")
     HotfixAssert(!InStr(WinGetText("ahk_id " HOVED.Hwnd), "Nettverksgeni"), "professional settings labels")
     HotfixCapture(HOVED.Hwnd, "ui-settings")
     DipsLagreProfil("demobruker", "D2358")
