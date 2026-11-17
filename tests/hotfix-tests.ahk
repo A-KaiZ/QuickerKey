@@ -199,6 +199,8 @@ RunDipsUiTests() {
     global APP_VERSJON := "3.11.3", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
     global PANELER := Map(), NAVKNAPPER := Map(), VIS_VILKAR := Map(), NAV_FOR := Map(), NETT_PAA := false
     global VERKTOY_LISTE := VerktoyListe(), DIPS_INI_FIL
+    global NAV_DEL := Map(), NAV_VALGT := "", NAV_HOVER := "", HOVER := Map(), HOVER_AKTIV := 0
+    global APP_KTRL := Map(), OVERSIKT := Map(), TOPP_STATUS := ""
     ByggHovedvindu()
     VisPanel("Innstillinger")
     HOVED.Show("w" APP_B " h" APP_H)
