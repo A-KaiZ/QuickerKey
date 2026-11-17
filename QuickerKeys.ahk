@@ -30,7 +30,7 @@ VerktoyListe() => [
 OnError(FeilFanger)          ; feil havner i Logg i stedet for som feilvindu
 
 global APP_NAVN    := "QuickerKeys"
-global APP_VERSJON := "3.12.0"
+global APP_VERSJON := "3.12.3"
 global TEMA := {bg: "0F1E3A", kort: "16294D", nav: "0B1730", aksent: "2F7BEA", aksent2: "24497F", tekst: "E8EEF9", dempet: "8FA3C7", paa: "1FA97A", av: "56637D", linje: "1E3560", feil: "FF6B6B"}
 global DATA_MAPPE  := FinnDataMappe()                    ; programmets hovedmappe for data
 global INNST_MAPPE := DATA_MAPPE "\Innstillinger"
@@ -38,11 +38,15 @@ global TEKST_MAPPE := DATA_MAPPE "\Tekstflyt"
 global LOGG_MAPPE  := DATA_MAPPE "\Logg"
 global INI_FIL     := INNST_MAPPE "\QuickerKeys.ini"
 global DIPS_INI_FIL := INNST_MAPPE "\DIPS.ini"
+global SAK_FIL := INNST_MAPPE "\Saksteller.ini"    ; personlig dagtelling, lagres uten saksdetaljer
 global HOVED := "", APP_B := 760, APP_H := 580, INNHOLD_X := 196, INNHOLD_B := 532
 global PANELER := Map(), NAVKNAPPER := Map(), OVERSIKT := Map(), APP_KTRL := Map()
 global VIS_VILKAR := Map()                   ; controls shown only when context needs them
 global LOGG_LINJER := [], VERKTOY_LISTE := [], VIS_TAST := ""
 global NETT_PAA := false, NETT := Map()
+global MF := {liste: [], kopiert: Map(), ferdig: Map(), sist: 0, tegner: false}
+global MF_TAST := "^!n"                     ; MAC Formater: kopier neste
+global SAK := Map()                          ; Saksteller: GUI-kontroller
 global NAV_FOR := Map()
 global HOVER := Map(), HOVER_AKTIV := 0
 global NAV_DEL := Map(), NAV_VALGT := "", NAV_HOVER := ""
@@ -64,6 +68,7 @@ lukketListe := LukkGamleSkript()
 Hotstring("EndChars", " `n")                 ; bare Mellomrom og Enter utløser en tekstkode
 VERKTOY_LISTE := VerktoyListe()
 ByggHovedvindu()
+SetTimer SakOppdater, 60000               ; vis riktig dag også over midnatt
 ByggTrayMeny()
 OnMessage(0x200, MusOver)
 OppdaterAutostartSnarvei()
@@ -78,7 +83,7 @@ SettVisTast(Innst("App", "VisTast", "^!m"))
 if (NETT_PAA && Innst("App", "NettverkApne", "0") = "1") {
     SettInnst("App", "NettverkApne", "0")
     VisPanel("Nettverk")
-    VisHoved()
+    EtterLogo(VisHoved)
 } else {
     VisPanel("Oversikt")
     if (Innst("App", "StartSkjult", "0") = "1" && !FORSTE_GANG)
@@ -419,7 +424,7 @@ ByggHovedvindu() {
     navValg := ["Oversikt"]
     for vt in VERKTOY_LISTE
         navValg.Push(vt.Navn)
-    navValg.Push("Logg", "Innstillinger")
+    navValg.Push("Saksteller", "Logg", "Innstillinger")
     APP_H := Max(580, 156 + antall * 96 + 32, 84 + navValg.Length * 44 + (NETT_PAA ? 112 : 56))
 
     HOVED := Gui("-MaximizeBox", APP_NAVN)
@@ -455,6 +460,7 @@ ByggHovedvindu() {
     ByggOversikt()
     for vt in VERKTOY_LISTE
         ByggVerktoyPanel(vt)
+    ByggSakstellerPanel()
     ByggLoggPanel()
     ByggInnstillingerPanel()
     if NETT_PAA
@@ -476,7 +482,7 @@ LagNavKnapp(navn, y) {
 
 NavIkon(navn) {
     static ikoner := Map("Oversikt", 0xE80F, "Tekstflyt", 0xE70F, "SM Kontakt", 0xE77B, "Trio Snarveier", 0xE765
-        , "Vindusbytter", 0xE8A7, "Logg", 0xE7C3, "Innstillinger", 0xE713, "Nettverk", 0xE968)
+        , "Vindusbytter", 0xE8A7, "Saksteller", 0xE73E, "Logg", 0xE7C3, "Innstillinger", 0xE713, "Nettverk", 0xE968)
     return ikoner.Has(navn) ? Chr(ikoner[navn]) : Chr(0xE10C)
 }
 
@@ -553,6 +559,101 @@ ByggVerktoyPanel(vt) {
     } catch as feil {
         Logg("Klarte ikke å bygge siden for " vt.Navn ": " feil.Message)
     }
+}
+
+; =====================================================================
+;  SAKSTELLER – manuell telling av løste saker
+;  Lagrer kun dato og antall under %AppData%\QuickerKeys\Innstillinger.
+;  Ingen kobling til Trio eller Service Manager, ingen kundeopplysninger.
+; =====================================================================
+ByggSakstellerPanel() {
+    pn := "Saksteller", x := INNHOLD_X, b := INNHOLD_B
+    PanelTittel(pn, "Saksteller")
+    Kort(pn, x, 132, b, 188)
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" (x+20) " y150 w" (b-40) " h20 Background" TEMA.kort, "SKRIFTLIGE SAKER I DAG"))
+    Skrift(HOVED, "s42 bold c" TEMA.tekst)
+    SAK["Tall"] := Reg(pn, HOVED.AddText("x" (x+20) " y174 w" (b-40) " h80 Center +0x200 Background" TEMA.kort, "0"))
+    Skrift(HOVED, "s9 c" TEMA.dempet)
+    SAK["Dato"] := Reg(pn, HOVED.AddText("x" (x+20) " y272 w" (b-40) " h24 Center Background" TEMA.kort, ""))
+
+    Skrift(HOVED, "s13 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y338 w" (b-160) " h54", "✓  +1 SAK", (*) => SakEndre(1), TEMA.paa))
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x+b-148) " y338 w148 h54", "−1  Korriger", (*) => SakEndre(-1), TEMA.aksent2))
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y404 w136 h36", "+5 saker", (*) => SakEndre(5), TEMA.aksent2))
+    Skrift(HOVED, "s9 c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x+b-172) " y404 w172 h36", "Nullstill i dag", SakNullstill, TEMA.av))
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    SAK["Total"] := Reg(pn, HOVED.AddText("x" x " y466 w" b " h24 Background" TEMA.bg, ""))
+    Skrift(HOVED, "s10 c" TEMA.dempet)
+    SAK["Uke"] := Reg(pn, HOVED.AddText("x" x " y494 w" b " h24 Background" TEMA.bg, ""))
+    Skrift(HOVED, "s9 c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y530 w" b " h32 Background" TEMA.bg, "Du teller manuelt. Kun dato og antall lagres lokalt – ingen saksnumre eller kundedata."))
+    SakOppdater()
+}
+
+SakDato() => FormatTime(, "yyyy-MM-dd")
+
+SakAntall(dato := "") {
+    if (dato = "")
+        dato := SakDato()
+    if !FileExist(SAK_FIL)
+        return 0
+    verdi := IniRead(SAK_FIL, "Dager", dato, "0")
+    return RegExMatch(verdi, "^\d{1,6}$") ? Integer(verdi) : 0
+}
+
+SakStatistikk() {
+    resultat := {totalt: 0, siste7: 0}
+    if !FileExist(SAK_FIL)
+        return resultat
+    tekst := IniRead(SAK_FIL, "Dager", , "")
+    grense := FormatTime(DateAdd(A_Now, -6, "Days"), "yyyy-MM-dd")
+    iDag := SakDato()
+    for linje in StrSplit(tekst, "`n", "`r") {
+        if !RegExMatch(Trim(linje), "^(\d{4}-\d{2}-\d{2})=(\d{1,6})$", &m)
+            continue
+        antall := Integer(m[2])
+        resultat.totalt += antall
+        if (StrCompare(m[1], grense) >= 0 && StrCompare(m[1], iDag) <= 0)
+            resultat.siste7 += antall
+    }
+    return resultat
+}
+
+SakOppdater(*) {
+    if !SAK.Has("Tall")
+        return
+    dato := SakDato()
+    stats := SakStatistikk()
+    SAK["Tall"].Text := SakAntall(dato)
+    SAK["Dato"].Text := FormatTime(, "dddd d. MMMM yyyy")
+    SAK["Total"].Text := "Totalt registrert:  " stats.totalt
+    SAK["Uke"].Text := "Siste 7 dager:  " stats.siste7
+}
+
+SakEndre(delta, *) {
+    dato := SakDato()
+    gammel := SakAntall(dato)
+    nytt := Max(0, Min(999999, gammel + delta))
+    if (nytt = gammel)
+        return
+    try {
+        IniWrite nytt, SAK_FIL, "Dager", dato
+        SakOppdater()
+        Logg("Saksteller: endret dagens antall fra " gammel " til " nytt)
+    } catch as feil {
+        MsgBox("Kunne ikke lagre sakstelleren:`n" feil.Message, APP_NAVN, "Icon!")
+    }
+}
+
+SakNullstill(*) {
+    if !SakAntall()
+        return
+    if (MsgBox("Nullstille dagens saksteller til 0? Tidligere dager beholdes.", APP_NAVN, "YesNo Icon? Default2") = "Yes")
+        SakEndre(-SakAntall())
 }
 
 ByggLoggPanel() {
@@ -694,6 +795,14 @@ HjelpTekst(side) {
                 . "•  PÅ / AV slår et verktøy av eller på.`n"
                 . "•  «Åpne →» viser verktøyets side.`n"
                 . "•  Alt kjører i bakgrunnen. Åpne vinduet igjen fra ikonet ved klokka."
+        case "Saksteller":
+            return "•  Trykk +1 SAK hver gang du har løst en skriftlig sak.`n"
+                . "•  −1 Angre trekker tilbake én registrering (ikke under 0).`n"
+                . "•  +5 saker gjør det raskere å registrere flere om gangen.`n"
+                . "•  «Nullstill i dag» endrer bare dagens antall. Tidligere dager beholdes.`n"
+                . "•  Høyreklikk QuickerKeys-ikonet ved klokka for rask +1 uten å åpne vinduet.`n"
+                . "•  Dagens, siste 7 dagers og totalt antall lagres per Windows-bruker.`n"
+                . "•  Ingen kundeopplysninger eller saksnumre lagres."
         case "Logg":
             return "•  Viser hva programmet har gjort i dag – nyeste øverst.`n"
                 . "•  Alt lagres også i mappen Logg, én fil per dag (30 dager tilbake).`n"
@@ -710,6 +819,13 @@ HjelpTekst(side) {
         case "Nettverk":
             return "•  Startsiden for nettverksverktøy, som MAC Import.`n"
                 . "•  «← Nettverk» øverst i verktøyet går tilbake til Nettverk."
+        case "MAC Formater":
+            return "1.  Lim inn MAC-adressene i valgfritt format.`n"
+                . "2.  Listen normaliseres til små bokstaver uten skilletegn.`n"
+                . "3.  Klikk en adresse for å kopiere den eller trykk «Kopier neste».`n"
+                . "4.  Kryss av ferdige adresser for å se fremdrift.`n"
+                . "•  Ctrl+Alt+N kopierer neste fra hvilket som helst vindu.`n"
+                . "•  Listestatus beholdes til du trykker Tøm."
         case "MAC Import":
             return "•  Lim inn MAC-adresser; komma, mellomrom og linjeskift støttes.`n"
                 . "•  Gi eksakt Identity Group fra Cisco ISE.`n"
@@ -884,6 +1000,8 @@ ByggTrayMeny() {
     meny := A_TrayMenu
     meny.Delete()
     meny.Add("Åpne " APP_NAVN, VisHoved)
+    meny.Add("✓  Skriftlig sak (+1)", (*) => SakEndre(1))
+    meny.Add("Åpne Saksteller", (*) => (VisPanel("Saksteller"), VisHoved()))
     meny.Add()
     for vt in VERKTOY_LISTE
         meny.Add(vt.Navn, VekslVerktoy.Bind(vt))
@@ -1321,25 +1439,80 @@ EtterLogo(fn) {
 
 VisLogo() {
     global LOGO, LOGO_AKTIV
-    g := Gui("+AlwaysOnTop -Caption +ToolWindow", "QuickerKeys oppstart")
+    sk := A_ScreenDPI / 96
+    W := Round(460 * sk), H := Round(236 * sk)
+    g := Gui("+AlwaysOnTop -Caption +ToolWindow -DPIScale", "QK-oppstart")
     g.BackColor := TEMA.nav
+    g.MarginX := 0, g.MarginY := 0
+    Skrift(g, "s30 c" (ErLyst() ? TEMA.tekst : TEMA.aksent), "Segoe MDL2 Assets")
+    g.AddText("x0 y" Round(30 * sk) " w" W " h" Round(56 * sk) " Center +0x200 Background" TEMA.nav, Chr(0xE765))
     Skrift(g, "s28 bold c" TEMA.tekst)
-    g.AddText("x10 y35 w420 h55 Center +0x200 Background" TEMA.nav, "QuickerKeys")
+    tittel := g.AddText("x0 y" Round(92 * sk) " Background" TEMA.nav, "QuickerKeys")   ; måles, tømmes etterpå
+    tittel.GetPos(, , &tw, &th)
+    tittel.Move((W - tw) // 2, , tw + Round(6 * sk), th)
+    tittel.Text := ""
+    linjeY := Round(92 * sk) + th + Round(6 * sk)
+    linje := g.AddText("x" (W // 2) " y" linjeY " w1 h" Max(2, Round(3 * sk)) " Background" (ErLyst() ? TEMA.tekst : TEMA.aksent))
     Skrift(g, "s10 c" TEMA.dempet)
-    g.AddText("x10 y94 w420 h34 Center Background" TEMA.nav, "by MAAUNI and KAISAD")
-    g.Show("NoActivate w440 h155")
+    under := g.AddText("x0 y" (linjeY + Round(14 * sk)) " w" W " h" Round(24 * sk) " Center Background" TEMA.nav, "")
+    g.Show("NoActivate w" W " h" H)
     RundeHjorner(g.Hwnd, 22)
-    LOGO := g
+    Sleep -1                                 ; tegn logoen før resten av oppstarten
+    LOGO := {g: g, tittel: tittel, linje: linje, under: under, W: W, sk: sk, start: 0, utFra: 0}
     LOGO_AKTIV := true
-    SetTimer LogoFerdig, -1400
+    OnMessage(0x201, LogoKlikk)
+    SetTimer LogoSteg, 30
+}
+
+LogoSteg() {
+    L := LOGO
+    if !IsObject(L) {
+        SetTimer LogoSteg, 0
+        return
+    }
+    if !L.start
+        L.start := A_TickCount               ; tiden regnes fra første tegning, så oppstarten ikke spiser animasjonen
+    t := A_TickCount - L.start
+    try {
+        navn := "QuickerKeys"
+        n := Min(StrLen(navn), Floor(t / 65) + 1)
+        if (L.tittel.Text != SubStr(navn, 1, n))
+            L.tittel.Text := SubStr(navn, 1, n)
+        lb := Max(1, Round(Min(1, Max(0, (t - 120) / 800)) * 190 * L.sk))
+        L.linje.Move((L.W - lb) // 2, , lb)
+        if (t >= 850 && L.under.Text = "")
+            L.under.Text := "by MAAUNI and KAISAD"
+        if !L.utFra && t >= 2000
+            L.utFra := t
+        if L.utFra {
+            a := Round(255 * (1 - (t - L.utFra) / 280))
+            if (a <= 0)
+                return LogoFerdig()
+            WinSetTransparent a, "ahk_id " L.g.Hwnd
+        }
+    } catch {
+        LogoFerdig()
+    }
+}
+
+LogoKlikk(wParam, lParam, msg, hwnd) {
+    if !IsObject(LOGO)
+        return
+    rot := DllCall("GetAncestor", "Ptr", hwnd, "UInt", 2, "Ptr")
+    if (hwnd = LOGO.g.Hwnd || rot = LOGO.g.Hwnd) {
+        if !LOGO.utFra && LOGO.start
+            LOGO.utFra := A_TickCount - LOGO.start
+        return 0
+    }
 }
 
 LogoFerdig() {
     global LOGO, LOGO_AKTIV, LOGO_KO
+    SetTimer LogoSteg, 0
+    OnMessage(0x201, LogoKlikk, 0)
     if IsObject(LOGO)
-        try LOGO.Destroy()
-    LOGO := ""
-    LOGO_AKTIV := false
+        try LOGO.g.Destroy()
+    LOGO := "", LOGO_AKTIV := false
     ko := LOGO_KO, LOGO_KO := []
     for fn in ko
         try fn.Call()
@@ -1379,7 +1552,8 @@ NettFarge(type) {
 
 ; Flere verktøy legges til her, sammen med en Bygg…Panel-funksjon.
 NettverkVerktoy() => [
-    {navn: "MAC Import", beskrivelse: "Lag importfil for endepunkter i Cisco ISE – MAC-adresser med Identity Group (VLAN / EPG).", bygg: ByggMacImportPanel}
+    {navn: "MAC Import", beskrivelse: "Lag importfil for endepunkter i Cisco ISE – MAC-adresser med Identity Group (VLAN / EPG).", bygg: ByggMacImportPanel},
+    {navn: "MAC Formater", beskrivelse: "Formater MAC-adresser og kopier dem én og én, med avkrysning av ferdige.", bygg: ByggMacFormaterPanel}
 ]
 
 ByggNettverkPanel() {
@@ -1447,11 +1621,170 @@ ByggMacImportPanel(pn) {
     NettVelgSkille(Innst("Nettverk", "Skilletegn", ":"))
 }
 
+; =====================================================================
+;  MAC FORMATER – ingen Cisco ISE-endringer, kun lokal formattering.
+; =====================================================================
+ByggMacFormaterPanel(pn) {
+    x := INNHOLD_X, b := INNHOLD_B
+    PanelTittel(pn, "MAC Formater")
+    Skrift(HOVED, "s10 norm c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x+b-164) " y86 w120 h30", "←  Nettverk", VisPanel.Bind("Nettverk"), TEMA.aksent2))
+    Skrift(HOVED, "s9 bold c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" x " y124 w" b " h18 Background" TEMA.bg, "LIM INN MAC-ADRESSER  (flere formater støttes)"))
+    Skrift(HOVED, "s10 norm c" TEMA.tekst, "Consolas")
+    NETT["MfInn"] := Reg(pn, HOVED.AddEdit("x" x " y144 w" b " h80 Multi VScroll -E0x200 Background" TEMA.kort))
+    NETT["MfInn"].OnEvent("Change", (*) => SetTimer(MfLesInn, -300))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    NETT["MfStatus"] := Reg(pn, HOVED.AddText("x" x " y230 w" b " h20 +0x4000 Background" TEMA.bg, "Ingen MAC-adresser lagt inn."))
+    Skrift(HOVED, "s11 bold c" TEMA.tekst)
+    NETT["MfFremdrift"] := Reg(pn, HOVED.AddText("x" x " y256 w" (b-200) " h24 Background" TEMA.bg, ""))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" (x+b-200) " y258 w200 h20 Right Background" TEMA.bg, "Klikk = kopier  ·  ☐ = ferdig"))
+    Skrift(HOVED, "s11 norm c" TEMA.tekst, "Consolas")
+    lv := Reg(pn, HOVED.AddListView("x" x " y284 w" b " h188 Checked -Multi -Hdr NoSortHdr -E0x200 Background" TEMA.kort, ["MAC-adresse", "Status"]))
+    lv.ModifyCol(1, 200), lv.ModifyCol(2, b-230)
+    lv.OnEvent("Click", MfKlikk)
+    lv.OnEvent("ItemCheck", MfKryss)
+    NETT["MfListe"] := lv
+    Skrift(HOVED, "s10 bold c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" x " y484 w180 h38", "Kopier neste", (*) => MfKopierNeste()))
+    Skrift(HOVED, "s10 norm c" TEMA.tekst)
+    Reg(pn, Knapp(HOVED, "x" (x+190) " y484 w120 h38", "Kopier alle", MfKopierAlle, TEMA.aksent2))
+    Reg(pn, Knapp(HOVED, "x" (x+320) " y484 w80 h38", "Tøm", MfTom, TEMA.aksent2))
+    Skrift(HOVED, "s9 norm c" TEMA.dempet)
+    Reg(pn, HOVED.AddText("x" (x+410) " y484 w" (b-410) " h38 +0x200 Right Background" TEMA.bg, TastTekst(MF_TAST) " = neste"))
+    try Hotkey MF_TAST, (*) => MfKopierNeste(), "On"
+    catch as feil
+        Logg("MAC Formater: kunne ikke lage hurtigtasten " TastTekst(MF_TAST) ": " feil.Message)
+}
+
+MfLesInn(*) {
+    r := NettParse(NETT["MfInn"].Value)
+    gammelSist := MF.sist && MF.sist <= MF.liste.Length ? MF.liste[MF.sist] : ""
+    MF.liste := [], MF.sist := 0
+    nyKopiert := Map(), nyFerdig := Map()
+    for hex in r.gyldige {
+        mac := StrLower(hex)
+        MF.liste.Push(mac)
+        if MF.kopiert.Has(mac)
+            nyKopiert[mac] := true
+        if MF.ferdig.Has(mac)
+            nyFerdig[mac] := true
+        if (mac = gammelSist)
+            MF.sist := MF.liste.Length
+    }
+    MF.kopiert := nyKopiert, MF.ferdig := nyFerdig
+    st := NETT["MfStatus"]
+    if (MF.liste.Length = 0 && r.ugyldige.Length = 0) {
+        st.SetFont("c" TEMA.dempet)
+        st.Text := "Ingen MAC-adresser lagt inn."
+    } else {
+        tekst := MF.liste.Length " " (MF.liste.Length = 1 ? "adresse" : "adresser")
+            . (r.duplikater ? "  ·  " r.duplikater " like fjernet" : "")
+            . (r.ugyldige.Length ? "  ·  ugyldig: " NettJoin(r.ugyldige, ", ", 4) : "")
+        st.SetFont("c" (r.ugyldige.Length ? TEMA.feil : TEMA.dempet))
+        st.Text := tekst
+    }
+    MfTegnListe()
+}
+
+MfTegnListe() {
+    lv := NETT["MfListe"]
+    MF.tegner := true
+    try {
+        lv.Opt("-Redraw")
+        lv.Delete()
+        for i, mac in MF.liste
+            lv.Add(MF.ferdig.Has(mac) ? "Check" : "", mac, MfStatusTekst(i))
+        lv.Opt("+Redraw")
+    } finally {
+        MF.tegner := false
+    }
+    MfOppdaterFremdrift()
+}
+
+MfStatusTekst(i) {
+    mac := MF.liste[i]
+    return MF.kopiert.Has(mac) ? "Kopiert" (i = MF.sist ? "   ◀ sist" : "") : ""
+}
+
+MfOppdaterFremdrift() {
+    n := MF.liste.Length
+    try NETT["MfFremdrift"].Text := n ? "Ferdig: " MF.ferdig.Count " av " n : ""
+}
+
+MfKlikk(lv, rad) {
+    if (!rad || MfPaAvkrysning(lv))
+        return
+    MfKopier(rad)
+}
+
+MfPaAvkrysning(lv) {
+    info := Buffer(24, 0)
+    DllCall("GetCursorPos", "Ptr", info)
+    DllCall("ScreenToClient", "Ptr", lv.Hwnd, "Ptr", info)
+    SendMessage(0x1012, 0, info.Ptr, lv)
+    return (NumGet(info, 8, "UInt") & 0x8) != 0
+}
+
+MfKryss(lv, rad, avkrysset) {
+    if (MF.tegner || !rad || rad > MF.liste.Length)
+        return
+    mac := MF.liste[rad]
+    if avkrysset
+        MF.ferdig[mac] := true
+    else if MF.ferdig.Has(mac)
+        MF.ferdig.Delete(mac)
+    MfOppdaterFremdrift()
+}
+
+MfKopier(rad) {
+    mac := MF.liste[rad]
+    A_Clipboard := mac
+    forrige := MF.sist
+    MF.kopiert[mac] := true
+    MF.sist := rad
+    lv := NETT["MfListe"]
+    if (forrige && forrige != rad && forrige <= MF.liste.Length)
+        lv.Modify(forrige, "Col2", MfStatusTekst(forrige))
+    lv.Modify(rad, "Select Focus Vis Col2", MfStatusTekst(rad))
+    Varsel("Kopiert · MAC-adresse  (" rad " av " MF.liste.Length ")", mac, "")
+}
+
+MfKopierNeste() {
+    n := MF.liste.Length
+    if !n
+        return Tip("MAC Formater: ingen adresser i listen")
+    loop n {
+        rad := Mod(MF.sist + A_Index - 1, n) + 1
+        if !MF.ferdig.Has(MF.liste[rad])
+            return MfKopier(rad)
+    }
+    Tip("MAC Formater: alle adressene er krysset av som ferdige")
+}
+
+MfKopierAlle(*) {
+    if !MF.liste.Length
+        return Tip("Ingen adresser å kopiere")
+    ut := ""
+    for i, mac in MF.liste
+        ut .= (i > 1 ? "`r`n" : "") mac
+    A_Clipboard := ut
+    Tip(MF.liste.Length " adresser kopiert", 1500)
+}
+
+MfTom(*) {
+    MF.liste := [], MF.kopiert := Map(), MF.ferdig := Map(), MF.sist := 0
+    NETT["MfInn"].Value := ""
+    MfLesInn()
+    NETT["MfInn"].Focus()
+}
+
 NettVelgSkille(sep, *) {
     NETT["Skille"] := sep = "-" ? "-" : ":"
     for navn, verdi in Map("Kolon", ":", "Strek", "-") {
         k := NETT[navn]
-        k.Opt("Background" (NETT["Skille"] = verdi ? TEMA.aksent : TEMA.aksent2))
+        SettBg(k, NETT["Skille"] = verdi ? TEMA.aksent : TEMA.aksent2)
         k.Redraw()
     }
     SettInnst("Nettverk", "Skilletegn", NETT["Skille"])
@@ -4343,6 +4676,8 @@ class VT_TrioSnarveier extends VT_Base {
             return "Vis/skjul QuickerKeys"
         if (tast = Innst("SMKontakt", "ManuellTast", "^!k"))
             return "SM Kontakt"
+        if (NETT_PAA && tast = MF_TAST)
+            return "MAC Formater"
         loop 4 {
             if (tast = Innst("Vindusbytter", "Tast" A_Index, "") && tast != "")
                 return "Vindusbytter " A_Index
@@ -5200,6 +5535,8 @@ class VT_Vindusbytter extends VT_Base {
                 return "vindu " i
         if (tast = VIS_TAST)
             return "«Vis / skjul vinduet»"
+        if (NETT_PAA && tast = MF_TAST)
+            return "MAC Formater"
         for vt in VERKTOY_LISTE
             if (vt.HasOwnProp("Cfg") && vt.Cfg.Has("ManuellTast") && vt.Cfg["ManuellTast"] = tast)
                 return vt.Navn
