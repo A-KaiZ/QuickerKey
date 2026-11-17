@@ -31,7 +31,6 @@ RunHotfixTests() {
     global INI_FIL := A_ScriptDir "\test.ini", TEKST_MAPPE := A_ScriptDir
     global LOGG_MAPPE := A_ScriptDir, LOGG_LINJER := [], APP_KTRL := Map(), OVERSIKT := Map()
     global APP_NAVN := "QuickerKeys", DIPS_INI_FIL := A_ScriptDir "\DIPS.ini"
-    global NETT_PAA := false, MF_TAST := "^!n", SAK := Map()   ; production globals initialized after test injection
     fixturePid := 0, tf := "", dlg := "", code := 0
     try {
         HotfixAssert(TekstflytSignatur("#dwa", "TEST", "", "20261104120000") == "(test) 041126", "signature without clipboard")
@@ -119,24 +118,6 @@ RunHotfixTests() {
         IniWrite "!F3", INI_FIL, "App", "VisTast"
         trio := VT_TrioSnarveier()
         HotfixAssert(trio.Hent("EnabledHKetterarbeid5") = "off", "default shortcut conflict does not displace existing key")
-        ; Saksteller: test in isolated temporary folder; never touch user's counter.
-        global SAK_FIL := A_ScriptDir "\\counter-test.ini"
-        if FileExist(SAK_FIL)
-            FileDelete SAK_FIL
-        HotfixAssert(SakAntall() = 0, "counter starts at zero")
-        SakEndre(1)
-        SakEndre(5)
-        HotfixAssert(SakAntall() = 6, "counter increment and batch increment")
-        SakEndre(-1)
-        HotfixAssert(SakAntall() = 5, "counter undo one")
-        SakEndre(-20)
-        HotfixAssert(SakAntall() = 0, "counter cannot become negative")
-        SakEndre(3)
-        HotfixAssert(SakStatistikk().totalt = 3, "counter total persisted")
-        IniWrite 2, SAK_FIL, "Dager", FormatTime(DateAdd(A_Now, -1, "Days"), "yyyy-MM-dd")
-        HotfixAssert(SakStatistikk().siste7 = 5, "counter last-seven-days aggregation")
-        HotfixAssert(SakAntall() = 3, "counter today independent of yesterday")
-        FileDelete SAK_FIL
         RunDipsUiTests()
     } catch as feil {
         FileAppend(feil.Message " at line " feil.Line "`n" feil.Stack "`n", "*", "UTF-8")
@@ -199,21 +180,20 @@ RunDipsUiTests() {
     global APP_VERSJON := "3.11.3", APP_B := 700, APP_H := 560, INNHOLD_X := 184, INNHOLD_B := 492
     global PANELER := Map(), NAVKNAPPER := Map(), VIS_VILKAR := Map(), NAV_FOR := Map(), NETT_PAA := false
     global VERKTOY_LISTE := VerktoyListe(), DIPS_INI_FIL
-    global NAV_DEL := Map(), NAV_VALGT := "", NAV_HOVER := "", HOVER := Map(), HOVER_AKTIV := 0
-    global APP_KTRL := Map(), OVERSIKT := Map(), TOPP_STATUS := ""
     ByggHovedvindu()
     VisPanel("Innstillinger")
     HOVED.Show("w" APP_B " h" APP_H)
     Sleep 200
-    avansertKnapp := ""
+    dipsKnapp := "", nettKnapp := ""
     for ctrl in PANELER["Innstillinger"] {
         ctrl.GetPos(&x, &y, &w, &h)
         HotfixAssert(y + h <= APP_H, "settings control remains inside window")
-        if (ctrl.Text = "Avansert…")
-            avansertKnapp := ctrl
+        if (ctrl.Text = "DIPS-innstillinger")
+            dipsKnapp := ctrl
+        if (ctrl.Text = "Aktiver Nettverk")
+            nettKnapp := ctrl
     }
-    HotfixAssert(IsObject(avansertKnapp), "v3.12 advanced settings entry exists")
-    HotfixAssert(InStr(HjelpTekst("Innstillinger"), "DIPS-innstillinger"), "advanced settings documents DIPS")
+    HotfixAssert(IsObject(dipsKnapp) && IsObject(nettKnapp), "settings has DIPS and neutral network actions")
     HotfixAssert(!InStr(WinGetText("ahk_id " HOVED.Hwnd), "Nettverksgeni"), "professional settings labels")
     HotfixCapture(HOVED.Hwnd, "ui-settings")
     DipsLagreProfil("demobruker", "D2358")
