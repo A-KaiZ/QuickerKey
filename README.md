@@ -1,5 +1,33 @@
 # QuickerKeys
 
+## v3.12.3 – skriftlige saker, MAC Formater og animert oppstart (feature-PR)
+
+**Status: til gjennomgang – ikke produksjonsmerget.** Denne versjonen bruker v3.12.3-funksjonene og beholder den animasjonen brukeren leverte: bokstavvis «QuickerKeys», gradvis linje, utviklerkreditering, fade-out og klikk-for-å-hoppe-over. Logoen vises bare ved manuell oppstart når den er aktivert; intern omstart og autostart er stille.
+
+### Saksteller – skriftlige saker
+- Egen side **Saksteller** i sidemenyen; `+1 SAK`, `+5 saker`, `−1 Korriger` og bekreftet `Nullstill i dag`.
+- Viser dagens antall, sum siste sju kalenderdager og totalt registrert antall.
+- Høyreklikk på systemstatusikonet for **Skriftlig sak (+1)** eller for å åpne sakstelleren.
+- Manuell telling: ingen automatisk kobling til Trio, Service Manager eller tekstkoder.
+- Personlig lagring per dag i `%APPDATA%\QuickerKeys\Innstillinger\Saksteller.ini`, seksjon `[Dager]`, format `YYYY-MM-DD=antall`. Dato oppdateres hvert minutt, også over midnatt.
+- Teller aldri under null. Ingen saksnumre, pasientopplysninger, navn eller innhold lagres i tellefilen.
+
+### MAC Formater
+- Aktiveres fortsatt via **Innstillinger → Avansert → Nettverk**.
+- Normaliserer adresser til små bokstaver uten skilletegn, fjerner duplikater og markerer ugyldige verdier.
+- Klikk for å kopiere; `Ctrl+Alt+N` kopierer neste ikke-avkryssede adresse. Avkrysningsstatus beholdes mens listen er åpen.
+- Utfører ingen Cisco ISE-endringer.
+
+### Før merge: release-sjekkliste
+1. GitHub Actions må være grønn; verifiser både full AutoHotkey v2-parsing og native GUI-test.
+2. Start appen **manuelt**: bokstavene skal tegnes i rekkefølge, linjen vokse, «by MAAUNI and KAISAD» vises, og vinduet fades ut uten at hovedvinduet dekker logoen.
+3. Test klikk-for-å-hoppe-over, deaktivering av logo, autostart og stille omstart.
+4. Test Saksteller +1, +5, −1, nullstilling, restart, dagskifte og siste sju dager.
+5. Test MAC Formater og hurtigtastkonflikter, samt regresjon for DIPS, Tekstflyt, Trio og SM Kontakt i relevant Windows-miljø.
+
+**Tidligere PR #15 ble reversert med PR #16. Denne PR-en må vurderes og testes separat.**
+
+
 AutoHotkey v2-verktøy for arbeidsflyt i Trio Attendant, Trio Agent og Service Manager.
 
 ## Verktøy
