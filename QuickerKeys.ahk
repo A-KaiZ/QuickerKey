@@ -5612,6 +5612,13 @@ class VT_Vindusbytter extends VT_Base {
     Bytt(i, *) {
         r := this.Rader[i]
         navn := r.navn != "" ? r.navn : r.id
+        ; Samme hurtigtast skjuler målvinduet når det allerede er aktivt.
+        aktivHwnd := r.id != "" ? WinActive(r.id) : 0
+        if aktivHwnd {
+            WinMinimize "ahk_id " aktivHwnd
+            Logg("Vindusbytter: minimerte vindu " i " (" navn ")")
+            return
+        }
         if RegExMatch(r.id, "i)ahk_exe\s+(msedge|chrome|firefox|brave|opera)\.exe") {
             hwnd := AktiverFane(r.id)                       ; nettleser: finner også riktig fane
         } else {
