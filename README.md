@@ -1,5 +1,18 @@
 # QuickerKeys
 
+## v3.12.4 – Vindusbytter: åpne/minimer med samme hurtigtast
+
+**Endring:** Vindusbytter bruker nå samme hurtigtast til å hente frem og minimere det valgte vinduet.
+
+- **Vinduet er ikke aktivt:** Hurtigtasten åpner/aktiverer det som før, og gjenoppretter det hvis det er minimert.
+- **Vinduet er allerede aktivt:** Den samme hurtigtasten minimerer vinduet.
+- **Eksempel:** Når SIKT er koblet til `Numpad -`, gir første trykk SIKT i forgrunnen, neste trykk minimerer SIKT, og enda et trykk henter det tilbake.
+- Eksisterende hurtigtastoppsett og vindusvalg beholdes. Ingen ny konfigurasjon er nødvendig.
+
+**Omfang:** Kun `VT_Vindusbytter.Bytt()`, versjonsnummeret `APP_VERSJON` og denne README-oppføringen. Oppstartslogo, animasjon og andre verktøy er ikke endret.
+
+**Verifisering:** Åpne/minimer-flyten er bekreftet fungerende av bruker. Test eventuelle andre vindusvalg og nettleserfaner før produksjonsmerge.
+
 ## v3.12.3 – skriftlige saker, MAC Formater og animert oppstart (feature-PR)
 
 **Status: til gjennomgang – ikke produksjonsmerget.** Denne versjonen bruker v3.12.3-funksjonene og beholder den animasjonen brukeren leverte: bokstavvis «QuickerKeys», gradvis linje, utviklerkreditering, fade-out og klikk-for-å-hoppe-over. Logoen vises bare ved manuell oppstart når den er aktivert; intern omstart og autostart er stille.
